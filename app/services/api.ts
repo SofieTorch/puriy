@@ -8,7 +8,23 @@
 //   : 'https://api.yourdomain.com';  // Production
 
 // const API_BASE_URL = 'https://movility-cbba-ndkpt.ondigitalocean.app';
-const API_BASE_URL = 'http://192.168.1.229:8000';
+export const API_BASE_URL = 'http://10.165.187.148:8000';
+const SERVER_CHECK_TIMEOUT_MS = 3000;
+
+/** True when the backend host responds (any HTTP status). */
+export async function isServerReachable(): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SERVER_CHECK_TIMEOUT_MS);
+
+  try {
+    await fetch(API_BASE_URL, { signal: controller.signal });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export interface Line {
   id: number;

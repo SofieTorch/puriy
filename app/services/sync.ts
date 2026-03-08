@@ -2,7 +2,7 @@
  * Sync pending recordings to the server when online.
  */
 import NetInfo from '@react-native-community/netinfo';
-import api from '@/services/api';
+import api, { isServerReachable } from '@/services/api';
 import {
   getPendingSyncRecordings,
   getLocationPoints,
@@ -12,6 +12,21 @@ import {
 } from '@/services/recording-store';
 
 const BATCH_SIZE = 100;
+let syncing = false;
+const syncListeners = new Set<(value: boolean) => void>();
+
+function setSyncing(value: boolean) {
+  syncing = value;
+  for (const listener of syncListeners) listener(value);
+}
+
+export function subscribeSyncStatus(listener: (value: boolean) => void): () => void {
+  syncListeners.add(listener);
+  listener(syncing);
+  return () => {
+    syncListeners.delete(listener);
+  };
+}
 
 /** Upload one pending recording to the server. Returns true if synced. */
 async function syncOneRecording(recordingId: number): Promise<boolean> {
@@ -55,15 +70,25 @@ async function syncOneRecording(recordingId: number): Promise<boolean> {
 
 /** Sync all pending recordings. Call when network is back. */
 export async function syncPendingRecordings(): Promise<number> {
+  if (syncing) return 0;
+
   const netInfo = await NetInfo.fetch();
   if (!netInfo.isConnected) return 0;
+  if (!(await isServerReachable())) return 0;
 
   const pending = getPendingSyncRecordings();
+  if (pending.length === 0) return 0;
+
+  setSyncing(true);
   let synced = 0;
 
-  for (const rec of pending) {
-    const ok = await syncOneRecording(rec.id);
-    if (ok) synced++;
+  try {
+    for (const rec of pending) {
+      const ok = await syncOneRecording(rec.id);
+      if (ok) synced++;
+    }
+  } finally {
+    setSyncing(false);
   }
 
   return synced;
