@@ -47,7 +47,7 @@ export default function Header({ title }: { title: string }) {
             className={`h-2 w-2 rounded-xl ${isRecording ? 'bg-red-500' : isSyncing ? 'bg-orange-500' : isOnline ? 'bg-green-500' : 'bg-gray-400'}`}
           />
           <Text className="text-xs font-semibold text-white">
-            {isRecording ? 'grabando recorrido...' : isSyncing ? 'sincronizando...' : isOnline ? 'online' : 'offline'}
+            {isRecording ? 'grabando...' : isSyncing ? 'sincronizando...' : isOnline ? 'online' : 'offline'}
           </Text>
         </View>
         <View>
