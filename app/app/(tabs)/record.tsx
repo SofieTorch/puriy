@@ -33,6 +33,7 @@ import {
   touchRecording,
 } from '@/services/recording-store';
 import { syncPendingRecordings } from '@/services/sync';
+import { setRecordingStatus } from '@/services/recording-status';
 import { styles } from '@/styles/record';
 import Header from '@/components/header';
 import SaveRecordModal from '@/components/save-record-modal';
@@ -84,6 +85,16 @@ export default function RecordScreen() {
     lottieRef.current?.pause();
     lottieRef.current?.reset();
   }, [isRecording]);
+
+  useEffect(() => {
+    setRecordingStatus(isRecording);
+  }, [isRecording]);
+
+  useEffect(() => {
+    return () => {
+      setRecordingStatus(false);
+    };
+  }, []);
 
   const requestLocationPermission = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -244,7 +255,7 @@ export default function RecordScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: '#09A6F3' }]}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <Header title="Trazar recorrido" />
+        <Header title="Trayecto" />
 
         <View style={[styles.content, { paddingBottom: tabBarHeight + 12 }]}>
 

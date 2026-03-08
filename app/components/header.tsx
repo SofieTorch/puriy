@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Image, Text, View } from 'react-native';
 
 import { isServerReachable } from '@/services/api';
+import { subscribeRecordingStatus } from '@/services/recording-status';
 import { subscribeSyncStatus } from '@/services/sync';
 
 const POLL_MS = 15000;
@@ -9,6 +10,7 @@ const POLL_MS = 15000;
 export default function Header({ title }: { title: string }) {
   const [isOnline, setIsOnline] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -31,6 +33,10 @@ export default function Header({ title }: { title: string }) {
     return subscribeSyncStatus(setIsSyncing);
   }, []);
 
+  useEffect(() => {
+    return subscribeRecordingStatus(setIsRecording);
+  }, []);
+
   return (
     <View className="relative justify-center bg-[#09A6F3] p-4">
       <View className="flex-row items-center justify-between">
@@ -38,10 +44,10 @@ export default function Header({ title }: { title: string }) {
           className="flex-row items-center gap-1.5 rounded-xl bg-white/20 px-2.5 py-1"
         >
           <View
-            className={`h-2 w-2 rounded-xl ${isSyncing ? 'bg-orange-500' : isOnline ? 'bg-green-500' : 'bg-red-500'}`}
+            className={`h-2 w-2 rounded-xl ${isRecording ? 'bg-red-500' : isSyncing ? 'bg-orange-500' : isOnline ? 'bg-green-500' : 'bg-gray-400'}`}
           />
           <Text className="text-xs font-semibold text-white">
-            {isSyncing ? 'sincronizando...' : isOnline ? 'online' : 'offline'}
+            {isRecording ? 'grabando recorrido...' : isSyncing ? 'sincronizando...' : isOnline ? 'online' : 'offline'}
           </Text>
         </View>
         <View>
