@@ -6,6 +6,7 @@
 import React from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -24,9 +25,10 @@ interface SwipeSwitchProps {
   offLabel?: string;
 }
 
-const TRACK_WIDTH = 280;
-const TRACK_HEIGHT = 64;
-const THUMB_SIZE = 56;
+const BRAND_BLUE = '#009DFF';
+const TRACK_WIDTH = 340;
+const TRACK_HEIGHT = 76;
+const THUMB_SIZE = 64;
 const THUMB_MARGIN = 4;
 const MAX_TRANSLATE = TRACK_WIDTH - THUMB_SIZE - THUMB_MARGIN * 2;
 
@@ -93,11 +95,8 @@ export function SwipeSwitch({
   const trackAnimatedStyle = useAnimatedStyle(() => {
     const progress = translateX.value / MAX_TRANSLATE;
     return {
-      backgroundColor: interpolateColor(
-        progress,
-        [0, 1],
-        ['#E5E7EB', '#22C55E']
-      ),
+      backgroundColor: interpolateColor(progress, [0, 1], ['#FFFFFF', '#E6F7FF']),
+      borderColor: BRAND_BLUE,
     };
   });
 
@@ -105,6 +104,13 @@ export function SwipeSwitch({
     const progress = translateX.value / MAX_TRANSLATE;
     return {
       opacity: interpolate(progress, [0, 0.3, 0.7, 1], [1, 0, 0, 1]),
+    };
+  });
+
+  const labelTextAnimatedStyle = useAnimatedStyle(() => {
+    const progress = translateX.value / MAX_TRANSLATE;
+    return {
+      color: interpolateColor(progress, [0, 1], [BRAND_BLUE, BRAND_BLUE]),
     };
   });
 
@@ -121,17 +127,18 @@ export function SwipeSwitch({
       <GestureDetector gesture={panGesture}>
         <Animated.View style={[styles.track, trackAnimatedStyle]}>
           <Animated.View style={[styles.labelContainer, labelAnimatedStyle]}>
-            <Text style={styles.label}>
+            <Animated.Text style={[styles.label, labelTextAnimatedStyle]}>
               {value ? onLabel : offLabel}
-            </Text>
+            </Animated.Text>
           </Animated.View>
           
           <Animated.View style={[styles.thumb, thumbAnimatedStyle]}>
-            <View style={styles.thumbInner}>
-              <Text style={styles.thumbIcon}>
-                {value ? '■' : '▶'}
-              </Text>
-            </View>
+            <Ionicons
+              name={value ? 'stop' : 'chevron-forward'}
+              size={26}
+              color="#FFFFFF"
+              style={styles.thumbIcon}
+            />
           </Animated.View>
         </Animated.View>
       </GestureDetector>
@@ -153,6 +160,7 @@ const styles = StyleSheet.create({
     borderRadius: TRACK_HEIGHT / 2,
     justifyContent: 'center',
     paddingHorizontal: THUMB_MARGIN,
+    borderWidth: 3,
   },
   labelContainer: {
     position: 'absolute',
@@ -161,36 +169,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   label: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
+    fontSize: 18,
+    fontWeight: '700',
   },
   thumb: {
     width: THUMB_SIZE,
     height: THUMB_SIZE,
     borderRadius: THUMB_SIZE / 2,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: BRAND_BLUE,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.16,
     shadowRadius: 4,
     elevation: 4,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  thumbInner: {
-    width: THUMB_SIZE - 8,
-    height: THUMB_SIZE - 8,
-    borderRadius: (THUMB_SIZE - 8) / 2,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   thumbIcon: {
-    fontSize: 18,
-    color: '#374151',
-    marginBottom: 6,
-    marginLeft: 4,
+    marginLeft: 2,
   },
 });
 

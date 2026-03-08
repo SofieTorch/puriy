@@ -5,16 +5,17 @@ module.exports = function (api) {
     presets: [['babel-preset-expo'], 'nativewind/babel'],
 
     plugins: [
-      ['inline-import', {
-        extensions: ['.sql'],
-      }],
-      ['module-resolver',{
-        root: ['./'],
-        alias: {
-          '@': './',
-          'tailwind.config': './tailwind.config.js',
+      [
+        'module-resolver',
+        {
+          root: ['./'],
+
+          alias: {
+            '@': './',
+            'tailwind.config': './tailwind.config.js',
+          },
         },
-      }],
+      ],
       'react-native-worklets/plugin',
     ],
   };

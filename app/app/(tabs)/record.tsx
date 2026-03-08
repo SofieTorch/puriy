@@ -13,26 +13,20 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
-  FlatList,
-  Modal,
   Platform,
-  ScrollView,
   Text,
-  TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import LottieView from 'lottie-react-native';
 
 import { SwipeSwitch } from '@/components/swipe-switch';
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTheme } from '@react-navigation/native';
-import type { Line, SensorReading } from '@/services/api';
-import { getLines } from '@/services/line-cache';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import type { SensorReading } from '@/services/api';
 import {
   createRecording,
-  addLocationPoints,
   addSensorReadings,
   finalizeRecording,
   cancelRecording,
@@ -41,11 +35,14 @@ import {
 import { syncPendingRecordings } from '@/services/sync';
 import { styles } from '@/styles/record';
 import Header from '@/components/header';
+import SaveRecordModal from '@/components/save-record-modal';
 
 const SENSOR_INTERVAL = 100;
 
 export default function RecordScreen() {
   const { colors } = useTheme();
+  const tabBarHeight = useBottomTabBarHeight();
+  const lottieRef = useRef<LottieView>(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
@@ -55,10 +52,6 @@ export default function RecordScreen() {
 
   // Line selection modal (shown after stopping)
   const [showLineModal, setShowLineModal] = useState(false);
-  const [lines, setLines] = useState<Line[]>([]);
-  const [selectedLine, setSelectedLine] = useState<Line | null>(null);
-  const [customLineName, setCustomLineName] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
 
   // Snapshot of stats at the moment recording stopped (so the modal shows stable values)
   const finalDuration = useRef(0);
@@ -71,7 +64,6 @@ export default function RecordScreen() {
 
   useEffect(() => {
     requestLocationPermission();
-    fetchLines();
   }, []);
 
   // Subscribe to background location updates for points count
@@ -83,14 +75,15 @@ export default function RecordScreen() {
     return unsub;
   }, [isRecording]);
 
-  const fetchLines = async () => {
-    try {
-      const data = await getLines();
-      setLines(data);
-    } catch (error) {
-      console.error('Failed to fetch lines:', error);
+  useEffect(() => {
+    if (isRecording) {
+      lottieRef.current?.play();
+      return;
     }
-  };
+
+    lottieRef.current?.pause();
+    lottieRef.current?.reset();
+  }, [isRecording]);
 
   const requestLocationPermission = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -197,24 +190,23 @@ export default function RecordScreen() {
       finalPoints.current = pointsCollected;
 
       setIsRecording(false);
-      setSelectedLine(null);
-      setCustomLineName('');
       setShowLineModal(true);
     }
   };
 
-  const canSave = !!selectedLine || !!customLineName.trim();
-
-  const handleConfirmLine = async () => {
+  const handleConfirmLine = async ({
+    lineId,
+    customLineName,
+  }: {
+    lineId: number | null;
+    customLineName: string | null;
+  }) => {
     if (!currentSessionId) return;
-    if (!canSave) return;
-
-    setIsSaving(true);
     try {
       finalizeRecording(
         currentSessionId,
-        selectedLine?.id ?? null,
-        selectedLine ? null : customLineName.trim() || null,
+        lineId,
+        customLineName,
         'pending_sync'
       );
 
@@ -231,8 +223,6 @@ export default function RecordScreen() {
     } catch (error) {
       console.error('Failed to save recording:', error);
       Alert.alert('Error', 'Failed to save recording.');
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -251,34 +241,12 @@ export default function RecordScreen() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const renderLineItem = ({ item }: { item: Line }) => {
-    const isSelected = selectedLine?.id === item.id;
-    return (
-      <TouchableOpacity
-        style={[styles.lineCard, isSelected && styles.lineCardSelected]}
-        onPress={() => {
-          setSelectedLine(item);
-          setCustomLineName('');
-        }}
-        activeOpacity={0.7}
-      >
-        <Text style={[styles.lineName, isSelected && styles.lineNameSelected]}>
-          {item.name}
-        </Text>
-        {item.description && (
-          <Text style={styles.lineDescription} numberOfLines={2}>
-            {item.description}
-          </Text>
-        )}
-      </TouchableOpacity>
-    );
-  };
-
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <Header title="Registrar recorrido" />
+    <SafeAreaView style={[styles.container, { backgroundColor: '#09A6F3' }]}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <Header title="Trazar recorrido" />
 
-      <ScrollView contentContainerStyle={styles.content}>
+        <View style={[styles.content, { paddingBottom: tabBarHeight + 12 }]}>
 
         {/* Recording Status */}
         {isRecording && (
@@ -301,119 +269,35 @@ export default function RecordScreen() {
           </ThemedView>
         )}
 
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <LottieView
+            ref={lottieRef}
+            source={require('../../assets/animations/car_travel.json')}
+            loop
+            style={{ width: '100%', height: '100%' }}
+          />
+        </View>
+
         {/* Swipe Switch */}
         <View style={styles.switchContainer}>
           <SwipeSwitch
             value={isRecording}
             onValueChange={handleRecordingToggle}
-            onLabel="Recording..."
-            offLabel="Swipe to Record"
+            onLabel="Grabando..."
+            offLabel="Desliza para empezar"
           />
         </View>
-
-        {/* Instructions */}
-        {!isRecording && !showLineModal && (
-          <ThemedView style={styles.instructions}>
-            <ThemedText style={styles.instructionText}>
-              1. Swipe to start recording your trip
-            </ThemedText>
-            <ThemedText style={styles.instructionText}>
-              2. Ride the transit (recording continues in background)
-            </ThemedText>
-            <ThemedText style={styles.instructionText}>
-              3. Swipe left to stop when you're done
-            </ThemedText>
-            <ThemedText style={styles.instructionText}>
-              4. Select the line you rode
-            </ThemedText>
-          </ThemedView>
-        )}
-      </ScrollView>
-
-      {/* Line selection bottom modal */}
-      <Modal
-        visible={showLineModal}
-        animationType="slide"
-        transparent
-        onRequestClose={handleDiscardRecording}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select line</Text>
-              <Text style={styles.modalSubtitle}>
-                Which line did you ride?
-              </Text>
-            </View>
-
-            {/* Trip summary */}
-            <View style={styles.modalSummary}>
-              <View style={styles.modalSummaryItem}>
-                <Text style={styles.modalSummaryValue}>
-                  {formatDuration(finalDuration.current)}
-                </Text>
-                <Text style={styles.modalSummaryLabel}>Duration</Text>
-              </View>
-              <View style={styles.modalSummaryDivider} />
-              <View style={styles.modalSummaryItem}>
-                <Text style={styles.modalSummaryValue}>{finalPoints.current}</Text>
-                <Text style={styles.modalSummaryLabel}>Points</Text>
-              </View>
-            </View>
-
-            {/* Line list */}
-            <FlatList
-              data={lines}
-              keyExtractor={(item) => item.id.toString()}
-              renderItem={renderLineItem}
-              style={styles.lineList}
-              contentContainerStyle={styles.lineListContent}
-              ListEmptyComponent={
-                <Text style={styles.noLines}>No lines available.</Text>
-              }
-              ListFooterComponent={
-                <View style={styles.newLineSection}>
-                  <Text style={styles.newLineLabel}>Or add new line</Text>
-                  <TextInput
-                    style={styles.newLineInput}
-                    placeholder="Enter line name"
-                    placeholderTextColor="#9CA3AF"
-                    value={customLineName}
-                    onChangeText={(text) => {
-                      setCustomLineName(text);
-                      if (text.trim()) setSelectedLine(null);
-                    }}
-                  />
-                </View>
-              }
-            />
-
-            {/* Actions */}
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalBtnCancel}
-                onPress={handleDiscardRecording}
-              >
-                <Text style={styles.modalBtnCancelText}>Discard</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modalBtnConfirm,
-                  !canSave && styles.modalBtnConfirmDisabled,
-                ]}
-                onPress={handleConfirmLine}
-                disabled={!canSave || isSaving}
-              >
-                <Text style={styles.modalBtnConfirmText}>
-                  {isSaving ? 'Saving...' : 'Save'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
         </View>
-      </Modal>
+
+        <SaveRecordModal
+          visible={showLineModal}
+          finalDuration={finalDuration.current}
+          finalPoints={finalPoints.current}
+          formatDuration={formatDuration}
+          onDiscard={handleDiscardRecording}
+          onConfirm={handleConfirmLine}
+        />
+      </View>
     </SafeAreaView>
   );
 }

@@ -1,12 +1,10 @@
-import { DarkTheme, DefaultTheme, ThemeProvider, type Theme } from '@react-navigation/native';
+import { DefaultTheme, ThemeProvider, type Theme } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { DatabaseProvider } from '@/components/DatabaseProvider';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
 import { GluestackUIProvider } from '@/components/ui/gluestack-ui-provider';
 import '@/global.css';
 
@@ -19,32 +17,22 @@ const LightTheme: Theme = {
   },
 };
 
-const CustomDarkTheme: Theme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    primary: '#09A6F3',
-  },
-};
-
 export const unstable_settings = {
   anchor: '(tabs)',
 };
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     
-    <GluestackUIProvider mode="dark">
+    <GluestackUIProvider mode="light">
       <GestureHandlerRootView style={{ flex: 1 }}>
       <DatabaseProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? CustomDarkTheme : LightTheme}>
+        <ThemeProvider value={LightTheme}>
           <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
-          <StatusBar style="auto" /> 
+          <StatusBar style="light" backgroundColor="#09A6F3" /> 
         </ThemeProvider>
       </DatabaseProvider>
     </GestureHandlerRootView>
