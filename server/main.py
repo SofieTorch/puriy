@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from database import engine
+from database.connection import engine
 from routes import lines_router, recordings_router
 
 

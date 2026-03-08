@@ -12,6 +12,8 @@ dependencies = [
     "geoalchemy2>=0.15.0",
     "shapely>=2.0.0",
     "alembic>=1.14.0",
+    "geodata>=0.1.0",
+    "database>=0.1.0",
 ]
 
 [project.optional-dependencies]
@@ -34,3 +36,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+
+[tool.uv.sources]
+geodata = {path = "../packages/geodata", editable = true}
+database = {path = "../packages/database", editable = true}

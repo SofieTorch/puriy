@@ -11,7 +11,7 @@ docker compose up -d
 
 ```bash
 docker compose exec server bash
-uv run alembic upgrade head
+uv run alembic -c ../packages/database/alembic.ini upgrade head
 ```
 
 3. API is available at (http://localhost:8000)[http://localhost:8000]
@@ -29,29 +29,29 @@ To create a new migration with Alembic:
 1. Auto-generate from model changes:
 
 ```bash
-docker compose exec server alembic revision --autogenerate -m "add stops table"
+docker compose exec server alembic -c ../packages/database/alembic.ini revision --autogenerate -m "add stops table"
 ```
 
-2. The migration file will be created in `alembic/versions`. Then apply it with:
+2. The migration file will be created in `packages/database/alembic/versions`. Then apply it with:
 
 ```bash
-docker compose exec server alembic upgrade head
+docker compose exec server alembic -c ../packages/database/alembic.ini upgrade head
 ```
 
 Other useful commands:
 
 ```bash
 # Check current migration status
-docker compose exec server alembic current
+docker compose exec server alembic -c ../packages/database/alembic.ini current
 
 # See migration history
-docker compose exec server alembic history
+docker compose exec server alembic -c ../packages/database/alembic.ini history
 
 # Rollback one migration
-docker compose exec server alembic downgrade -1
+docker compose exec server alembic -c ../packages/database/alembic.ini downgrade -1
 
 # Rollback to specific revision
-docker compose exec server alembic downgrade 001
+docker compose exec server alembic -c ../packages/database/alembic.ini downgrade 001
 ```
 
 ## Running tests

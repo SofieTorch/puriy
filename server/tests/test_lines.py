@@ -3,7 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from models.line import Line, LineStatus
+from database.models.line import Line, LineStatus
 
 
 class TestCreateLine:
@@ -167,7 +167,7 @@ class TestMergeLine:
         pending_line: Line,
     ):
         """Should merge one line into another."""
-        from models.recording import RecordingSession
+        from database.models.recording import RecordingSession
 
         recording = RecordingSession(
             line_id=pending_line.id,

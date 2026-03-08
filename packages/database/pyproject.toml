@@ -1,0 +1,20 @@
+[project]
+name = "database"
+version = "0.1.0"
+description = "Database definitions and migrations"
+requires-python = ">=3.13"
+dependencies = [
+  "alembic>=1.14.0",
+  "geoalchemy2>=0.18.4",
+  "psycopg2>=2.9.11",
+  "psycopg2-binary>=2.9.11",
+  "sqlalchemy>=2.0.48",
+  "sqlmodel>=0.0.22",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

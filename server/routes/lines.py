@@ -1,23 +1,17 @@
 import json
 from typing import Optional, Sequence
 
+from database.models.line import Line, LineStatus
+from database.models.recording import RecordingSession
 from fastapi import APIRouter, Depends, HTTPException, Query
 from geoalchemy2.functions import ST_AsGeoJSON
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from database import get_db
-from models.line import Line, LineCreate, LineRead, LineStatus, LineUpdate
-from models.recording import RecordingSession
+from database.connection import get_db
+from schemas.line import LineCreate, LineRead, LineUpdate, path_to_linestring
 
 router = APIRouter(prefix="/lines", tags=["lines"])
-
-
-def _path_to_linestring(path: Optional[list[list[float]]]) -> Optional[str]:
-    if path is None or len(path) < 2:
-        return None
-    coords = ", ".join(f"{lon} {lat}" for lon, lat in path)
-    return f"SRID=4326;LINESTRING({coords})"
 
 
 @router.post("/", response_model=LineRead, status_code=201)
@@ -28,7 +22,7 @@ def create_line(line_data: LineCreate, db: Session = Depends(get_db)) -> LineRea
     Path is optional; new lines (e.g. from recordings) often have no path yet.
     A daily cron job computes line paths from recording geopoints.
     """
-    path_wkt = _path_to_linestring(line_data.path) if line_data.path else None
+    path_wkt = path_to_linestring(line_data.path) if line_data.path else None
 
     line = Line(
         name=line_data.name,
@@ -88,7 +82,7 @@ def update_line(
     update_data = line_data.model_dump(exclude_unset=True)
 
     if "path" in update_data:
-        path_wkt = _path_to_linestring(update_data.pop("path"))
+        path_wkt = path_to_linestring(update_data.pop("path"))
         line.path = path_wkt
 
     for key, value in update_data.items():

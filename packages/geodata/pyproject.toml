@@ -1,0 +1,26 @@
+[project]
+name = "geodata"
+version = "0.1.0"
+description = "Geodata processing utilities"
+requires-python = ">=3.13"
+dependencies = [
+  "geoalchemy2>=0.18.4",
+  "psycopg2>=2.9.11",
+  "psycopg2-binary>=2.9.11",
+  "shapely>=2.0.0",
+  "sqlalchemy>=2.0.48",
+  "database>=0.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+geodata = "geodata.cli:main"
+
+[tool.uv.sources]
+database = {path = "../database", editable = true}

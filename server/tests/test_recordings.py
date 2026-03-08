@@ -5,8 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from models.line import Line, LineStatus
-from models.recording import (
+from database.models.line import Line, LineStatus
+from database.models.recording import (
     LocationPoint,
     RecordingSession,
     RecordingStatus,

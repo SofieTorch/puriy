@@ -22,10 +22,10 @@ TEST_DATABASE_URL = os.getenv(
 # Override DATABASE_URL so app modules use the test database
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
-from database import get_db
+from database.connection import get_db
 from main import app
-from models.line import Line, LineStatus
-from models.recording import RecordingSession, RecordingStatus
+from database.models.line import Line, LineStatus
+from database.models.recording import RecordingSession, RecordingStatus
 
 
 def _create_test_database_if_not_exists():

@@ -1,23 +1,26 @@
 from datetime import datetime, timedelta
 from typing import Sequence
 
+from database.models.line import Line, LineStatus
+from database.models.recording import (
+    LocationPoint,
+    RecordingSession,
+    RecordingStatus,
+    SensorReading,
+)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from database import get_db
-from models.line import Line, LineStatus
-from models.recording import (
+from database.connection import get_db
+from geodata.simplify import simplify_recording_session
+from schemas.recording import (
     EndRecordingRequest,
-    LocationPoint,
     LocationPointBatch,
     LocationPointCreate,
     LocationPointRead,
-    RecordingSession,
     RecordingSessionCreate,
     RecordingSessionRead,
-    RecordingStatus,
-    SensorReading,
     SensorReadingBatch,
     SensorReadingCreate,
     SensorReadingRead,
@@ -421,6 +424,36 @@ def cleanup_stale_sessions(
         "abandoned_count": abandoned_count,
         "session_ids": [s.id for s in stale_sessions]
     }
+
+
+@router.post("/{session_id}/simplify", response_model=RecordingSessionRead)
+def simplify_recording(
+    session_id: int,
+    tolerance: float = Query(
+        default=0.00005,
+        ge=0.000001,
+        description="RDP tolerance in degrees (WGS84); ~0.00005 ≈ 5 m",
+    ),
+    db: Session = Depends(get_db),
+) -> RecordingSessionRead:
+    """
+    Apply PostGIS ST_Simplify (Douglas-Peucker) to the recording session path.
+
+    Overwrites computed_path with the simplified linestring and removes
+    location points that were filtered out by the algorithm.
+    """
+    session = db.get(RecordingSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Recording session not found")
+
+    try:
+        simplify_recording_session(db, session_id, tolerance=tolerance)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    db.commit()
+    db.refresh(session)
+    return RecordingSessionRead.model_validate(session)
 
 
 @router.post("/{session_id}/resume", response_model=RecordingSessionRead)
