@@ -99,3 +99,38 @@ export async function requestBackgroundPermission(): Promise<boolean> {
   const { status } = await Location.requestBackgroundPermissionsAsync();
   return status === 'granted';
 }
+
+/** Check if foreground and background location permissions are granted. */
+export async function checkLocationPermissions(): Promise<{
+  foreground: boolean;
+  background: boolean;
+}> {
+  const [fg, bg] = await Promise.all([
+    Location.getForegroundPermissionsAsync(),
+    Location.getBackgroundPermissionsAsync(),
+  ]);
+  return {
+    foreground: fg.status === 'granted',
+    background: bg.status === 'granted',
+  };
+}
+
+/**
+ * Refresh permission status using request APIs - use when returning from settings.
+ * If already granted, request returns granted without showing a prompt.
+ * This works around expo-location returning stale status from get*Async.
+ */
+export async function refreshPermissionsAfterSettingsReturn(): Promise<{
+  foreground: boolean;
+  background: boolean;
+}> {
+  const fg = await Location.requestForegroundPermissionsAsync();
+  if (fg.status !== 'granted') {
+    return { foreground: false, background: false };
+  }
+  const bg = await Location.requestBackgroundPermissionsAsync();
+  return {
+    foreground: true,
+    background: bg.status === 'granted',
+  };
+}

@@ -8,13 +8,18 @@ import {
   startBackgroundLocation,
   stopBackgroundLocation,
   onLocationBatch,
-  requestBackgroundPermission,
+  checkLocationPermissions,
+  refreshPermissionsAfterSettingsReturn,
 } from '@/services/background-location';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  AppState,
+  Linking,
+  Modal,
   Platform,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +27,7 @@ import LottieView from 'lottie-react-native';
 
 import { SwipeSwitch } from '@/components/swipe-switch';
 import { ThemedView } from '@/components/themed-view';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { SensorReading } from '@/services/api';
@@ -54,6 +60,9 @@ export default function RecordScreen() {
   // Line selection modal (shown after stopping)
   const [showLineModal, setShowLineModal] = useState(false);
 
+  // Permission modal (shown when location permissions not granted)
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
+
   // Snapshot of stats at the moment recording stopped (so the modal shows stable values)
   const finalDuration = useRef(0);
   const finalPoints = useRef(0);
@@ -62,10 +71,54 @@ export default function RecordScreen() {
   const accelSubscription = useRef<ReturnType<typeof Accelerometer.addListener> | null>(null);
   const gyroSubscription = useRef<ReturnType<typeof Gyroscope.addListener> | null>(null);
   const durationInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const userWentToSettings = useRef(false);
+
+  const refreshPermissionStatus = useCallback(async () => {
+    const { foreground, background } = await checkLocationPermissions();
+    const granted = foreground && background;
+    setLocationPermission(granted);
+    if (!granted) {
+      setShowPermissionModal(true);
+    } else {
+      setShowPermissionModal(false);
+    }
+  }, []);
+
+  const refreshAfterReturnFromSettings = useCallback(async () => {
+    const { foreground, background } = await refreshPermissionsAfterSettingsReturn();
+    const granted = foreground && background;
+    setLocationPermission(granted);
+    setShowPermissionModal(!granted);
+    userWentToSettings.current = false;
+  }, []);
 
   useEffect(() => {
-    requestLocationPermission();
-  }, []);
+    refreshPermissionStatus();
+  }, [refreshPermissionStatus]);
+
+  // Re-check when Record tab gains focus
+  useFocusEffect(
+    useCallback(() => {
+      refreshPermissionStatus();
+    }, [refreshPermissionStatus])
+  );
+
+  // When returning from settings, use request-based refresh (fixes stale get*Async)
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && userWentToSettings.current) {
+        timeoutId = setTimeout(() => {
+          refreshAfterReturnFromSettings();
+          timeoutId = null;
+        }, 400);
+      }
+    });
+    return () => {
+      sub.remove();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [refreshAfterReturnFromSettings]);
 
   // Subscribe to background location updates for points count
   useEffect(() => {
@@ -96,21 +149,10 @@ export default function RecordScreen() {
     };
   }, []);
 
-  const requestLocationPermission = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    const granted = status === 'granted';
-    setLocationPermission(granted);
-
-    if (!granted) {
-      Alert.alert(
-        'Location Permission Required',
-        'Please enable location services to record transit data.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-    // Request background permission so recording continues when app is minimized
-    await requestBackgroundPermission();
+  const handleOpenSettings = () => {
+    userWentToSettings.current = true;
+    setShowPermissionModal(false);
+    Linking.openSettings();
   };
 
   const startDataCollection = useCallback(async (localRecordingId: number) => {
@@ -176,7 +218,7 @@ export default function RecordScreen() {
   const handleRecordingToggle = async (shouldRecord: boolean) => {
     if (shouldRecord) {
       if (!locationPermission) {
-        Alert.alert('Permission Required', 'Location permission is required to record.');
+        setShowPermissionModal(true);
         return;
       }
 
@@ -299,6 +341,36 @@ export default function RecordScreen() {
           />
         </View>
         </View>
+
+        <Modal
+          visible={showPermissionModal}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setShowPermissionModal(false)}
+        >
+          <View className="flex-1 justify-center bg-black/50 px-6">
+            <View className="rounded-2xl bg-white p-6">
+              <Text className="mb-2 text-xl font-bold text-gray-900">
+                Permiso de ubicación
+              </Text>
+              <Text className="mb-4 text-base leading-6 text-gray-600">
+                Para capturar tu recorrido completo mientras usas la app o la tienes en segundo plano (por ejemplo, con la pantalla bloqueada), necesitamos acceso a tu ubicación en todo momento durante la grabación.
+              </Text>
+              <Text className="mb-6 text-sm leading-5 text-gray-500">
+                {Platform.OS === 'ios'
+                  ? "A continuación, toca «Ubicación» y elige «Siempre»."
+                  : "A continuación, toca «Permisos» y activa «Ubicación» con «Permitir todo el tiempo»."}
+              </Text>
+              <TouchableOpacity
+                className="items-center rounded-xl bg-[#09A6F3] py-3.5"
+                onPress={handleOpenSettings}
+                activeOpacity={0.8}
+              >
+                <Text className="text-base font-semibold text-white">Continuar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         <SaveRecordModal
           visible={showLineModal}
