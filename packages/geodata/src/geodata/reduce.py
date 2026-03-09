@@ -46,10 +46,12 @@ def _match_kept_point_ids(
     return kept_ids
 
 
-def simplify_recording_session(
+def reduce_linestring_from_recording_session(
     db: Session,
     session_id: int,
     tolerance: float = 0.00005,
+    *,
+    return_coords: bool = False,
 ) -> dict[str, Any]:
     """
     Apply PostGIS ST_Simplify (Douglas-Peucker) to a recording session.
@@ -114,7 +116,8 @@ def simplify_recording_session(
     # Delete location points not in kept set
     to_delete = [p for p in points if p.id not in kept_ids]
     for p in to_delete:
-        db.delete(p)
+        # db.delete(p)
+        pass
 
     # Update session computed_path with simplified geometry
     session.computed_path = func.ST_GeomFromEWKT(simplified_wkt)
@@ -122,8 +125,13 @@ def simplify_recording_session(
     db.flush()
     points_after = len(kept_ids)
 
-    return {
+    result: dict[str, Any] = {
         "points_before": points_before,
         "points_after": points_after,
         "points_removed": points_before - points_after,
     }
+    if return_coords:
+        coords_before = [(p.longitude, p.latitude) for p in points]
+        result["coords_before"] = coords_before
+        result["coords_after"] = simplified_coords
+    return result

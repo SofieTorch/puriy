@@ -8,7 +8,7 @@
 //   : 'https://api.yourdomain.com';  // Production
 
 // const API_BASE_URL = 'https://movility-cbba-ndkpt.ondigitalocean.app';
-export const API_BASE_URL = 'http://172.28.41.230:8000';
+export const API_BASE_URL = 'http://10.165.187.148:8000';
 const SERVER_CHECK_TIMEOUT_MS = 3000;
 
 /** True when the backend host responds (any HTTP status). */
