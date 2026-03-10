@@ -1,4 +1,6 @@
 import streamlit as st
+import pydeck as pdk
+from geoalchemy2.shape import to_shape
 from sqlalchemy import select
 
 from database.connection import SessionLocal
@@ -109,6 +111,60 @@ if selected_line:
                         .order_by(LocationPoint.timestamp)
                     ).scalars().all()
                 )
+
+            # Build path from computed_path or fall back to location_points
+            path_coords = None
+            if selected_session.computed_path is not None:
+                try:
+                    geom = to_shape(selected_session.computed_path)
+                    path_coords = [[c[0], c[1]] for c in geom.coords]
+                except Exception:
+                    path_coords = None
+            if path_coords is None and location_points:
+                path_coords = [[p.longitude, p.latitude] for p in location_points]
+
+            num_points = len(location_points)
+            st.metric("Puntos de ubicación", num_points)
+
+            if path_coords:
+                center_lat = sum(c[1] for c in path_coords) / len(path_coords)
+                center_lon = sum(c[0] for c in path_coords) / len(path_coords)
+                st.subheader("Trayecto")
+                layers = [
+                    pdk.Layer(
+                        "PathLayer",
+                        data=[{"path": path_coords}],
+                        get_path="path",
+                        get_color=[59, 130, 246],
+                        get_width=12,
+                    ),
+                ]
+                if location_points:
+                    layers.append(
+                        pdk.Layer(
+                            "ScatterplotLayer",
+                            data=[{"coordinates": [p.longitude, p.latitude]} for p in location_points],
+                            get_position="coordinates",
+                            get_color=[239, 68, 68],
+                            get_radius=8,
+                            radius_min_pixels=4,
+                        ),
+                    )
+                st.pydeck_chart(
+                    pdk.Deck(
+                        map_style=None,
+                        initial_view_state=pdk.ViewState(
+                            latitude=center_lat,
+                            longitude=center_lon,
+                            zoom=14,
+                            pitch=0,
+                        ),
+                        layers=layers,
+                    ),
+                    use_container_width=True,
+                )
+            else:
+                st.info("No hay trayectoria para mostrar (sin computed_path ni puntos de ubicación)")
 
             if location_points:
                 st.subheader("Puntos de ubicación")
