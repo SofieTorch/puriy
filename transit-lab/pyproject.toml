@@ -1,0 +1,23 @@
+[project]
+name = "transit-lab"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "geoalchemy2>=0.18.4",
+    "marimo>=0.20.4",
+    "pandas>=3.0.1",
+    "shapely>=2.1.2",
+    "sqlalchemy>=2.0.48",
+    "database>=0.1.0",
+    "geodata>=0.1.0",
+    "altair>=6.0.0",
+    "plotly>=5.24.0",
+    "pydeck>=0.9.1",
+    "ipython>=9.11.0",
+]
+
+[tool.uv.sources]
+database = {path = "../packages/database", editable = true}
+geodata = {path = "../packages/geodata", editable = true}
