@@ -50,6 +50,8 @@ class RecordingSession(RecordingSessionBase, table=True):
         ),
     )
 
+    reduced_points: Optional[int] = Field(default=None, description="Points removed by path simplification")
+    
     line: Optional["Line"] = Relationship(back_populates="recordings")
     location_points: list["LocationPoint"] = Relationship(back_populates="session")
     sensor_readings: list["SensorReading"] = Relationship(back_populates="session")

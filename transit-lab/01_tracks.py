@@ -6,6 +6,8 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
+    import math
+
     import marimo as mo
     import pandas as pd
     import pydeck as pdk
@@ -22,18 +24,21 @@ def _():
         LocationPoint,
         RecordingSession,
         SessionLocal,
+        math,
         mo,
         pd,
         pdk,
+        reduce_linestring_from_recording_session,
         select,
         to_shape,
     )
 
 
 @app.cell
-def _(SessionLocal):
+def _(mo, SessionLocal):
     db = SessionLocal()
-    return (db,)
+    get_refresh, set_refresh = mo.state(0)
+    return (db, get_refresh, set_refresh)
 
 
 @app.cell
@@ -98,13 +103,14 @@ def _(RecordingSession, db, lines_table, mo, pd, select):
                         "ended_at": s.ended_at,
                         "direction": s.direction or "—",
                         "device_model": s.device_model or "—",
+                        "reduced_points": s.reduced_points if s.reduced_points is not None else "—",
                     }
                     for s in sessions
                 ]
             )
             sessions_table = mo.ui.table(
                 data=sessions_df,
-                label="Recording sessions",
+                label="",
                 pagination=True,
                 selection="single",
             )
@@ -115,14 +121,20 @@ def _(RecordingSession, db, lines_table, mo, pd, select):
 
 
 @app.cell
-def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
+def _(LocationPoint, db, get_refresh, math, mo, pdk, select, sessions, sessions_table, to_shape):
     # This cell builds map data and zoom buttons (does not access button .value)
     if sessions_table is None or not sessions:
         zoom_in_btn = zoom_out_btn = None
         view_3d_switch = None
+        reduce_btn = None
         center_lat = center_lon = None
         layers = []
+        geo_points_count = None
+        selected_session = None
+        duration_seconds = None
+        distance_m = None
     else:
+        _ = get_refresh()  # Re-run when refresh is triggered (e.g. after reduce)
         selected_sessions = sessions_table.value
         selected_session = None
         if (
@@ -163,10 +175,22 @@ def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
             [236, 72, 153],   # pink
             [20, 184, 166],   # teal
         ]
+        def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+            R = 6_371_000  # Earth radius in meters
+            phi1, phi2 = math.radians(lat1), math.radians(lat2)
+            dphi = math.radians(lat2 - lat1)
+            dlambda = math.radians(lon2 - lon1)
+            a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return R * c
+
         path_layer_data = []
         all_coords = []
         selected_trip_data = None
         scatter_data = []
+        geo_points_count = None
+        duration_seconds = None
+        distance_m = None
 
         for i, s in enumerate(sessions):
             path_coords = _path_coords(s)
@@ -192,6 +216,17 @@ def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
                         {"coordinates": [p.longitude, p.latitude, p.altitude or 0]}
                         for p in (loc_pts or [])
                     ]
+                    geo_points_count = len(loc_pts) if loc_pts else 0
+                    end_time = s.ended_at or s.last_activity_at
+                    duration_seconds = (
+                        int((end_time - s.started_at).total_seconds())
+                        if end_time else None
+                    )
+                    distance_m = 0.0
+                    for j in range(len(path_coords) - 1):
+                        lon1, lat1 = path_coords[j][0], path_coords[j][1]
+                        lon2, lat2 = path_coords[j + 1][0], path_coords[j + 1][1]
+                        distance_m += _haversine_m(lon1, lat1, lon2, lat2)
 
         layers = []
         if path_layer_data:
@@ -260,24 +295,45 @@ def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
             kind="neutral",
         )
         view_3d_switch = mo.ui.switch(value=True, label="3D view")
+        reduce_btn = mo.ui.button(
+            label="Simplify path",
+            value=0,
+            on_click=lambda v: (v or 0) + 1,
+            kind="neutral",
+            disabled=selected_session is None,
+        )
     return (
         center_lat,
         center_lon,
+        distance_m,
+        duration_seconds,
+        geo_points_count,
         layers,
+        reduce_btn,
+        selected_session,
         view_3d_switch,
         zoom_in_btn,
         zoom_out_btn,
     )
 
 
+
 @app.cell
 def _(
     center_lat,
     center_lon,
+    db,
+    distance_m,
+    duration_seconds,
+    geo_points_count,
     layers,
     mo,
     pdk,
+    reduce_btn,
+    reduce_linestring_from_recording_session,
+    selected_session,
     sessions_table,
+    set_refresh,
     view_3d_switch,
     zoom_in_btn,
     zoom_out_btn,
@@ -294,6 +350,41 @@ def _(
     ):
         map_display = None
     else:
+        def _format_duration(seconds: int | None) -> str:
+            if seconds is None:
+                return "—"
+            h, r = divmod(seconds, 3600)
+            m, s = divmod(r, 60)
+            if h:
+                return f"{h}h {m}m"
+            if m:
+                return f"{m}m {s}s"
+            return f"{s}s"
+
+
+        def _format_distance(m: float | None) -> str:
+            if m is None:
+                return "—"
+            if m >= 1000:
+                return f"{m / 1000:.1f} km"
+            return f"{int(m)} m"
+
+        if reduce_btn and (reduce_btn.value or 0) > 0:
+            session_selection = sessions_table.value
+            if (
+                session_selection is not None
+                and not session_selection.empty
+                and "id" in session_selection.columns
+            ):
+                session_id = int(session_selection["id"].iloc[0])
+                try:
+                    reduce_linestring_from_recording_session(db, session_id)
+                    db.commit()
+                    if selected_session and selected_session.id == session_id:
+                        db.refresh(selected_session)
+                    set_refresh(lambda v: v + 1)  # Trigger re-fetch so map/stats update
+                except Exception:
+                    db.rollback()
         zoom_level = 14 + (zoom_in_btn.value or 0) - (zoom_out_btn.value or 0)
         zoom_level = min(20, max(8, zoom_level))
         pitch = 60 if view_3d_switch.value else 0
@@ -330,7 +421,34 @@ def _(
             ],
             align="stretch",
         )
-        table_section = mo.vstack([sessions_table]).style(
+        table_header = (
+            mo.hstack(
+                [mo.md("**Recording sessions**"), reduce_btn],
+                justify="space-between",
+                align="center",
+            )
+            if reduce_btn
+            else mo.md("**Recording sessions**")
+        )
+        stats_display = None
+        if selected_session and geo_points_count is not None:
+            reduced = selected_session.reduced_points or 0
+            stats_display = mo.hstack(
+                [
+                    mo.stat(geo_points_count, label="Geopoints", bordered=False),
+                    mo.stat(reduced, label="Reduced", bordered=False),
+                    mo.stat(_format_duration(duration_seconds), label="Time", bordered=False),
+                    mo.stat(_format_distance(distance_m), label="Distance", bordered=False),
+                ],
+                gap=1,
+                align="stretch",
+                justify="start",
+            )
+        table_content = []
+        if stats_display is not None:
+            table_content.append(stats_display)
+        table_content.extend([table_header, sessions_table])
+        table_section = mo.vstack(table_content).style(
             style={"max-width": "540px"},
             overflow_x="auto",
         )

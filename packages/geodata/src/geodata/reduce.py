@@ -116,14 +116,15 @@ def reduce_linestring_from_recording_session(
     # Delete location points not in kept set
     to_delete = [p for p in points if p.id not in kept_ids]
     for p in to_delete:
-        # db.delete(p)
-        pass
+        db.delete(p)
 
-    # Update session computed_path with simplified geometry
-    session.computed_path = func.ST_GeomFromEWKT(simplified_wkt)
-
-    db.flush()
+    # Update session with simplified geometry and reduced_points count
     points_after = len(kept_ids)
+    points_removed = points_before - points_after
+
+    session.reduced_points = points_removed
+    session.computed_path = func.ST_GeomFromEWKT(simplified_wkt)
+    db.flush()
 
     result: dict[str, Any] = {
         "points_before": points_before,
