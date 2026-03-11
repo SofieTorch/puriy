@@ -12,7 +12,7 @@ def _():
     import pandas as pd
     import pydeck as pdk
     from geoalchemy2.shape import to_shape
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     from database.connection import SessionLocal
     from database.models.line import Line, LineStatus
@@ -24,6 +24,7 @@ def _():
         LocationPoint,
         RecordingSession,
         SessionLocal,
+        func,
         math,
         mo,
         pd,
@@ -121,7 +122,7 @@ def _(RecordingSession, db, lines_table, mo, pd, select):
 
 
 @app.cell
-def _(LocationPoint, db, get_refresh, math, mo, pdk, select, sessions, sessions_table, to_shape):
+def _(LocationPoint, db, func, get_refresh, math, mo, pdk, select, sessions, sessions_table, to_shape):
     # This cell builds map data and zoom buttons (does not access button .value)
     if sessions_table is None or not sessions:
         zoom_in_btn = zoom_out_btn = None
@@ -133,6 +134,10 @@ def _(LocationPoint, db, get_refresh, math, mo, pdk, select, sessions, sessions_
         selected_session = None
         duration_seconds = None
         distance_m = None
+        agg_geo_points = None
+        agg_reduced = None
+        agg_duration_seconds = None
+        agg_distance_m = None
     else:
         _ = get_refresh()  # Re-run when refresh is triggered (e.g. after reduce)
         selected_sessions = sessions_table.value
@@ -192,6 +197,20 @@ def _(LocationPoint, db, get_refresh, math, mo, pdk, select, sessions, sessions_
         duration_seconds = None
         distance_m = None
 
+        # Aggregated stats across all sessions
+        session_ids = [s.id for s in sessions]
+        geo_counts = dict(
+            db.execute(
+                select(LocationPoint.session_id, func.count(LocationPoint.id))
+                .where(LocationPoint.session_id.in_(session_ids))
+                .group_by(LocationPoint.session_id)
+            ).all()
+        )
+        agg_geo_points = sum(geo_counts.get(sid, 0) for sid in session_ids)
+        agg_reduced = sum((s.reduced_points or 0) for s in sessions)
+        agg_duration_seconds = 0
+        agg_distance_m = 0.0
+
         for i, s in enumerate(sessions):
             path_coords = _path_coords(s)
             if path_coords:
@@ -202,6 +221,17 @@ def _(LocationPoint, db, get_refresh, math, mo, pdk, select, sessions, sessions_
                         "color": PATH_COLORS[i % len(PATH_COLORS)],
                     })
                 all_coords.extend(path_coords)
+
+                # Per-session distance and duration for aggregates
+                session_distance = 0.0
+                for j in range(len(path_coords) - 1):
+                    lon1, lat1 = path_coords[j][0], path_coords[j][1]
+                    lon2, lat2 = path_coords[j + 1][0], path_coords[j + 1][1]
+                    session_distance += _haversine_m(lon1, lat1, lon2, lat2)
+                agg_distance_m += session_distance
+                end_time = s.ended_at or s.last_activity_at
+                if end_time:
+                    agg_duration_seconds += int((end_time - s.started_at).total_seconds())
 
                 if is_selected:
                     loc_pts = list(
@@ -217,16 +247,11 @@ def _(LocationPoint, db, get_refresh, math, mo, pdk, select, sessions, sessions_
                         for p in (loc_pts or [])
                     ]
                     geo_points_count = len(loc_pts) if loc_pts else 0
-                    end_time = s.ended_at or s.last_activity_at
                     duration_seconds = (
                         int((end_time - s.started_at).total_seconds())
                         if end_time else None
                     )
-                    distance_m = 0.0
-                    for j in range(len(path_coords) - 1):
-                        lon1, lat1 = path_coords[j][0], path_coords[j][1]
-                        lon2, lat2 = path_coords[j + 1][0], path_coords[j + 1][1]
-                        distance_m += _haversine_m(lon1, lat1, lon2, lat2)
+                    distance_m = session_distance
 
         layers = []
         if path_layer_data:
@@ -303,6 +328,10 @@ def _(LocationPoint, db, get_refresh, math, mo, pdk, select, sessions, sessions_
             disabled=selected_session is None,
         )
     return (
+        agg_distance_m,
+        agg_duration_seconds,
+        agg_geo_points,
+        agg_reduced,
         center_lat,
         center_lon,
         distance_m,
@@ -320,6 +349,10 @@ def _(LocationPoint, db, get_refresh, math, mo, pdk, select, sessions, sessions_
 
 @app.cell
 def _(
+    agg_distance_m,
+    agg_duration_seconds,
+    agg_geo_points,
+    agg_reduced,
     center_lat,
     center_lon,
     db,
@@ -439,6 +472,22 @@ def _(
                     mo.stat(reduced, label="Reduced", bordered=False),
                     mo.stat(_format_duration(duration_seconds), label="Time", bordered=False),
                     mo.stat(_format_distance(distance_m), label="Distance", bordered=False),
+                ],
+                gap=1,
+                align="stretch",
+                justify="start",
+            )
+        elif selected_session is None and agg_geo_points is not None:
+            stats_display = mo.hstack(
+                [
+                    mo.stat(agg_geo_points, label="Geopoints", bordered=False),
+                    mo.stat(agg_reduced or 0, label="Reduced", bordered=False),
+                    mo.stat(_format_duration(agg_duration_seconds or 0), label="Time", bordered=False),
+                    mo.stat(
+                        f"{agg_distance_m / 1000:.1f} km" if agg_distance_m else "—",
+                        label="Distance",
+                        bordered=False,
+                    ),
                 ],
                 gap=1,
                 align="stretch",
