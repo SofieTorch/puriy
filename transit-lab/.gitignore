@@ -102,6 +102,7 @@ Thumbs.db
 
 # Marimo (notebook runner)
 .marimo/
+__marimo__/
 
 # Local result files
 results/

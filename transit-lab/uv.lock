@@ -964,6 +964,7 @@ dependencies = [
     { name = "pydeck" },
     { name = "shapely" },
     { name = "sqlalchemy" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
@@ -979,6 +980,7 @@ requires-dist = [
     { name = "pydeck", specifier = ">=0.9.1" },
     { name = "shapely", specifier = ">=2.1.2" },
     { name = "sqlalchemy", specifier = ">=2.0.48" },
+    { name = "uvicorn", specifier = ">=0.30.0" },
 ]
 
 [[package]]
