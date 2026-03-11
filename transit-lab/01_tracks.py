@@ -119,6 +119,7 @@ def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
     # This cell builds map data and zoom buttons (does not access button .value)
     if sessions_table is None or not sessions:
         zoom_in_btn = zoom_out_btn = None
+        view_3d_switch = None
         center_lat = center_lon = None
         layers = []
     else:
@@ -229,6 +230,9 @@ def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
                     get_color=[239, 68, 68],
                     get_radius=4,
                     radius_min_pixels=4,
+                    stroked=True,
+                    get_line_color=[255, 255, 255],
+                    line_width_min_pixels=1,
                 ),
             )
 
@@ -255,7 +259,15 @@ def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
             on_click=lambda v: (v or 0) + 1,
             kind="neutral",
         )
-    return center_lat, center_lon, layers, zoom_in_btn, zoom_out_btn
+        view_3d_switch = mo.ui.switch(value=True, label="3D view")
+    return (
+        center_lat,
+        center_lon,
+        layers,
+        view_3d_switch,
+        zoom_in_btn,
+        zoom_out_btn,
+    )
 
 
 @app.cell
@@ -266,14 +278,16 @@ def _(
     mo,
     pdk,
     sessions_table,
+    view_3d_switch,
     zoom_in_btn,
     zoom_out_btn,
 ):
-    # This cell reads zoom button values (created in previous cell) to build the deck
+    # This cell reads zoom button and switch values (created in previous cell) to build the deck
     if (
         sessions_table is None
         or zoom_in_btn is None
         or zoom_out_btn is None
+        or view_3d_switch is None
         or center_lat is None
         or center_lon is None
         or not layers
@@ -282,6 +296,7 @@ def _(
     else:
         zoom_level = 14 + (zoom_in_btn.value or 0) - (zoom_out_btn.value or 0)
         zoom_level = min(20, max(8, zoom_level))
+        pitch = 60 if view_3d_switch.value else 0
 
         deck = pdk.Deck(
             map_style="light",
@@ -290,15 +305,15 @@ def _(
                 latitude=center_lat,
                 longitude=center_lon,
                 zoom=zoom_level,
-                pitch=60,
+                pitch=pitch,
                 bearing=0,
             ),
             layers=layers,
             height=500,
         )
         zoom_controls = mo.hstack(
-            [zoom_out_btn, zoom_in_btn],
-            gap=0.25,
+            [zoom_out_btn, zoom_in_btn, view_3d_switch],
+            gap=0.5,
             justify="start",
         )
         map_section = mo.vstack(
@@ -316,7 +331,7 @@ def _(
             align="stretch",
         )
         table_section = mo.vstack([sessions_table]).style(
-            style={"max-width": "500px"},
+            style={"max-width": "540px"},
             overflow_x="auto",
         )
         map_display = mo.hstack(
