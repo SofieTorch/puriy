@@ -116,9 +116,11 @@ def _(RecordingSession, db, lines_table, mo, pd, select):
 
 @app.cell
 def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
-    # This cell reads sessions_table.value (created in previous cell) to build the map
+    # This cell builds map data and zoom buttons (does not access button .value)
     if sessions_table is None or not sessions:
-        map_output = None
+        zoom_in_btn = zoom_out_btn = None
+        center_lat = center_lon = None
+        layers = []
     else:
         selected_sessions = sessions_table.value
         selected_session = None
@@ -168,13 +170,15 @@ def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
         for i, s in enumerate(sessions):
             path_coords = _path_coords(s)
             if path_coords:
-                path_layer_data.append({
-                    "path": path_coords,
-                    "color": PATH_COLORS[i % len(PATH_COLORS)],
-                })
+                is_selected = selected_session and s.id == selected_session.id
+                if not is_selected:
+                    path_layer_data.append({
+                        "path": path_coords,
+                        "color": PATH_COLORS[i % len(PATH_COLORS)],
+                    })
                 all_coords.extend(path_coords)
 
-                if selected_session and s.id == selected_session.id:
+                if is_selected:
                     loc_pts = list(
                         db.execute(
                             select(LocationPoint)
@@ -223,7 +227,7 @@ def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
                     data=scatter_data,
                     get_position="coordinates",
                     get_color=[239, 68, 68],
-                    get_radius=15,
+                    get_radius=4,
                     radius_min_pixels=4,
                 ),
             )
@@ -239,26 +243,91 @@ def _(LocationPoint, db, mo, pdk, select, sessions, sessions_table, to_shape):
         center_lat = sum(lats) / len(lats) if lats else 40.4
         center_lon = sum(lons) / len(lons) if lons else -3.7
 
+        zoom_in_btn = mo.ui.button(
+            label="+",
+            value=0,
+            on_click=lambda v: (v or 0) + 1,
+            kind="neutral",
+        )
+        zoom_out_btn = mo.ui.button(
+            label="−",
+            value=0,
+            on_click=lambda v: (v or 0) + 1,
+            kind="neutral",
+        )
+    return center_lat, center_lon, layers, zoom_in_btn, zoom_out_btn
+
+
+@app.cell
+def _(
+    center_lat,
+    center_lon,
+    layers,
+    mo,
+    pdk,
+    sessions_table,
+    zoom_in_btn,
+    zoom_out_btn,
+):
+    # This cell reads zoom button values (created in previous cell) to build the deck
+    if (
+        sessions_table is None
+        or zoom_in_btn is None
+        or zoom_out_btn is None
+        or center_lat is None
+        or center_lon is None
+        or not layers
+    ):
+        map_display = None
+    else:
+        zoom_level = 14 + (zoom_in_btn.value or 0) - (zoom_out_btn.value or 0)
+        zoom_level = min(20, max(8, zoom_level))
+
         deck = pdk.Deck(
             map_style="light",
             map_provider="carto",
             initial_view_state=pdk.ViewState(
                 latitude=center_lat,
                 longitude=center_lon,
-                zoom=14,
+                zoom=zoom_level,
                 pitch=60,
                 bearing=0,
             ),
             layers=layers,
+            height=500,
         )
-        map_output = mo.hstack(
-            [deck, sessions_table],
-            widths="equal",
+        zoom_controls = mo.hstack(
+            [zoom_out_btn, zoom_in_btn],
+            gap=0.25,
+            justify="start",
+        )
+        map_section = mo.vstack(
+            [
+                mo.hstack(
+                    [
+                        zoom_controls,
+                        mo.md("_Scroll to zoom · Drag to pan_"),
+                    ],
+                    justify="start",
+                    gap=1,
+                ),
+                deck,
+            ],
+            align="stretch",
+        )
+        table_section = mo.vstack([sessions_table]).style(
+            style={"max-width": "500px"},
+            overflow_x="auto",
+        )
+        map_display = mo.hstack(
+            [map_section, table_section],
+            widths=[1, 1],
             gap=1,
+            justify="start",
         )
 
 
-    map_output
+    map_display
     return
 
 
