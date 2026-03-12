@@ -6,7 +6,7 @@ from sqlmodel import SQLModel
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://sofi@localhost:5432/cbba_mobility",
+    "postgresql://sofia:Hemmo2828@localhost:5432/cbba_mobility",
 )
 
 engine = create_engine(DATABASE_URL, echo=True)

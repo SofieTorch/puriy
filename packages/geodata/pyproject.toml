@@ -5,7 +5,6 @@ description = "Geodata processing utilities"
 requires-python = ">=3.14"
 dependencies = [
   "geoalchemy2>=0.18.4",
-  "psycopg2>=2.9.11",
   "psycopg2-binary>=2.9.11",
   "shapely>=2.0.0",
   "sqlalchemy>=2.0.48",
