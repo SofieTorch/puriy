@@ -103,10 +103,8 @@ def _(Draw, folium, mo):
             "marker": False,
             "circlemarker": False,
         },
-        edit_options={"edit": True, "remove": True},
+        edit_options={"edit": False, "remove": True},
     ).add_to(draw_map)
-
-    folium.LatLngPopup().add_to(draw_map)
 
     draw_path_section = mo.vstack(
         [
