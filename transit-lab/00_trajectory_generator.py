@@ -6,13 +6,15 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
+    import folium
     import marimo as mo
+    from folium.plugins import Draw
     from sqlalchemy import select
 
     from database.connection import SessionLocal
     from database.models.line import Line, LineStatus
 
-    return Line, LineStatus, SessionLocal, mo, select
+    return Draw, Line, LineStatus, SessionLocal, folium, mo, select
 
 
 @app.cell
@@ -78,6 +80,49 @@ def _(Line, approved_line_selector, db, mo):
         else mo.md("No approved lines found.")
     )
     return (selected_line_info,)
+
+
+@app.cell
+def _(Draw, folium, mo):
+    draw_map = folium.Map(
+        location=[40.4168, -3.7038],
+        zoom_start=12,
+        tiles="CartoDB positron",
+        control_scale=True,
+    )
+
+    Draw(
+        export=True,
+        filename="trajectory.geojson",
+        position="topleft",
+        draw_options={
+            "polyline": True,
+            "polygon": False,
+            "rectangle": False,
+            "circle": False,
+            "marker": False,
+            "circlemarker": False,
+        },
+        edit_options={"edit": True, "remove": True},
+    ).add_to(draw_map)
+
+    folium.LatLngPopup().add_to(draw_map)
+
+    draw_path_section = mo.vstack(
+        [
+            mo.md("## Draw trajectory path"),
+            mo.md(
+                "Use the polyline tool (top-left) and click on the map to draw the path."
+            ),
+            mo.Html(draw_map._repr_html_()),
+            mo.md(
+                "_Tip: click **Export** on the map toolbar to download the drawn path as GeoJSON._"
+            ),
+        ],
+        gap=1,
+        align="start",
+    )
+    return (draw_path_section,)
 
 
 @app.cell
@@ -150,6 +195,7 @@ def _(
     approved_line_selector,
     create_line_button,
     create_line_feedback,
+    draw_path_section,
     mo,
     new_line_description,
     new_line_name,
@@ -173,7 +219,8 @@ def _(
     mo.vstack([
         approved_line_selector,
         selected_line_info,
-        accordion
+        accordion,
+        draw_path_section,
     ])
     return
 
