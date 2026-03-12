@@ -71,21 +71,13 @@ def _(Line, approved_line_selector, db, mo):
         selected_line = db.get(Line, selected_line_id)
 
     selected_line_info = (
-        mo.md(f"**Selected line:** `{selected_line.id}` -`{selected_line.name}` - `{selected_line.description or "No description"}`"
+        mo.md(
+            f"**Selected line:** `{selected_line.id}` - `{selected_line.name}` - `{selected_line.description or 'No description'}`"
         )
         if selected_line is not None
         else mo.md("No approved lines found.")
     )
     return (selected_line_info,)
-
-
-@app.cell
-def _(approved_line_selector, mo, selected_line_info):
-    mo.vstack([
-        approved_line_selector,
-        selected_line_info,
-    ])
-    return
 
 
 @app.cell
@@ -155,16 +147,17 @@ def _(
 
 @app.cell
 def _(
+    approved_line_selector,
     create_line_button,
     create_line_feedback,
     mo,
     new_line_description,
     new_line_name,
     new_line_status,
+    selected_line_info,
 ):
-    mo.vstack(
+    form_body = mo.vstack(
         [
-            mo.md("## Add a new line"),
             mo.hstack(
                 [new_line_name, new_line_description, new_line_status, create_line_button],
                 gap=1,
@@ -174,6 +167,14 @@ def _(
         gap=1,
         align="start",
     )
+
+    accordion = mo.accordion({"Add a new line": form_body})
+
+    mo.vstack([
+        approved_line_selector,
+        selected_line_info,
+        accordion
+    ])
     return
 
 
