@@ -24,7 +24,6 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL_ALEMBIC: postgresql://transit:transit_secret@db:5432/open_transit
       DATABASE_URL: postgresql://transit:transit_secret@db:5432/open_transit
       TEST_DATABASE_URL: postgresql://transit:transit_secret@db:5432/open_transit_test
     depends_on:

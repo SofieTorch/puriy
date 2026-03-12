@@ -13,7 +13,7 @@ from database.models.recording import LocationPoint, RecordingSession, SensorRea
 config = context.config
 
 # Override sqlalchemy.url with environment variable if present
-database_url = os.getenv("DATABASE_URL_ALEMBIC")
+database_url = os.getenv("DATABASE_URL")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 
