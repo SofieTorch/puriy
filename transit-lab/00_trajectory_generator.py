@@ -14,7 +14,6 @@ def _():
     import random
     from datetime import datetime, timedelta
     from folium.plugins import Draw
-    from geoalchemy2.shape import to_shape
     from sqlalchemy import select
 
     from database.connection import SessionLocal
@@ -34,7 +33,6 @@ def _():
         random,
         select,
         timedelta,
-        to_shape,
     )
 
 
@@ -111,7 +109,7 @@ def _(Line, approved_line_selector, db, mo):
         if selected_line is not None
         else mo.md("No approved lines found.")
     )
-    return selected_line, selected_line_info
+    return (selected_line_info,)
 
 
 @app.cell
@@ -152,18 +150,13 @@ def _(Draw, folium, mo):
         gap=1,
         align="start",
     )
-    route_source = mo.ui.dropdown(
-        options=["Selected approved line path", "Pasted GeoJSON route"],
-        value="Selected approved line path",
-        label="Route source",
-    )
     route_geojson_input = mo.ui.text_area(
         label="Pasted route GeoJSON",
         placeholder='Paste exported GeoJSON here (FeatureCollection/Feature/LineString).',
         value="",
         rows=8,
     )
-    return draw_path_section, route_geojson_input, route_source
+    return draw_path_section, route_geojson_input
 
 
 @app.cell
@@ -231,8 +224,6 @@ def _(
     perpendicular_noise_m,
     random,
     route_geojson_input,
-    route_source,
-    selected_line,
     set_last_generate_click,
     set_simulated_points,
     set_simulation_message,
@@ -244,7 +235,6 @@ def _(
     sim_target_points,
     timedelta,
     timestamp_jitter_s,
-    to_shape,
     zigzag_amplitude_m,
     zigzag_period_points,
 ):
@@ -289,15 +279,6 @@ def _(
                 continue
             route.append([float(coord[0]), float(coord[1])])
         return route
-
-    def _route_from_selected_line() -> list[list[float]]:
-        if selected_line is None or selected_line.path is None:
-            return []
-        try:
-            shape = to_shape(selected_line.path)
-            return [[float(lon), float(lat)] for lon, lat in shape.coords]
-        except Exception:
-            return []
 
     def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
         r = 6_371_000
@@ -384,10 +365,7 @@ def _(
 
         route_error = None
         try:
-            if route_source.value == "Pasted GeoJSON route":
-                route = _parse_route_from_geojson(route_geojson_input.value or "")
-            else:
-                route = _route_from_selected_line()
+            route = _parse_route_from_geojson(route_geojson_input.value or "")
         except Exception as exc:
             route = []
             route_error = str(exc)
@@ -659,7 +637,6 @@ def _(
     new_line_status,
     perpendicular_noise_m,
     route_geojson_input,
-    route_source,
     selected_line_info,
     sim_num_tracks,
     sim_sampling_rate_s,
@@ -685,57 +662,68 @@ def _(
     )
 
     accordion = mo.accordion({"Add a new line": form_body})
-    simulation_controls = mo.accordion(
-        {
-            "Simulation controls": mo.vstack(
-                [
-                    mo.hstack(
-                        [
-                            sim_num_tracks,
-                            sim_sampling_rate_s,
-                            sim_speed_mps,
-                            sim_speed_jitter_pct,
-                            sim_target_points,
-                            sim_seed,
-                        ],
-                        gap=1,
-                    ),
-                    mo.hstack(
-                        [
-                            gaussian_noise_m,
-                            perpendicular_noise_m,
-                            zigzag_amplitude_m,
-                            zigzag_period_points,
-                        ],
-                        gap=1,
-                    ),
-                    mo.hstack(
-                        [
-                            jump_probability,
-                            jump_distance_m,
-                            missing_probability,
-                            biased_drift_m_per_point,
-                            biased_bearing_deg,
-                        ],
-                        gap=1,
-                    ),
-                    mo.hstack(
-                        [lateral_drift_total_m, timestamp_jitter_s, generate_tracks_button],
-                        gap=1,
-                    ),
-                ],
-                gap=1,
-                align="start",
-            )
-        }
+    simulation_controls = mo.vstack(
+        [
+            mo.md("## Simulation controls"),
+            mo.hstack([
+                mo.vstack(
+                    [
+                        mo.md("**General sampling**"),
+                        sim_num_tracks,
+                        sim_sampling_rate_s,
+                        sim_speed_mps,
+                        sim_speed_jitter_pct,
+                        sim_target_points,
+                        sim_seed,
+                    ],
+                    justify="start",
+                ),
+                mo.vstack(
+                    [
+                        mo.md("**Drift and timing**"),
+                        biased_drift_m_per_point,
+                        biased_bearing_deg,
+                        lateral_drift_total_m,
+                        timestamp_jitter_s,
+                    ],
+                    justify="start",
+                    align="stretch",
+                ),
+            
+            ],align="start"),
+            mo.hstack([
+                mo.vstack(
+                    [
+                        mo.md("**Outliers and dropouts**"),
+                        jump_probability,
+                        jump_distance_m,
+                        missing_probability,
+                    ],
+                    justify="start",
+                    align="stretch",
+                ),
+                mo.vstack(
+                    [
+                        mo.md("**GPS and road-shape noise**"),
+                        gaussian_noise_m,
+                        perpendicular_noise_m,
+                        zigzag_amplitude_m,
+                        zigzag_period_points,
+                    ],
+                    justify="start",
+                ),
+            ], align="stretch"),
+            generate_tracks_button,
+        ],
+        gap=0.6,
+        align="start",
     )
 
     mo.vstack([
         approved_line_selector,
         selected_line_info,
         draw_path_section,
-        route_source,
-        route_geojson_input if route_source.value == "Pasted GeoJSON route" else mo.md(""),
+        route_geojson_input,
         simulation_controls,
         simulated_tracks_output,
         accordion,
