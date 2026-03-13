@@ -16,6 +16,7 @@ def _(mo):
 
 @app.cell
 def _():
+    import json
     import folium
     import math
     import marimo as mo
@@ -43,6 +44,7 @@ def _():
         folium,
         heading_and_perp,
         interpolate_route,
+        json,
         math,
         mo,
         offset_lon_lat,
@@ -62,13 +64,16 @@ def _(mo):
         "Set your controls and click **Generate simulated tracks**."
     )
     get_active_tab, set_active_tab = mo.state("Draw path")
+    get_loaded_config, set_loaded_config = mo.state(None)
     return (
         get_active_tab,
         get_last_generate_click,
+        get_loaded_config,
         get_simulated_points,
         get_simulation_message,
         set_active_tab,
         set_last_generate_click,
+        set_loaded_config,
         set_simulated_points,
         set_simulation_message,
     )
@@ -125,7 +130,32 @@ def _(
         #export:hover {
             background-color: #16a34a !important;
         }
-    </style>"""))
+    </style>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var exp = document.getElementById('export');
+            if (exp && window.showSaveFilePicker) {
+                exp.addEventListener('click', async function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try {
+                        var handle = await window.showSaveFilePicker({
+                            suggestedName: 'trajectory.geojson',
+                            types: [{description: 'GeoJSON', accept: {'application/geo+json': ['.geojson']}}]
+                        });
+                        var blob = new Blob([exp.href.startsWith('data:')
+                            ? decodeURIComponent(exp.href.split(',')[1])
+                            : ''], {type: 'application/geo+json'});
+                        var writable = await handle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                    } catch (err) {
+                        if (err.name !== 'AbortError') exp.click();
+                    }
+                }, true);
+            }
+        });
+    </script>"""))
 
     # Overlay the selected GeoJSON route
     _selected_path = geojson_file_browser.path(0) if geojson_file_browser.value else None
@@ -172,15 +202,17 @@ def _(Path, mo):
 
 
 @app.cell
-def _(mo):
+def _(get_loaded_config, mo):
+    _cfg = (get_loaded_config() or {}).get("sim_params", {})
+
     sim_params = mo.ui.dictionary({
-        "Number of tracks": mo.ui.number(value=5, start=1, stop=500, step=1),
-        "Sampling rate (s)": mo.ui.number(value=2.0, start=0.2, step=0.5),
-        "Base speed (m/s)": mo.ui.number(value=8.0, start=0.5, step=0.5),
-        "Speed jitter (%)": mo.ui.number(value=12.0, start=0, step=1),
-        "Target pts/track (0=auto)": mo.ui.number(value=0, start=0, step=10),
-        "Seed (-1=random)": mo.ui.number(value=42, start=-1, step=1),
-    },label="General sampling")
+        "Number of tracks": mo.ui.number(value=_cfg.get("Number of tracks", 5), start=1, stop=500, step=1),
+        "Sampling rate (s)": mo.ui.number(value=_cfg.get("Sampling rate (s)", 2.0), start=0.2, step=0.5),
+        "Base speed (m/s)": mo.ui.number(value=_cfg.get("Base speed (m/s)", 8.0), start=0.5, step=0.5),
+        "Speed jitter (%)": mo.ui.number(value=_cfg.get("Speed jitter (%)", 12.0), start=0, step=1),
+        "Target pts/track (0=auto)": mo.ui.number(value=_cfg.get("Target pts/track (0=auto)", 0), start=0, step=10),
+        "Seed (-1=random)": mo.ui.number(value=_cfg.get("Seed (-1=random)", 42), start=-1, step=1),
+    }, label="General sampling")
 
     generate_tracks_button = mo.ui.button(
         label="Generate simulated tracks",
@@ -192,42 +224,47 @@ def _(mo):
 
 
 @app.cell
-def _(mo):
-    def _noise(name: str, tip: str, params: dict):
+def _(get_loaded_config, mo):
+    _ncfg = (get_loaded_config() or {}).get("noise", {})
+
+    def _nval(key: str, param: str, default):
+        return _ncfg.get(key, {}).get(param, default)
+
+    def _noise(key: str, name: str, tip: str, params: dict):
         return mo.ui.dictionary({
-            "Enabled": mo.ui.checkbox(value=True),
+            "Enabled": mo.ui.checkbox(value=_nval(key, "Enabled", True)),
             "Description": mo.md(tip).batch(),
             **params,
         }, label=name)
 
     noise_config = {
-        "gaussian": _noise("Gaussian GPS noise",
+        "gaussian": _noise("gaussian", "Gaussian GPS noise",
             "*Adds random isotropic noise to each point, simulating typical GPS inaccuracy.*",
-            {"Sigma (m)": mo.ui.number(value=3.0, start=0, step=0.5)}),
-        "perpendicular": _noise("Perpendicular road noise",
+            {"Sigma (m)": mo.ui.number(value=_nval("gaussian", "Sigma (m)", 3.0), start=0, step=0.5)}),
+        "perpendicular": _noise("perpendicular", "Perpendicular road noise",
             "*Adds noise perpendicular to the road direction, simulating lane-width uncertainty.*",
-            {"Sigma (m)": mo.ui.number(value=2.0, start=0, step=0.5)}),
-        "zigzag": _noise("Zig-zag noise",
+            {"Sigma (m)": mo.ui.number(value=_nval("perpendicular", "Sigma (m)", 2.0), start=0, step=0.5)}),
+        "zigzag": _noise("zigzag", "Zig-zag noise",
             "*Adds a periodic sine-wave offset perpendicular to the path, simulating systematic oscillation.*",
-            {"Amplitude (m)": mo.ui.number(value=1.5, start=0, step=0.5),
-             "Period (points)": mo.ui.number(value=8, start=2, step=1)}),
-        "jumps": _noise("Random jumps",
+            {"Amplitude (m)": mo.ui.number(value=_nval("zigzag", "Amplitude (m)", 1.5), start=0, step=0.5),
+             "Period (points)": mo.ui.number(value=_nval("zigzag", "Period (points)", 8), start=2, step=1)}),
+        "jumps": _noise("jumps", "Random jumps",
             "*Occasionally teleports a point to a random nearby location, simulating GPS multipath errors.*",
-            {"Probability": mo.ui.number(value=0.02, start=0, stop=1, step=0.01),
-             "Distance (m)": mo.ui.number(value=40.0, start=0, step=5)}),
-        "missing": _noise("Missing points",
+            {"Probability": mo.ui.number(value=_nval("jumps", "Probability", 0.02), start=0, stop=1, step=0.01),
+             "Distance (m)": mo.ui.number(value=_nval("jumps", "Distance (m)", 40.0), start=0, step=5)}),
+        "missing": _noise("missing", "Missing points",
             "*Randomly drops points from the track, simulating signal loss or sampling gaps.*",
-            {"Probability": mo.ui.number(value=0.03, start=0, stop=0.95, step=0.01)}),
-        "biased_drift": _noise("Biased drift",
+            {"Probability": mo.ui.number(value=_nval("missing", "Probability", 0.03), start=0, stop=0.95, step=0.01)}),
+        "biased_drift": _noise("biased_drift", "Biased drift",
             "*Accumulates a constant offset in a fixed direction over time, simulating receiver bias drift.*",
-            {"Drift (m/pt)": mo.ui.number(value=0.05, start=0, step=0.01),
-             "Bearing (deg)": mo.ui.number(value=70.0, start=0, stop=360, step=5)}),
-        "lateral_drift": _noise("Lateral drift",
+            {"Drift (m/pt)": mo.ui.number(value=_nval("biased_drift", "Drift (m/pt)", 0.05), start=0, step=0.01),
+             "Bearing (deg)": mo.ui.number(value=_nval("biased_drift", "Bearing (deg)", 70.0), start=0, stop=360, step=5)}),
+        "lateral_drift": _noise("lateral_drift", "Lateral drift",
             "*Gradually shifts the track sideways along its length, simulating systematic lateral error.*",
-            {"Total (m)": mo.ui.number(value=3.0, step=0.5)}),
-        "timestamp_jitter": _noise("Timestamp jitter",
+            {"Total (m)": mo.ui.number(value=_nval("lateral_drift", "Total (m)", 3.0), step=0.5)}),
+        "timestamp_jitter": _noise("timestamp_jitter", "Timestamp jitter",
             "*Adds random variation to the time interval between points, simulating irregular sampling.*",
-            {"Sigma (s)": mo.ui.number(value=0.15, start=0, step=0.05)}),
+            {"Sigma (s)": mo.ui.number(value=_nval("timestamp_jitter", "Sigma (s)", 0.15), start=0, step=0.05)}),
     }
     return (noise_config,)
 
@@ -524,14 +561,87 @@ def _(get_simulated_points, get_simulation_message, mo, pd, pdk):
 
 
 @app.cell
-def _(draw_map_section, generated_tracks_section, get_active_tab, mo):
+def _(
+    draw_map_section,
+    generated_tracks_section,
+    get_active_tab,
+    mo,
+    save_load_config_section,
+):
     mo.ui.tabs(
         {
             "Draw path": draw_map_section,
             "Generated tracks": generated_tracks_section,
+            "Configuration": save_load_config_section,
         },
         value=get_active_tab(),
     )
+    return
+
+
+@app.cell
+def _(mo):
+    save_filename = mo.ui.text(
+        label="Filename",
+        value="config.json",
+        placeholder="config.json",
+    )
+    save_button = mo.ui.button(
+        label="Save config",
+        value=0,
+        on_click=lambda v: (v or 0) + 1,
+        kind="success",
+    )
+    load_browser = mo.ui.file_browser(
+        initial_path=__import__("pathlib").Path.cwd(),
+        filetypes=[".json"],
+        multiple=False,
+        label="Select a config file to load",
+    )
+    return load_browser, save_button, save_filename
+
+
+@app.cell
+def _(
+    json,
+    load_browser,
+    mo,
+    noise_config,
+    save_button,
+    save_filename,
+    sim_params,
+):
+    _save_msg = ""
+    if save_button.value:
+        _cfg = {"sim_params": sim_params.value, "noise": {}}
+        for _key, _dict in noise_config.items():
+            _vals = _dict.value
+            _cfg["noise"][_key] = {
+                k: v for k, v in _vals.items() if k != "Description"
+            }
+        _path = save_filename.value or "config.json"
+        with open(_path, "w", encoding="utf-8") as _f:
+            json.dump(_cfg, _f, indent=2)
+        _save_msg = f"Saved to `{_path}`"
+
+    save_load_config_section = mo.vstack([
+        mo.md("### Save config"),
+        mo.hstack([save_filename, save_button], align="end", gap=0.5),
+        mo.md(_save_msg) if _save_msg else mo.md(""),
+        mo.md("---"),
+        mo.md("### Load config"),
+        load_browser,
+    ], gap=0.5)
+    return (save_load_config_section,)
+
+
+@app.cell
+def _(json, load_browser, set_loaded_config):
+    if load_browser.value:
+        _path = load_browser.path(0)
+        with open(_path, encoding="utf-8") as _f:
+            _cfg = json.load(_f)
+        set_loaded_config(_cfg)
     return
 
 
