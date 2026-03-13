@@ -1,7 +1,17 @@
 import marimo
 
 __generated_with = "0.20.4"
-app = marimo.App(width="medium")
+app = marimo.App(width="full")
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.Html("""<style>
+        label { white-space: nowrap; }
+        .markdown p { margin: 0; padding: 0; }
+        input[type="number"] { max-width: 5em; }
+    </style>""")
+    return
 
 
 @app.cell
@@ -14,47 +24,68 @@ def _():
     import random
     from pathlib import Path
     from datetime import datetime, timedelta
+    from branca.element import Element
     from folium.plugins import Draw
-    from sqlalchemy import select
 
-    from database.connection import SessionLocal
-    from database.models.line import Line, LineStatus
+    from geodata.geo_math import (
+        haversine_m,
+        heading_and_perp,
+        interpolate_route,
+        offset_lon_lat,
+    )
+    from geodata.geojson import parse_route_from_geojson
 
-    return Draw, Path, datetime, folium, math, mo, pd, pdk, random, timedelta
+    return (
+        Draw,
+        Element,
+        Path,
+        datetime,
+        folium,
+        heading_and_perp,
+        interpolate_route,
+        math,
+        mo,
+        offset_lon_lat,
+        parse_route_from_geojson,
+        pd,
+        pdk,
+        random,
+        timedelta,
+    )
 
 
 @app.cell
 def _(mo):
-    get_refresh, set_refresh = mo.state(0)
-    get_last_create_click, set_last_create_click = mo.state(0)
     get_last_generate_click, set_last_generate_click = mo.state(0)
     get_simulated_points, set_simulated_points = mo.state([])
     get_simulation_message, set_simulation_message = mo.state(
         "Set your controls and click **Generate simulated tracks**."
     )
+    get_active_tab, set_active_tab = mo.state("Draw path")
     return (
+        get_active_tab,
         get_last_generate_click,
         get_simulated_points,
         get_simulation_message,
+        set_active_tab,
         set_last_generate_click,
         set_simulated_points,
         set_simulation_message,
     )
 
 
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    # Trajectory generator
-    """)
-    return
-
-
 @app.cell
-def _(Draw, folium, mo):
+def _(
+    Draw,
+    Element,
+    folium,
+    geojson_file_browser,
+    mo,
+    parse_route_from_geojson,
+):
     draw_map = folium.Map(
-        location=[40.4168, -3.7038],
-        zoom_start=12,
+        location=[-17.3895, -66.1568],
+        zoom_start=13,
         tiles="CartoDB positron",
         control_scale=True,
     )
@@ -74,90 +105,82 @@ def _(Draw, folium, mo):
         edit_options={"edit": False, "remove": True},
     ).add_to(draw_map)
 
-    draw_path_section = mo.vstack(
+    draw_map.get_root().html.add_child(Element("""<style>
+        #export {
+            background-color: #22c55e !important;
+            color: white !important;
+            padding: 6px 16px !important;
+            border-radius: 4px !important;
+            font-weight: 600 !important;
+            font-size: 13px !important;
+            text-decoration: none !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+            z-index: 1000 !important;
+            position: absolute !important;
+            top: 12px !important;
+            right: 12px !important;
+            left: auto !important;
+            bottom: auto !important;
+        }
+        #export:hover {
+            background-color: #16a34a !important;
+        }
+    </style>"""))
+
+    # Overlay the selected GeoJSON route
+    _selected_path = geojson_file_browser.path(0) if geojson_file_browser.value else None
+    if _selected_path:
+        try:
+            with open(_selected_path, encoding="utf-8") as _f:
+                route_coords = parse_route_from_geojson(_f.read())
+            if len(route_coords) >= 2:
+                folium.PolyLine(
+                    locations=[[lat, lon] for lon, lat in route_coords],
+                    color="#6366f1",
+                    weight=3,
+                    opacity=0.7,
+                    dash_array="8",
+                ).add_to(draw_map)
+                lats = [c[1] for c in route_coords]
+                lons = [c[0] for c in route_coords]
+                draw_map.fit_bounds([[min(lats), min(lons)], [max(lats), max(lons)]])
+        except Exception:
+            pass
+
+    draw_map_section = mo.vstack(
         [
-            mo.md("## Draw trajectory path"),
             mo.md(
-                "Use the polyline tool (top-left) and click on the map to draw the path."
+                "Use the polyline tool to draw the path, then **Export** it as GeoJSON."
             ),
             mo.Html(draw_map._repr_html_()),
-            mo.md(
-                "_Tip: click **Export** on the map toolbar to download the drawn path as GeoJSON._"
-            ),
         ],
-        gap=1,
-        align="start",
+        gap=0.5,
+        align="stretch",
     )
+    return (draw_map_section,)
 
-    draw_path_section
-    return
+
+@app.cell
+def _(Path, mo):
+    geojson_file_browser = mo.ui.file_browser(
+        initial_path=Path.cwd(),
+        filetypes=[".geojson"],
+        multiple=False,
+        label="Select a GeoJSON file",
+    )
+    return (geojson_file_browser,)
 
 
 @app.cell
 def _(mo):
-    geojson_directory_input = mo.ui.text(
-        label="GeoJSON directory",
-        value=".",
-        placeholder="/absolute/or/relative/path/to/geojsons",
-    )
-    return (geojson_directory_input,)
-
-
-@app.cell
-def _(Path, geojson_directory_input, mo):
-    directory_raw = (geojson_directory_input.value or ".").strip()
-    directory_path = Path(directory_raw).expanduser()
-    if not directory_path.is_absolute():
-        directory_path = (Path.cwd() / directory_path).resolve()
-
-    geojson_files: list[str] = []
-    directory_status = ""
-    if directory_path.is_dir():
-        geojson_files = sorted(
-            [str(path) for path in directory_path.glob("*.geojson")]
-        )
-        directory_status = (
-            f"Found {len(geojson_files)} `.geojson` file(s) in `{directory_path}`."
-        )
-    else:
-        directory_status = f"Directory not found: `{directory_path}`"
-
-    geojson_file_selector = mo.ui.dropdown(
-        options=geojson_files,
-        value=geojson_files[0] if geojson_files else None,
-        label="GeoJSON file",
-    )
-
-    mo.vstack([
-        mo.hstack([
-            geojson_directory_input,
-            geojson_file_selector,
-        ], justify="start"),
-        mo.md(directory_status),
-    ])
-    return (geojson_file_selector,)
-
-
-@app.cell
-def _(mo):
-    sim_num_tracks = mo.ui.text(label="Number of simulated tracks", value="5")
-    sim_sampling_rate_s = mo.ui.text(label="Sampling rate (seconds)", value="2.0")
-    sim_speed_mps = mo.ui.text(label="Base speed (m/s)", value="8.0")
-    sim_speed_jitter_pct = mo.ui.text(label="Speed jitter (%)", value="12.0")
-    sim_target_points = mo.ui.text(label="Target points per track (0 = auto)", value="0")
-    sim_seed = mo.ui.text(label="Random seed (-1 = random)", value="42")
-
-    gaussian_noise_m = mo.ui.text(label="Gaussian GPS noise sigma (m)", value="3.0")
-    perpendicular_noise_m = mo.ui.text(label="Perpendicular road noise sigma (m)", value="2.0")
-    zigzag_amplitude_m = mo.ui.text(label="Zig-zag amplitude (m)", value="1.5")
-    zigzag_period_points = mo.ui.text(label="Zig-zag period (points)", value="8")
-    jump_probability = mo.ui.text(label="Random jump probability (0-1)", value="0.02")
-    jump_distance_m = mo.ui.text(label="Random jump distance mean (m)", value="40.0")
-    missing_probability = mo.ui.text(label="Missing points probability (0-1)", value="0.03")
-    biased_drift_m_per_point = mo.ui.text(label="Biased drift (m/point)", value="0.05")
-    biased_bearing_deg = mo.ui.text(label="Biased drift bearing (deg, 0=north)", value="70.0")
-    lateral_drift_total_m = mo.ui.text(label="Lateral drift total (m)", value="3.0")
-    timestamp_jitter_s = mo.ui.text(label="Timestamp jitter sigma (s)", value="0.15")
+    sim_params = mo.ui.dictionary({
+        "Number of tracks": mo.ui.number(value=5, start=1, stop=500, step=1),
+        "Sampling rate (s)": mo.ui.number(value=2.0, start=0.2, step=0.5),
+        "Base speed (m/s)": mo.ui.number(value=8.0, start=0.5, step=0.5),
+        "Speed jitter (%)": mo.ui.number(value=12.0, start=0, step=1),
+        "Target pts/track (0=auto)": mo.ui.number(value=0, start=0, step=10),
+        "Seed (-1=random)": mo.ui.number(value=42, start=-1, step=1),
+    },label="General sampling")
 
     generate_tracks_button = mo.ui.button(
         label="Generate simulated tracks",
@@ -165,191 +188,146 @@ def _(mo):
         on_click=lambda v: (v or 0) + 1,
         kind="success",
     )
-    return (
-        biased_bearing_deg,
-        biased_drift_m_per_point,
-        gaussian_noise_m,
-        generate_tracks_button,
-        jump_distance_m,
-        jump_probability,
-        lateral_drift_total_m,
-        missing_probability,
-        perpendicular_noise_m,
-        sim_num_tracks,
-        sim_sampling_rate_s,
-        sim_seed,
-        sim_speed_jitter_pct,
-        sim_speed_mps,
-        sim_target_points,
-        timestamp_jitter_s,
-        zigzag_amplitude_m,
-        zigzag_period_points,
-    )
+    return generate_tracks_button, sim_params
+
+
+@app.cell
+def _(mo):
+    def _noise(name: str, tip: str, params: dict):
+        return mo.ui.dictionary({
+            "Enabled": mo.ui.checkbox(value=True),
+            "Description": mo.md(tip).batch(),
+            **params,
+        }, label=name)
+
+    noise_config = {
+        "gaussian": _noise("Gaussian GPS noise",
+            "*Adds random isotropic noise to each point, simulating typical GPS inaccuracy.*",
+            {"Sigma (m)": mo.ui.number(value=3.0, start=0, step=0.5)}),
+        "perpendicular": _noise("Perpendicular road noise",
+            "*Adds noise perpendicular to the road direction, simulating lane-width uncertainty.*",
+            {"Sigma (m)": mo.ui.number(value=2.0, start=0, step=0.5)}),
+        "zigzag": _noise("Zig-zag noise",
+            "*Adds a periodic sine-wave offset perpendicular to the path, simulating systematic oscillation.*",
+            {"Amplitude (m)": mo.ui.number(value=1.5, start=0, step=0.5),
+             "Period (points)": mo.ui.number(value=8, start=2, step=1)}),
+        "jumps": _noise("Random jumps",
+            "*Occasionally teleports a point to a random nearby location, simulating GPS multipath errors.*",
+            {"Probability": mo.ui.number(value=0.02, start=0, stop=1, step=0.01),
+             "Distance (m)": mo.ui.number(value=40.0, start=0, step=5)}),
+        "missing": _noise("Missing points",
+            "*Randomly drops points from the track, simulating signal loss or sampling gaps.*",
+            {"Probability": mo.ui.number(value=0.03, start=0, stop=0.95, step=0.01)}),
+        "biased_drift": _noise("Biased drift",
+            "*Accumulates a constant offset in a fixed direction over time, simulating receiver bias drift.*",
+            {"Drift (m/pt)": mo.ui.number(value=0.05, start=0, step=0.01),
+             "Bearing (deg)": mo.ui.number(value=70.0, start=0, stop=360, step=5)}),
+        "lateral_drift": _noise("Lateral drift",
+            "*Gradually shifts the track sideways along its length, simulating systematic lateral error.*",
+            {"Total (m)": mo.ui.number(value=3.0, step=0.5)}),
+        "timestamp_jitter": _noise("Timestamp jitter",
+            "*Adds random variation to the time interval between points, simulating irregular sampling.*",
+            {"Sigma (s)": mo.ui.number(value=0.15, start=0, step=0.05)}),
+    }
+    return (noise_config,)
 
 
 @app.cell
 def _(
-    biased_bearing_deg,
-    biased_drift_m_per_point,
-    datetime,
-    gaussian_noise_m,
     generate_tracks_button,
-    geojson_file_selector,
+    geojson_file_browser,
+    mo,
+    noise_config,
+    sim_params,
+):
+    mo.sidebar(
+        [
+            mo.md("## Trajectory generator"),
+            mo.md("---"),
+            geojson_file_browser,
+            mo.md("---"),
+            sim_params,
+            mo.md("---"),
+            noise_config["gaussian"],
+            noise_config["perpendicular"],
+            noise_config["zigzag"],
+            mo.md("---"),
+            noise_config["jumps"],
+            noise_config["missing"],
+            mo.md("---"),
+            noise_config["biased_drift"],
+            noise_config["lateral_drift"],
+            noise_config["timestamp_jitter"],
+            mo.md("---"),
+            generate_tracks_button,
+        ],
+        width="310px",
+    )
+    return
+
+
+@app.cell
+def _(
+    datetime,
+    generate_tracks_button,
+    geojson_file_browser,
     get_last_generate_click,
-    jump_distance_m,
-    jump_probability,
-    lateral_drift_total_m,
+    heading_and_perp,
+    interpolate_route,
     math,
-    missing_probability,
-    perpendicular_noise_m,
+    noise_config,
+    offset_lon_lat,
+    parse_route_from_geojson,
     random,
+    set_active_tab,
     set_last_generate_click,
     set_simulated_points,
     set_simulation_message,
-    sim_num_tracks,
-    sim_sampling_rate_s,
-    sim_seed,
-    sim_speed_jitter_pct,
-    sim_speed_mps,
-    sim_target_points,
+    sim_params,
     timedelta,
-    timestamp_jitter_s,
-    zigzag_amplitude_m,
-    zigzag_period_points,
 ):
-    def _to_float(raw: str, default: float) -> float:
-        try:
-            return float((raw or "").strip())
-        except Exception:
-            return default
+    def _on(key: str) -> bool:
+        return noise_config[key].value["Enabled"]
 
-    def _to_int(raw: str, default: int) -> int:
-        try:
-            return int((raw or "").strip())
-        except Exception:
-            return default
-
-    def _clamp(value: float, lo: float, hi: float) -> float:
-        return max(lo, min(hi, value))
-
-    def _parse_route_from_geojson(raw: str) -> list[list[float]]:
-        import json
-
-        payload = json.loads(raw)
-        geometry = None
-        if payload.get("type") == "FeatureCollection":
-            for feature in payload.get("features", []):
-                geom = feature.get("geometry", {})
-                if geom.get("type") == "LineString":
-                    geometry = geom
-                    break
-        elif payload.get("type") == "Feature":
-            geometry = payload.get("geometry", {})
-        elif payload.get("type") == "LineString":
-            geometry = payload
-
-        if not geometry or geometry.get("type") != "LineString":
-            raise ValueError("GeoJSON must contain a LineString geometry")
-
-        coords = geometry.get("coordinates", [])
-        route = []
-        for coord in coords:
-            if not isinstance(coord, (list, tuple)) or len(coord) < 2:
-                continue
-            route.append([float(coord[0]), float(coord[1])])
-        return route
-
-    def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
-        r = 6_371_000
-        p1 = math.radians(lat1)
-        p2 = math.radians(lat2)
-        dp = math.radians(lat2 - lat1)
-        dl = math.radians(lon2 - lon1)
-        a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-        return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    def _offset_lon_lat(lon: float, lat: float, east_m: float, north_m: float) -> tuple[float, float]:
-        lat_out = lat + (north_m / 111_320.0)
-        cos_lat = max(1e-6, abs(math.cos(math.radians(lat_out))))
-        lon_out = lon + (east_m / (111_320.0 * cos_lat))
-        return lon_out, lat_out
-
-    def _heading_and_perp(route: list[list[float]], idx: int) -> tuple[tuple[float, float], tuple[float, float]]:
-        if len(route) < 2:
-            return (1.0, 0.0), (0.0, 1.0)
-        i0 = max(0, idx - 1)
-        i1 = min(len(route) - 1, idx + 1)
-        lon0, lat0 = route[i0]
-        lon1, lat1 = route[i1]
-        mean_lat = math.radians((lat0 + lat1) / 2.0)
-        east = (lon1 - lon0) * 111_320.0 * math.cos(mean_lat)
-        north = (lat1 - lat0) * 111_320.0
-        norm = max(1e-6, math.sqrt(east**2 + north**2))
-        heading = (east / norm, north / norm)
-        perp = (-heading[1], heading[0])
-        return heading, perp
-
-    def _interpolate_route(route: list[list[float]], step_m: float) -> list[list[float]]:
-        if len(route) < 2:
-            return route
-        seg_lengths = []
-        for i in range(len(route) - 1):
-            lon0, lat0 = route[i]
-            lon1, lat1 = route[i + 1]
-            seg_lengths.append(_haversine_m(lon0, lat0, lon1, lat1))
-        total = sum(seg_lengths)
-        if total <= 0:
-            return [route[0], route[-1]]
-
-        points_count = max(2, int(total / max(0.5, step_m)) + 1)
-        targets = [total * i / (points_count - 1) for i in range(points_count)]
-        interpolated = []
-        seg_idx = 0
-        seg_start_dist = 0.0
-        for target in targets:
-            while seg_idx < len(seg_lengths) - 1 and seg_start_dist + seg_lengths[seg_idx] < target:
-                seg_start_dist += seg_lengths[seg_idx]
-                seg_idx += 1
-            lon0, lat0 = route[seg_idx]
-            lon1, lat1 = route[seg_idx + 1]
-            seg_len = max(1e-6, seg_lengths[seg_idx])
-            frac = _clamp((target - seg_start_dist) / seg_len, 0.0, 1.0)
-            lon = lon0 + (lon1 - lon0) * frac
-            lat = lat0 + (lat1 - lat0) * frac
-            interpolated.append([lon, lat])
-        return interpolated
+    def _p(key: str, param: str) -> float:
+        return noise_config[key].value[param]
 
     generate_click = generate_tracks_button.value or 0
-    if generate_click > get_last_generate_click():
+    if generate_click <= get_last_generate_click():
+        pass  # no new click
+    else:
         set_last_generate_click(generate_click)
 
-        num_tracks = max(1, _to_int(sim_num_tracks.value, 5))
-        sampling_rate_s = max(0.2, _to_float(sim_sampling_rate_s.value, 2.0))
-        base_speed_mps = max(0.5, _to_float(sim_speed_mps.value, 8.0))
-        speed_jitter_pct = max(0.0, _to_float(sim_speed_jitter_pct.value, 12.0))
-        target_points = max(0, _to_int(sim_target_points.value, 0))
-        seed_value = _to_int(sim_seed.value, 42)
+        # General params from sim_params dictionary
+        _sp = sim_params.value
+        num_tracks = _sp["Number of tracks"]
+        sampling_rate_s = _sp["Sampling rate (s)"]
+        base_speed_mps = _sp["Base speed (m/s)"]
+        speed_jitter_pct = _sp["Speed jitter (%)"]
+        target_points = _sp["Target pts/track (0=auto)"]
+        seed_value = int(_sp["Seed (-1=random)"])
 
-        gaussian_m = max(0.0, _to_float(gaussian_noise_m.value, 3.0))
-        perpendicular_m = max(0.0, _to_float(perpendicular_noise_m.value, 2.0))
-        zigzag_amp_m = max(0.0, _to_float(zigzag_amplitude_m.value, 1.5))
-        zigzag_period = max(2, _to_int(zigzag_period_points.value, 8))
-        jump_prob = _clamp(_to_float(jump_probability.value, 0.02), 0.0, 1.0)
-        jump_distance_mean_m = max(0.0, _to_float(jump_distance_m.value, 40.0))
-        missing_prob = _clamp(_to_float(missing_probability.value, 0.03), 0.0, 0.95)
-        biased_drift_step_m = _to_float(biased_drift_m_per_point.value, 0.05)
-        biased_bearing = math.radians(_to_float(biased_bearing_deg.value, 70.0))
-        lateral_drift_total_m_value = _to_float(lateral_drift_total_m.value, 3.0)
-        timestamp_jitter = max(0.0, _to_float(timestamp_jitter_s.value, 0.15))
+        # Noise params
+        gaussian_m = _p("gaussian", "Sigma (m)")
+        perpendicular_m = _p("perpendicular", "Sigma (m)")
+        zigzag_amp_m = _p("zigzag", "Amplitude (m)")
+        zigzag_period = max(2, int(_p("zigzag", "Period (points)")))
+        jump_prob = _p("jumps", "Probability")
+        jump_dist_mean = _p("jumps", "Distance (m)")
+        missing_prob = _p("missing", "Probability")
+        drift_step = _p("biased_drift", "Drift (m/pt)")
+        drift_bearing = math.radians(_p("biased_drift", "Bearing (deg)"))
+        lat_drift_total = _p("lateral_drift", "Total (m)")
+        ts_jitter = _p("timestamp_jitter", "Sigma (s)")
 
+        # Load route
         route_error = None
         try:
-            selected_geojson_path = geojson_file_selector.value
-            if not selected_geojson_path:
+            if not geojson_file_browser.value:
                 raise ValueError("Select a GeoJSON file first")
-            with open(selected_geojson_path, encoding="utf-8") as geojson_file:
-                route_raw = geojson_file.read()
-            route = _parse_route_from_geojson(route_raw)
+            selected_path = str(geojson_file_browser.path(0))
+            with open(selected_path, encoding="utf-8") as f:
+                route = parse_route_from_geojson(f.read())
         except Exception as exc:
             route = []
             route_error = str(exc)
@@ -370,7 +348,7 @@ def _(
 
                 speed_factor = max(0.1, 1 + rng.gauss(0, speed_jitter_pct / 100.0))
                 step_m = max(0.5, base_speed_mps * speed_factor * sampling_rate_s)
-                base_points = _interpolate_route(route, step_m)
+                base_points = interpolate_route(route, step_m)
 
                 if target_points > 1 and len(base_points) > target_points:
                     idxs = [
@@ -384,19 +362,20 @@ def _(
                 elapsed_s = 0.0
 
                 for i, (lon, lat) in enumerate(base_points):
-                    _, perp = _heading_and_perp(base_points, i)
+                    _, perp = heading_and_perp(base_points, i)
                     east_m = 0.0
                     north_m = 0.0
 
-                    east_m += rng.gauss(0, gaussian_m)
-                    north_m += rng.gauss(0, gaussian_m)
+                    if _on("gaussian"):
+                        east_m += rng.gauss(0, gaussian_m)
+                        north_m += rng.gauss(0, gaussian_m)
 
-                    if perpendicular_m > 0:
+                    if _on("perpendicular") and perpendicular_m > 0:
                         perp_offset = rng.gauss(0, perpendicular_m)
                         east_m += perp[0] * perp_offset
                         north_m += perp[1] * perp_offset
 
-                    if zigzag_amp_m > 0:
+                    if _on("zigzag") and zigzag_amp_m > 0:
                         zigzag_offset = zigzag_amp_m * math.sin(
                             (2 * math.pi * i) / zigzag_period
                         )
@@ -404,54 +383,61 @@ def _(
                         north_m += perp[1] * zigzag_offset
 
                     if (
-                        jump_prob > 0
+                        _on("jumps")
+                        and jump_prob > 0
                         and rng.random() < jump_prob
-                        and jump_distance_mean_m > 0
+                        and jump_dist_mean > 0
                     ):
                         jump_angle = rng.uniform(0, 2 * math.pi)
                         jump_dist = max(
-                            0.0,
-                            rng.gauss(
-                                jump_distance_mean_m, jump_distance_mean_m * 0.35
-                            ),
+                            0.0, rng.gauss(jump_dist_mean, jump_dist_mean * 0.35)
                         )
                         east_m += math.cos(jump_angle) * jump_dist
                         north_m += math.sin(jump_angle) * jump_dist
 
-                    drift_acc_m += biased_drift_step_m
-                    east_m += math.sin(biased_bearing) * drift_acc_m
-                    north_m += math.cos(biased_bearing) * drift_acc_m
+                    if _on("biased_drift"):
+                        drift_acc_m += drift_step
+                        east_m += math.sin(drift_bearing) * drift_acc_m
+                        north_m += math.cos(drift_bearing) * drift_acc_m
 
-                    if len(base_points) > 1 and lateral_drift_total_m_value != 0:
+                    if (
+                        _on("lateral_drift")
+                        and len(base_points) > 1
+                        and lat_drift_total != 0
+                    ):
                         lateral_progress = i / (len(base_points) - 1)
-                        lateral_offset = lateral_progress * lateral_drift_total_m_value
+                        lateral_offset = lateral_progress * lat_drift_total
                         east_m += perp[0] * lateral_offset
                         north_m += perp[1] * lateral_offset
 
-                    nlon, nlat = _offset_lon_lat(lon, lat, east_m, north_m)
+                    nlon, nlat = offset_lon_lat(lon, lat, east_m, north_m)
+
                     if i > 0:
-                        elapsed_s += max(
-                            0.2, sampling_rate_s + rng.gauss(0, timestamp_jitter)
-                        )
+                        jitter = rng.gauss(0, ts_jitter) if _on("timestamp_jitter") else 0.0
+                        elapsed_s += max(0.2, sampling_rate_s + jitter)
+
                     noisy_points.append((nlon, nlat, elapsed_s))
 
-                kept_points = []
-                for i, point in enumerate(noisy_points):
-                    if i in (0, len(noisy_points) - 1) or rng.random() >= missing_prob:
-                        kept_points.append(point)
-                if len(kept_points) < 2 and len(noisy_points) >= 2:
-                    kept_points = [noisy_points[0], noisy_points[-1]]
+                if _on("missing"):
+                    kept_points = []
+                    for i, point in enumerate(noisy_points):
+                        if i in (0, len(noisy_points) - 1) or rng.random() >= missing_prob:
+                            kept_points.append(point)
+                    if len(kept_points) < 2 and len(noisy_points) >= 2:
+                        kept_points = [noisy_points[0], noisy_points[-1]]
+                else:
+                    kept_points = noisy_points
 
                 track_start = start_time + timedelta(minutes=track_idx)
-                for point_idx, (lon, lat, t_s) in enumerate(kept_points):
+                for point_idx, (plon, plat, t_s) in enumerate(kept_points):
                     timestamp = track_start + timedelta(seconds=t_s)
                     records.append(
                         {
                             "track_id": track_idx + 1,
                             "point_index": point_idx + 1,
                             "timestamp": timestamp.isoformat(),
-                            "longitude": lon,
-                            "latitude": lat,
+                            "longitude": plon,
+                            "latitude": plat,
                         }
                     )
 
@@ -459,6 +445,7 @@ def _(
             set_simulation_message(
                 f"Generated {num_tracks} track(s) with {len(records)} geopoint(s) total."
             )
+            set_active_tab("Generated tracks")
     return
 
 
@@ -468,7 +455,7 @@ def _(get_simulated_points, get_simulation_message, mo, pd, pdk):
     simulation_message = get_simulation_message()
 
     if not generated_records:
-        simulated_tracks_output = mo.md(simulation_message)
+        generated_tracks_section = mo.md(simulation_message)
     else:
         generated_df = pd.DataFrame(generated_records)
         preview_table = mo.ui.table(
@@ -505,7 +492,7 @@ def _(get_simulated_points, get_simulation_message, mo, pd, pdk):
             initial_view_state=pdk.ViewState(
                 latitude=center_lat,
                 longitude=center_lon,
-                zoom=30,
+                zoom=13,
                 pitch=0,
                 bearing=0,
             ),
@@ -524,98 +511,27 @@ def _(get_simulated_points, get_simulation_message, mo, pd, pdk):
             height=420,
         )
 
-        simulated_tracks_output = mo.vstack(
+        generated_tracks_section = mo.vstack(
             [
-                mo.md(f"## Simulated tracks\n\n{simulation_message}"),
+                mo.md(simulation_message),
                 deck,
                 preview_table,
             ],
             gap=1,
             align="stretch",
         )
-    return (simulated_tracks_output,)
+    return (generated_tracks_section,)
 
 
 @app.cell
-def _(
-    biased_bearing_deg,
-    biased_drift_m_per_point,
-    gaussian_noise_m,
-    generate_tracks_button,
-    jump_distance_m,
-    jump_probability,
-    lateral_drift_total_m,
-    missing_probability,
-    mo,
-    perpendicular_noise_m,
-    sim_num_tracks,
-    sim_sampling_rate_s,
-    sim_seed,
-    sim_speed_jitter_pct,
-    sim_speed_mps,
-    sim_target_points,
-    simulated_tracks_output,
-    timestamp_jitter_s,
-    zigzag_amplitude_m,
-    zigzag_period_points,
-):
-    simulation_controls = mo.vstack(
-        [
-            mo.md("## Simulation controls"),
-            mo.hstack([
-                mo.vstack(
-                    [
-                        mo.md("**General sampling**"),
-                        sim_num_tracks,
-                        sim_sampling_rate_s,
-                        sim_speed_mps,
-                        sim_speed_jitter_pct,
-                        sim_target_points,
-                        sim_seed,
-                    ],
-                ),
-                mo.vstack(
-                    [
-                        mo.md("**Drift and timing**"),
-                        biased_drift_m_per_point,
-                        biased_bearing_deg,
-                        lateral_drift_total_m,
-                        timestamp_jitter_s,
-                    ],
-                    align="stretch",
-                ),
-
-            ],align="start"),
-            mo.hstack([
-                mo.vstack(
-                    [
-                        mo.md("**Outliers and dropouts**"),
-                        jump_probability,
-                        jump_distance_m,
-                        missing_probability,
-                    ],
-                    align="stretch",
-                ),
-                mo.vstack(
-                    [
-                        mo.md("**GPS and road-shape noise**"),
-                        gaussian_noise_m,
-                        perpendicular_noise_m,
-                        zigzag_amplitude_m,
-                        zigzag_period_points,
-                    ],
-                ),
-            ], align="stretch"),
-            generate_tracks_button,
-        ],
-        gap=0.6,
-        align="start",
+def _(draw_map_section, generated_tracks_section, get_active_tab, mo):
+    mo.ui.tabs(
+        {
+            "Draw path": draw_map_section,
+            "Generated tracks": generated_tracks_section,
+        },
+        value=get_active_tab(),
     )
-
-    mo.vstack([
-        simulation_controls,
-        simulated_tracks_output,
-    ])
     return
 
 
