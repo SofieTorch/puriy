@@ -80,9 +80,20 @@ def _(mo):
 
 
 @app.cell
+def _(mo):
+    export_filename = mo.ui.text(
+        label="Export filename",
+        value="trajectory.geojson",
+        placeholder="my_route.geojson",
+    )
+    return (export_filename,)
+
+
+@app.cell
 def _(
     Draw,
     Element,
+    export_filename,
     folium,
     geojson_file_browser,
     mo,
@@ -97,7 +108,8 @@ def _(
 
     Draw(
         export=True,
-        filename="trajectory.geojson",
+    
+        filename=export_filename.value or "trajectory.geojson",
         position="topleft",
         draw_options={
             "polyline": True,
@@ -130,32 +142,7 @@ def _(
         #export:hover {
             background-color: #16a34a !important;
         }
-    </style>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            var exp = document.getElementById('export');
-            if (exp && window.showSaveFilePicker) {
-                exp.addEventListener('click', async function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    try {
-                        var handle = await window.showSaveFilePicker({
-                            suggestedName: 'trajectory.geojson',
-                            types: [{description: 'GeoJSON', accept: {'application/geo+json': ['.geojson']}}]
-                        });
-                        var blob = new Blob([exp.href.startsWith('data:')
-                            ? decodeURIComponent(exp.href.split(',')[1])
-                            : ''], {type: 'application/geo+json'});
-                        var writable = await handle.createWritable();
-                        await writable.write(blob);
-                        await writable.close();
-                    } catch (err) {
-                        if (err.name !== 'AbortError') exp.click();
-                    }
-                }, true);
-            }
-        });
-    </script>"""))
+    </style>"""))
 
     # Overlay the selected GeoJSON route
     _selected_path = geojson_file_browser.path(0) if geojson_file_browser.value else None
@@ -180,8 +167,11 @@ def _(
     draw_map_section = mo.vstack(
         [
             mo.md(
-                "Use the polyline tool to draw the path, then **Export** it as GeoJSON."
+                "1. Choose a filename &nbsp;&nbsp; 2. Draw the path &nbsp;&nbsp;"
+                " 3. Click **Export** &nbsp;&nbsp; 4. Move the file to `seed/routes/` &nbsp;&nbsp;"
+                " 5. Select it in the sidebar file browser"
             ),
+            mo.hstack([export_filename], align="center"),
             mo.Html(draw_map._repr_html_()),
         ],
         gap=0.5,
@@ -192,8 +182,10 @@ def _(
 
 @app.cell
 def _(Path, mo):
+    _routes_dir = Path.cwd() / "seed" / "routes"
+    _routes_dir.mkdir(parents=True, exist_ok=True)
     geojson_file_browser = mo.ui.file_browser(
-        initial_path=Path.cwd(),
+        initial_path=_routes_dir,
         filetypes=[".geojson"],
         multiple=False,
         label="Select a GeoJSON file",
@@ -581,6 +573,8 @@ def _(
 
 @app.cell
 def _(mo):
+    _config_dir = __import__("pathlib").Path.cwd() / "seed" / "config"
+    _config_dir.mkdir(parents=True, exist_ok=True)
     save_filename = mo.ui.text(
         label="Filename",
         value="config.json",
@@ -593,7 +587,7 @@ def _(mo):
         kind="success",
     )
     load_browser = mo.ui.file_browser(
-        initial_path=__import__("pathlib").Path.cwd(),
+        initial_path=_config_dir,
         filetypes=[".json"],
         multiple=False,
         label="Select a config file to load",
@@ -619,7 +613,7 @@ def _(
             _cfg["noise"][_key] = {
                 k: v for k, v in _vals.items() if k != "Description"
             }
-        _path = save_filename.value or "config.json"
+        _path = __import__("pathlib").Path.cwd() / "seed" / "config" / (save_filename.value or "config.json")
         with open(_path, "w", encoding="utf-8") as _f:
             json.dump(_cfg, _f, indent=2)
         _save_msg = f"Saved to `{_path}`"
