@@ -20,11 +20,27 @@ def _():
     from database.connection import SessionLocal
     from database.models.line import Line, LineStatus
 
-    return Draw, Path, datetime, folium, math, mo, pd, pdk, random, timedelta
+    return (
+        Draw,
+        Line,
+        LineStatus,
+        SessionLocal,
+        datetime,
+        folium,
+        math,
+        mo,
+        pd,
+        Path,
+        pdk,
+        random,
+        select,
+        timedelta,
+    )
 
 
 @app.cell
-def _(mo):
+def _(SessionLocal, mo):
+    db = SessionLocal()
     get_refresh, set_refresh = mo.state(0)
     get_last_create_click, set_last_create_click = mo.state(0)
     get_last_generate_click, set_last_generate_click = mo.state(0)
@@ -33,13 +49,33 @@ def _(mo):
         "Set your controls and click **Generate simulated tracks**."
     )
     return (
+        db,
+        get_last_create_click,
         get_last_generate_click,
+        get_refresh,
         get_simulated_points,
         get_simulation_message,
+        set_last_create_click,
         set_last_generate_click,
+        set_refresh,
         set_simulated_points,
         set_simulation_message,
     )
+
+
+@app.cell
+def _(Line, LineStatus, db, get_refresh, select):
+    _ = get_refresh()
+    approved_lines = (
+        db.execute(
+            select(Line)
+            .where(Line.status == LineStatus.APPROVED)
+            .order_by(Line.name)
+        )
+        .scalars()
+        .all()
+    )
+    return (approved_lines,)
 
 
 @app.cell(hide_code=True)
@@ -48,6 +84,34 @@ def _(mo):
     # Trajectory generator
     """)
     return
+
+
+@app.cell
+def _(approved_lines, mo):
+    line_options = [f"{line.id} - {line.name}" for line in approved_lines]
+    approved_line_selector = mo.ui.dropdown(
+        options=line_options,
+        value=line_options[0] if line_options else None,
+        label="Approved lines",
+    )
+    return (approved_line_selector,)
+
+
+@app.cell
+def _(Line, approved_line_selector, db, mo):
+    selected_line = None
+    if approved_line_selector.value:
+        selected_line_id = int(approved_line_selector.value.split(" - ", 1)[0])
+        selected_line = db.get(Line, selected_line_id)
+
+    selected_line_info = (
+        mo.md(
+            f"**Selected line:** `{selected_line.id}` - `{selected_line.name}` - `{selected_line.description or 'No description'}`"
+        )
+        if selected_line is not None
+        else mo.md("No approved lines found.")
+    )
+    return (selected_line_info,)
 
 
 @app.cell
@@ -88,19 +152,12 @@ def _(Draw, folium, mo):
         gap=1,
         align="start",
     )
-
-    draw_path_section
-    return
-
-
-@app.cell
-def _(mo):
     geojson_directory_input = mo.ui.text(
         label="GeoJSON directory",
         value=".",
         placeholder="/absolute/or/relative/path/to/geojsons",
     )
-    return (geojson_directory_input,)
+    return draw_path_section, geojson_directory_input
 
 
 @app.cell
@@ -127,15 +184,7 @@ def _(Path, geojson_directory_input, mo):
         value=geojson_files[0] if geojson_files else None,
         label="GeoJSON file",
     )
-
-    mo.vstack([
-        mo.hstack([
-            geojson_directory_input,
-            geojson_file_selector,
-        ], justify="start"),
-        mo.md(directory_status),
-    ])
-    return (geojson_file_selector,)
+    return directory_status, geojson_file_selector
 
 
 @app.cell
@@ -193,8 +242,8 @@ def _(
     biased_drift_m_per_point,
     datetime,
     gaussian_noise_m,
-    generate_tracks_button,
     geojson_file_selector,
+    generate_tracks_button,
     get_last_generate_click,
     jump_distance_m,
     jump_probability,
@@ -537,17 +586,93 @@ def _(get_simulated_points, get_simulation_message, mo, pd, pdk):
 
 
 @app.cell
+def _(LineStatus, mo):
+    new_line_name = mo.ui.text(label="New line name", placeholder="Line 42")
+    new_line_description = mo.ui.text(
+        label="Description (optional)",
+        placeholder="Main corridor from A to B",
+    )
+    new_line_status = mo.ui.dropdown(
+        options=[status.value for status in LineStatus],
+        value=LineStatus.PENDING.value,
+        label="Status",
+    )
+    create_line_button = mo.ui.button(
+        label="Create new line",
+        value=0,
+        on_click=lambda v: (v or 0) + 1,
+        kind="neutral",
+    )
+    return (
+        create_line_button,
+        new_line_description,
+        new_line_name,
+        new_line_status,
+    )
+
+
+@app.cell
 def _(
+    Line,
+    LineStatus,
+    create_line_button,
+    db,
+    get_last_create_click,
+    new_line_description,
+    new_line_name,
+    new_line_status,
+    set_last_create_click,
+    set_refresh,
+):
+    create_line_feedback = ""
+    current_click = create_line_button.value or 0
+    if current_click > get_last_create_click():
+        set_last_create_click(current_click)
+        name = (new_line_name.value or "").strip()
+        description = (new_line_description.value or "").strip() or None
+
+        if not name:
+            create_line_feedback = "Please provide a name before creating a line."
+        else:
+            try:
+                new_line = Line(
+                    name=name,
+                    description=description,
+                    status=LineStatus(new_line_status.value),
+                )
+                db.add(new_line)
+                db.commit()
+                set_refresh(lambda v: v + 1)
+                create_line_feedback = f"Created new line: {name}"
+            except Exception as exc:
+                db.rollback()
+                create_line_feedback = f"Could not create line: {exc}"
+    return (create_line_feedback,)
+
+
+@app.cell
+def _(
+    approved_line_selector,
     biased_bearing_deg,
     biased_drift_m_per_point,
+    create_line_button,
+    create_line_feedback,
+    directory_status,
+    draw_path_section,
     gaussian_noise_m,
+    geojson_directory_input,
+    geojson_file_selector,
     generate_tracks_button,
     jump_distance_m,
     jump_probability,
     lateral_drift_total_m,
     missing_probability,
     mo,
+    new_line_description,
+    new_line_name,
+    new_line_status,
     perpendicular_noise_m,
+    selected_line_info,
     sim_num_tracks,
     sim_sampling_rate_s,
     sim_seed,
@@ -559,6 +684,19 @@ def _(
     zigzag_amplitude_m,
     zigzag_period_points,
 ):
+    form_body = mo.vstack(
+        [
+            mo.hstack(
+                [new_line_name, new_line_description, new_line_status, create_line_button],
+                gap=1,
+            ),
+            mo.md(create_line_feedback) if create_line_feedback else mo.md(""),
+        ],
+        gap=1,
+        align="start",
+    )
+
+    accordion = mo.accordion({"Add a new line": form_body})
     simulation_controls = mo.vstack(
         [
             mo.md("## Simulation controls"),
@@ -573,6 +711,7 @@ def _(
                         sim_target_points,
                         sim_seed,
                     ],
+                    justify="start",
                 ),
                 mo.vstack(
                     [
@@ -582,9 +721,10 @@ def _(
                         lateral_drift_total_m,
                         timestamp_jitter_s,
                     ],
+                    justify="start",
                     align="stretch",
                 ),
-
+            
             ],align="start"),
             mo.hstack([
                 mo.vstack(
@@ -594,6 +734,7 @@ def _(
                         jump_distance_m,
                         missing_probability,
                     ],
+                    justify="start",
                     align="stretch",
                 ),
                 mo.vstack(
@@ -604,6 +745,7 @@ def _(
                         zigzag_amplitude_m,
                         zigzag_period_points,
                     ],
+                    justify="start",
                 ),
             ], align="stretch"),
             generate_tracks_button,
@@ -613,8 +755,15 @@ def _(
     )
 
     mo.vstack([
+        approved_line_selector,
+        selected_line_info,
+        draw_path_section,
+        geojson_directory_input,
+        geojson_file_selector,
+        mo.md(directory_status),
         simulation_controls,
         simulated_tracks_output,
+        accordion,
     ])
     return
 
