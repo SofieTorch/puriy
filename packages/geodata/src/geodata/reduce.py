@@ -1,17 +1,18 @@
 """Simplify recording session paths using PostGIS ST_Simplify (Douglas-Peucker)."""
 
 from typing import Any
+from uuid import UUID
 
 from shapely import from_wkt, wkb
 from shapely.geometry import LineString
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from database.models.recording import LocationPoint, RecordingSession
+from database.models.trip import TripSession, TripSessionPoint
 
 
 def _match_kept_point_ids(
-    original_points: list[LocationPoint],
+    original_points: list[TripSessionPoint],
     simplified_coords: list[tuple[float, float]],
 ) -> set[int]:
     """
@@ -48,7 +49,7 @@ def _match_kept_point_ids(
 
 def reduce_linestring_from_recording_session(
     db: Session,
-    session_id: int,
+    session_id: UUID,
     tolerance: float = 0.00005,
     *,
     return_coords: bool = False,
@@ -63,14 +64,14 @@ def reduce_linestring_from_recording_session(
 
     Returns a summary: points_before, points_after, points_removed.
     """
-    session = db.get(RecordingSession, session_id)
+    session = db.get(TripSession, session_id)
     if not session:
         raise ValueError(f"Recording session {session_id} not found")
 
     points = db.execute(
-        select(LocationPoint)
-        .where(LocationPoint.session_id == session_id)
-        .order_by(LocationPoint.timestamp)
+        select(TripSessionPoint)
+        .where(TripSessionPoint.session_id == session_id)
+        .order_by(TripSessionPoint.timestamp)
     ).scalars().all()
 
     if len(points) < 2:
@@ -118,11 +119,10 @@ def reduce_linestring_from_recording_session(
     for p in to_delete:
         db.delete(p)
 
-    # Update session with simplified geometry and reduced_points count
+    # Update session with simplified geometry
     points_after = len(kept_ids)
     points_removed = points_before - points_after
 
-    session.reduced_points = points_removed
     session.computed_path = func.ST_GeomFromEWKT(simplified_wkt)
     db.flush()
 

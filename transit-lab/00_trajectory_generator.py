@@ -18,41 +18,27 @@ def _(mo):
 def _():
     import json
     import folium
-    import math
     import marimo as mo
     import pandas as pd
     import pydeck as pdk
-    import random
     from pathlib import Path
-    from datetime import datetime, timedelta
     from branca.element import Element
     from folium.plugins import Draw
 
-    from geodata.geo_math import (
-        haversine_m,
-        heading_and_perp,
-        interpolate_route,
-        offset_lon_lat,
-    )
     from geodata.geojson import parse_route_from_geojson
+    from database.connection import SessionLocal
 
     return (
         Draw,
         Element,
         Path,
-        datetime,
+        SessionLocal,
         folium,
-        heading_and_perp,
-        interpolate_route,
         json,
-        math,
         mo,
-        offset_lon_lat,
         parse_route_from_geojson,
         pd,
         pdk,
-        random,
-        timedelta,
     )
 
 
@@ -65,15 +51,18 @@ def _(mo):
     )
     get_active_tab, set_active_tab = mo.state("Draw path")
     get_loaded_config, set_loaded_config = mo.state(None)
+    get_save_db_message, set_save_db_message = mo.state("")
     return (
         get_active_tab,
         get_last_generate_click,
         get_loaded_config,
+        get_save_db_message,
         get_simulated_points,
         get_simulation_message,
         set_active_tab,
         set_last_generate_click,
         set_loaded_config,
+        set_save_db_message,
         set_simulated_points,
         set_simulation_message,
     )
@@ -108,7 +97,7 @@ def _(
 
     Draw(
         export=True,
-    
+
         filename=export_filename.value or "trajectory.geojson",
         position="topleft",
         draw_options={
@@ -297,29 +286,18 @@ def _(
 
 @app.cell
 def _(
-    datetime,
     generate_tracks_button,
     geojson_file_browser,
     get_last_generate_click,
-    heading_and_perp,
-    interpolate_route,
-    math,
     noise_config,
-    offset_lon_lat,
     parse_route_from_geojson,
-    random,
     set_active_tab,
     set_last_generate_click,
     set_simulated_points,
     set_simulation_message,
     sim_params,
-    timedelta,
 ):
-    def _on(key: str) -> bool:
-        return noise_config[key].value["Enabled"]
-
-    def _p(key: str, param: str) -> float:
-        return noise_config[key].value[param]
+    from geodata.simulate import generate_tracks
 
     generate_click = generate_tracks_button.value or 0
     if generate_click <= get_last_generate_click():
@@ -327,159 +305,83 @@ def _(
     else:
         set_last_generate_click(generate_click)
 
-        # General params from sim_params dictionary
+        # Build config dict matching the saved JSON format
         _sp = sim_params.value
-        num_tracks = _sp["Number of tracks"]
-        sampling_rate_s = _sp["Sampling rate (s)"]
-        base_speed_mps = _sp["Base speed (m/s)"]
-        speed_jitter_pct = _sp["Speed jitter (%)"]
-        target_points = _sp["Target pts/track (0=auto)"]
-        seed_value = int(_sp["Seed (-1=random)"])
+        _noise_cfg = {}
+        for _key, _dict in noise_config.items():
+            _vals = _dict.value
+            _noise_cfg[_key] = {k: v for k, v in _vals.items() if k != "Description"}
+        _config = {"sim_params": _sp, "noise": _noise_cfg}
 
-        # Noise params
-        gaussian_m = _p("gaussian", "Sigma (m)")
-        perpendicular_m = _p("perpendicular", "Sigma (m)")
-        zigzag_amp_m = _p("zigzag", "Amplitude (m)")
-        zigzag_period = max(2, int(_p("zigzag", "Period (points)")))
-        jump_prob = _p("jumps", "Probability")
-        jump_dist_mean = _p("jumps", "Distance (m)")
-        missing_prob = _p("missing", "Probability")
-        drift_step = _p("biased_drift", "Drift (m/pt)")
-        drift_bearing = math.radians(_p("biased_drift", "Bearing (deg)"))
-        lat_drift_total = _p("lateral_drift", "Total (m)")
-        ts_jitter = _p("timestamp_jitter", "Sigma (s)")
+        _seed_value = int(_sp["Seed (-1=random)"])
 
         # Load route
-        route_error = None
+        _route_error = None
         try:
             if not geojson_file_browser.value:
                 raise ValueError("Select a GeoJSON file first")
-            selected_path = str(geojson_file_browser.path(0))
-            with open(selected_path, encoding="utf-8") as f:
-                route = parse_route_from_geojson(f.read())
-        except Exception as exc:
-            route = []
-            route_error = str(exc)
+            _selected_path = str(geojson_file_browser.path(0))
+            with open(_selected_path, encoding="utf-8") as _f:
+                _route = parse_route_from_geojson(_f.read())
+        except Exception as _exc:
+            _route = []
+            _route_error = str(_exc)
 
-        if route_error:
+        if _route_error:
             set_simulated_points([])
-            set_simulation_message(f"Route error: {route_error}")
-        elif len(route) < 2:
+            set_simulation_message(f"Route error: {_route_error}")
+        elif len(_route) < 2:
             set_simulated_points([])
             set_simulation_message("Route needs at least 2 points.")
         else:
-            records = []
-            start_time = datetime.utcnow().replace(microsecond=0)
-
-            for track_idx in range(num_tracks):
-                track_seed = None if seed_value < 0 else seed_value + track_idx * 1009
-                rng = random.Random(track_seed)
-
-                speed_factor = max(0.1, 1 + rng.gauss(0, speed_jitter_pct / 100.0))
-                step_m = max(0.5, base_speed_mps * speed_factor * sampling_rate_s)
-                base_points = interpolate_route(route, step_m)
-
-                if target_points > 1 and len(base_points) > target_points:
-                    idxs = [
-                        round(i * (len(base_points) - 1) / (target_points - 1))
-                        for i in range(target_points)
-                    ]
-                    base_points = [base_points[i] for i in idxs]
-
-                drift_acc_m = 0.0
-                noisy_points = []
-                elapsed_s = 0.0
-
-                for i, (lon, lat) in enumerate(base_points):
-                    _, perp = heading_and_perp(base_points, i)
-                    east_m = 0.0
-                    north_m = 0.0
-
-                    if _on("gaussian"):
-                        east_m += rng.gauss(0, gaussian_m)
-                        north_m += rng.gauss(0, gaussian_m)
-
-                    if _on("perpendicular") and perpendicular_m > 0:
-                        perp_offset = rng.gauss(0, perpendicular_m)
-                        east_m += perp[0] * perp_offset
-                        north_m += perp[1] * perp_offset
-
-                    if _on("zigzag") and zigzag_amp_m > 0:
-                        zigzag_offset = zigzag_amp_m * math.sin(
-                            (2 * math.pi * i) / zigzag_period
-                        )
-                        east_m += perp[0] * zigzag_offset
-                        north_m += perp[1] * zigzag_offset
-
-                    if (
-                        _on("jumps")
-                        and jump_prob > 0
-                        and rng.random() < jump_prob
-                        and jump_dist_mean > 0
-                    ):
-                        jump_angle = rng.uniform(0, 2 * math.pi)
-                        jump_dist = max(
-                            0.0, rng.gauss(jump_dist_mean, jump_dist_mean * 0.35)
-                        )
-                        east_m += math.cos(jump_angle) * jump_dist
-                        north_m += math.sin(jump_angle) * jump_dist
-
-                    if _on("biased_drift"):
-                        drift_acc_m += drift_step
-                        east_m += math.sin(drift_bearing) * drift_acc_m
-                        north_m += math.cos(drift_bearing) * drift_acc_m
-
-                    if (
-                        _on("lateral_drift")
-                        and len(base_points) > 1
-                        and lat_drift_total != 0
-                    ):
-                        lateral_progress = i / (len(base_points) - 1)
-                        lateral_offset = lateral_progress * lat_drift_total
-                        east_m += perp[0] * lateral_offset
-                        north_m += perp[1] * lateral_offset
-
-                    nlon, nlat = offset_lon_lat(lon, lat, east_m, north_m)
-
-                    if i > 0:
-                        jitter = rng.gauss(0, ts_jitter) if _on("timestamp_jitter") else 0.0
-                        elapsed_s += max(0.2, sampling_rate_s + jitter)
-
-                    noisy_points.append((nlon, nlat, elapsed_s))
-
-                if _on("missing"):
-                    kept_points = []
-                    for i, point in enumerate(noisy_points):
-                        if i in (0, len(noisy_points) - 1) or rng.random() >= missing_prob:
-                            kept_points.append(point)
-                    if len(kept_points) < 2 and len(noisy_points) >= 2:
-                        kept_points = [noisy_points[0], noisy_points[-1]]
-                else:
-                    kept_points = noisy_points
-
-                track_start = start_time + timedelta(minutes=track_idx)
-                for point_idx, (plon, plat, t_s) in enumerate(kept_points):
-                    timestamp = track_start + timedelta(seconds=t_s)
-                    records.append(
-                        {
-                            "track_id": track_idx + 1,
-                            "point_index": point_idx + 1,
-                            "timestamp": timestamp.isoformat(),
-                            "longitude": plon,
-                            "latitude": plat,
-                        }
-                    )
-
-            set_simulated_points(records)
+            _records = generate_tracks(
+                _route,
+                _config,
+                seed=_seed_value if _seed_value >= 0 else None,
+            )
+            _num_tracks = max((r["track_id"] for r in _records), default=0)
+            set_simulated_points(_records)
             set_simulation_message(
-                f"Generated {num_tracks} track(s) with {len(records)} geopoint(s) total."
+                f"Generated {_num_tracks} track(s) with {len(_records)} geopoint(s) total."
             )
             set_active_tab("Generated tracks")
     return
 
 
 @app.cell
-def _(get_simulated_points, get_simulation_message, mo, pd, pdk):
+def _(SessionLocal, mo):
+    from database.models import Line
+
+    _db = SessionLocal()
+    try:
+        _lines = _db.query(Line).order_by(Line.name).all()
+        _options = {f"{l.name} (id={l.id})": l.id for l in _lines}
+    finally:
+        _db.close()
+    line_dropdown = mo.ui.dropdown(
+        options=_options,
+        label="Assign to line",
+    )
+    save_to_db_button = mo.ui.button(
+        label="Save to database",
+        value=0,
+        on_click=lambda v: (v or 0) + 1,
+        kind="success",
+    )
+    return line_dropdown, save_to_db_button
+
+
+@app.cell
+def _(
+    get_save_db_message,
+    get_simulated_points,
+    get_simulation_message,
+    line_dropdown,
+    mo,
+    pd,
+    pdk,
+    save_to_db_button,
+):
     generated_records = get_simulated_points()
     simulation_message = get_simulation_message()
 
@@ -540,16 +442,52 @@ def _(get_simulated_points, get_simulation_message, mo, pd, pdk):
             height=420,
         )
 
+        _db_msg = get_save_db_message()
         generated_tracks_section = mo.vstack(
             [
                 mo.md(simulation_message),
                 deck,
                 preview_table,
+                mo.md("---"),
+                mo.md("### Save to database"),
+                mo.hstack([line_dropdown, save_to_db_button], align="end", gap=0.5),
+                mo.md(_db_msg) if _db_msg else mo.md(""),
             ],
             gap=1,
             align="stretch",
         )
     return (generated_tracks_section,)
+
+
+@app.cell
+def _(
+    SessionLocal,
+    get_simulated_points,
+    line_dropdown,
+    save_to_db_button,
+    set_save_db_message,
+):
+    from geodata.persist import save_tracks_to_db
+
+    if save_to_db_button.value:
+        _records = get_simulated_points()
+        _line_id = line_dropdown.value
+        if not _records:
+            set_save_db_message("No generated tracks to save.")
+        elif not _line_id:
+            set_save_db_message("Select a line first.")
+        else:
+            _db = SessionLocal()
+            try:
+                _sessions = save_tracks_to_db(_db, _records, line_id=_line_id)
+                set_save_db_message(
+                    f"Saved **{len(_sessions)}** trip session(s) to line **{_line_id}**."
+                )
+            except Exception as _exc:
+                set_save_db_message(f"Error saving: {_exc}")
+            finally:
+                _db.close()
+    return
 
 
 @app.cell

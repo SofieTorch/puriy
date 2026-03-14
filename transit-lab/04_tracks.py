@@ -30,6 +30,7 @@ def _():
     from database.connection import SessionLocal
     from database.models.line import Line, LineStatus
     from database.models.trip import TripSessionPoint, TripSession, SessionStatus
+
     return (
         Line,
         TripSessionPoint,

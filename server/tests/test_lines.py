@@ -1,4 +1,6 @@
 """Tests for the lines API endpoints."""
+from uuid import uuid4
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -79,12 +81,12 @@ class TestGetLine:
         
         assert response.status_code == 200
         data = response.json()
-        assert data["id"] == approved_line.id
+        assert data["id"] == str(approved_line.id)
         assert data["name"] == approved_line.name
     
     def test_get_line_not_found(self, client: TestClient):
         """Should return 404 for non-existent line."""
-        response = client.get("/lines/99999")
+        response = client.get(f"/lines/{uuid4()}")
         
         assert response.status_code == 404
         assert response.json()["detail"] == "Line not found"
@@ -132,7 +134,7 @@ class TestDeleteLine:
     
     def test_delete_line_not_found(self, client: TestClient):
         """Should return 404 for non-existent line."""
-        response = client.delete("/lines/99999")
+        response = client.delete(f"/lines/{uuid4()}")
         
         assert response.status_code == 404
 
@@ -167,9 +169,9 @@ class TestMergeLine:
         pending_line: Line,
     ):
         """Should merge one line into another."""
-        from database.models.recording import RecordingSession
+        from database.models.trip import TripSession
 
-        recording = RecordingSession(
+        recording = TripSession(
             line_id=pending_line.id,
             direction="test",
         )

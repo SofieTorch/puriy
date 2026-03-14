@@ -1,12 +1,13 @@
 from datetime import datetime
 from typing import Any, Optional
+from uuid import UUID
 
-from database.models.recording import (
-    LocationPointBase,
-    RecordingSession,
-    RecordingSessionBase,
-    RecordingStatus,
-    SensorReadingBase,
+from database.models.trip import (
+    SessionStatus,
+    TripSensorReadingBase,
+    TripSession,
+    TripSessionBase,
+    TripSessionPointBase,
 )
 from geoalchemy2 import WKBElement
 from pydantic import model_validator
@@ -15,27 +16,28 @@ from shapely.geometry import LineString
 from sqlmodel import SQLModel
 
 
-class RecordingSessionCreate(SQLModel):
-    """Schema for starting a new recording session (line is assigned later)."""
+class TripSessionCreate(SQLModel):
+    """Schema for starting a new trip session (line is assigned later)."""
 
     direction: Optional[str] = None
+    device_id: Optional[str] = None
     device_model: Optional[str] = None
     os_version: Optional[str] = None
     notes: Optional[str] = None
 
 
-class EndRecordingRequest(SQLModel):
-    """Schema for ending a recording session with an optional line assignment."""
+class EndSessionRequest(SQLModel):
+    """Schema for ending a trip session with an optional line assignment."""
 
-    line_id: Optional[int] = None
+    line_id: Optional[UUID] = None
     line_name: Optional[str] = None
 
 
-class RecordingSessionRead(RecordingSessionBase):
-    """Schema for reading a recording session."""
+class TripSessionRead(TripSessionBase):
+    """Schema for reading a trip session."""
 
-    id: int
-    status: RecordingStatus
+    id: UUID
+    status: SessionStatus
     started_at: datetime
     ended_at: Optional[datetime]
     last_activity_at: datetime
@@ -46,11 +48,12 @@ class RecordingSessionRead(RecordingSessionBase):
     def convert_geometry(cls, data: Any) -> Any:
         """Convert PostGIS geometry to coordinate list."""
 
-        if isinstance(data, RecordingSession):
+        if isinstance(data, TripSession):
             result = {
                 "id": data.id,
                 "line_id": data.line_id,
                 "direction": data.direction,
+                "device_id": data.device_id,
                 "device_model": data.device_model,
                 "os_version": data.os_version,
                 "notes": data.notes,
@@ -70,39 +73,39 @@ class RecordingSessionRead(RecordingSessionBase):
         return data
 
 
-class LocationPointCreate(LocationPointBase):
-    """Schema for creating a location point."""
+class TripSessionPointCreate(TripSessionPointBase):
+    """Schema for creating a trip session point."""
 
     pass
 
 
-class LocationPointRead(LocationPointBase):
-    """Schema for reading a location point."""
+class TripSessionPointRead(TripSessionPointBase):
+    """Schema for reading a trip session point."""
 
-    id: int
-    session_id: int
+    id: UUID
+    session_id: UUID
 
 
-class SensorReadingCreate(SensorReadingBase):
+class TripSensorReadingCreate(TripSensorReadingBase):
     """Schema for creating a sensor reading."""
 
     pass
 
 
-class SensorReadingRead(SensorReadingBase):
+class TripSensorReadingRead(TripSensorReadingBase):
     """Schema for reading a sensor reading."""
 
-    id: int
-    session_id: int
+    id: UUID
+    session_id: UUID
 
 
-class LocationPointBatch(SQLModel):
-    """Schema for uploading multiple location points at once."""
+class TripSessionPointBatch(SQLModel):
+    """Schema for uploading multiple trip session points at once."""
 
-    points: list[LocationPointCreate]
+    points: list[TripSessionPointCreate]
 
 
-class SensorReadingBatch(SQLModel):
+class TripSensorReadingBatch(SQLModel):
     """Schema for uploading multiple sensor readings at once."""
 
-    readings: list[SensorReadingCreate]
+    readings: list[TripSensorReadingCreate]

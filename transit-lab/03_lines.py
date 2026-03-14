@@ -101,7 +101,7 @@ def _(approved_lines, mo):
 def _(Line, approved_line_selector, db, mo):
     selected_line = None
     if approved_line_selector.value:
-        selected_line_id = int(approved_line_selector.value.split(" - ", 1)[0])
+        selected_line_id = approved_line_selector.value.split(" - ", 1)[0]
         selected_line = db.get(Line, selected_line_id)
 
     selected_line_info = (

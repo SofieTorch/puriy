@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, Optional
+from uuid import UUID
 
 from database.models.line import Line, LineBase, LineStatus
 from geoalchemy2 import WKBElement
@@ -50,9 +51,9 @@ class LineCreate(LineBase):
 class LineRead(LineBase):
     """Schema for reading a line (API response)."""
 
-    id: int
+    id: UUID
     status: LineStatus
-    merged_into_id: Optional[int] = None
+    merged_into_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
     path: Optional[list[list[float]]] = None

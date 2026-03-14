@@ -8,7 +8,10 @@ from sqlmodel import SQLModel
 
 # Import all models so they're registered with SQLModel.metadata
 from database.models.line import Line  # noqa: F401
-from database.models.recording import LocationPoint, RecordingSession, SensorReading  # noqa: F401
+from database.models.trip import TripSession, TripSessionPoint, TripSensorReading  # noqa: F401
+from database.models.route import (  # noqa: F401
+    Trip, TripPoint, RouteEstimation, RouteSegment, SegmentVote, TravelTimeSample,
+)
 
 config = context.config
 
@@ -24,7 +27,18 @@ target_metadata = SQLModel.metadata
 
 
 # Tables that belong to our app; any other table (PostGIS, Tiger geocoder, etc.) is ignored.
-_APP_TABLES = {"lines", "recording_sessions", "location_points", "sensor_readings"}
+_APP_TABLES = {
+    "lines",
+    "trip_sessions",
+    "trip_session_points",
+    "trip_sensor_readings",
+    "trips",
+    "trip_points",
+    "route_estimations",
+    "route_segments",
+    "segment_votes",
+    "travel_time_samples",
+}
 
 
 def include_object(object, name, type_, reflected, compare_to):

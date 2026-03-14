@@ -6,11 +6,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from database.models.line import Line, LineStatus
-from database.models.recording import (
-    LocationPoint,
-    RecordingSession,
-    RecordingStatus,
-    SensorReading,
+from database.models.trip import (
+    TripSessionPoint,
+    TripSession,
+    SessionStatus,
+    TripSensorReading,
 )
 
 
@@ -39,7 +39,7 @@ class TestListRecordings:
     """Tests for GET /recordings/"""
     
     def test_list_recordings_all(
-        self, client: TestClient, recording_session: RecordingSession
+        self, client: TestClient, recording_session: TripSession
     ):
         """Should list all recordings."""
         response = client.get("/recordings/")
@@ -51,8 +51,8 @@ class TestListRecordings:
     def test_list_recordings_filter_by_status(
         self,
         client: TestClient,
-        recording_session: RecordingSession,
-        completed_recording: RecordingSession
+        recording_session: TripSession,
+        completed_recording: TripSession
     ):
         """Should filter recordings by status."""
         response = client.get("/recordings/", params={"status": "completed"})
@@ -66,26 +66,26 @@ class TestEndRecording:
     """Tests for POST /recordings/{session_id}/end"""
     
     def test_end_recording_success(
-        self, client: TestClient, recording_session: RecordingSession, approved_line: Line
+        self, client: TestClient, recording_session: TripSession, approved_line: Line
     ):
         """Should end an in-progress recording with line assignment."""
         response = client.post(
             f"/recordings/{recording_session.id}/end",
-            json={"line_id": approved_line.id},
+            json={"line_id": str(approved_line.id)},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "completed"
         assert data["ended_at"] is not None
-    
+
     def test_end_already_completed_recording(
-        self, client: TestClient, completed_recording: RecordingSession, approved_line: Line
+        self, client: TestClient, completed_recording: TripSession, approved_line: Line
     ):
         """Should fail when session is not in progress."""
         response = client.post(
             f"/recordings/{completed_recording.id}/end",
-            json={"line_id": approved_line.id},
+            json={"line_id": str(approved_line.id)},
         )
         
         assert response.status_code == 400
@@ -96,7 +96,7 @@ class TestCancelRecording:
     """Tests for POST /recordings/{session_id}/cancel"""
     
     def test_cancel_recording_success(
-        self, client: TestClient, recording_session: RecordingSession
+        self, client: TestClient, recording_session: TripSession
     ):
         """Should cancel an in-progress recording."""
         response = client.post(f"/recordings/{recording_session.id}/cancel")
@@ -110,7 +110,7 @@ class TestLocationBatchUpload:
     """Tests for POST /recordings/{session_id}/locations/batch"""
     
     def test_upload_location_batch(
-        self, client: TestClient, recording_session: RecordingSession
+        self, client: TestClient, recording_session: TripSession
     ):
         """Should upload a batch of GPS points."""
         now = datetime.utcnow()
@@ -132,10 +132,10 @@ class TestLocationBatchUpload:
         assert response.status_code == 201
         data = response.json()
         assert data["added"] == 10
-        assert data["session_id"] == recording_session.id
+        assert data["session_id"] == str(recording_session.id)
     
     def test_upload_empty_batch(
-        self, client: TestClient, recording_session: RecordingSession
+        self, client: TestClient, recording_session: TripSession
     ):
         """Should reject empty batches."""
         response = client.post(
@@ -147,7 +147,7 @@ class TestLocationBatchUpload:
         assert "empty" in response.json()["detail"].lower()
     
     def test_upload_to_completed_session(
-        self, client: TestClient, completed_recording: RecordingSession
+        self, client: TestClient, completed_recording: TripSession
     ):
         """Should fail when session is not in progress."""
         response = client.post(
@@ -163,7 +163,7 @@ class TestLocationBatchUpload:
         assert "not in progress" in response.json()["detail"]
     
     def test_batch_updates_last_activity(
-        self, client: TestClient, db: Session, recording_session: RecordingSession
+        self, client: TestClient, db: Session, recording_session: TripSession
     ):
         """Should update last_activity_at on batch upload."""
         original_activity = recording_session.last_activity_at
@@ -187,7 +187,7 @@ class TestSensorBatchUpload:
     """Tests for POST /recordings/{session_id}/sensors/batch"""
     
     def test_upload_sensor_batch(
-        self, client: TestClient, recording_session: RecordingSession
+        self, client: TestClient, recording_session: TripSession
     ):
         """Should upload a batch of sensor readings."""
         now = datetime.utcnow()
@@ -214,11 +214,11 @@ class TestSensorBatchUpload:
         assert data["added"] == 20
 
 
-class TestGetLocationPoints:
+class TestGetTripSessionPoints:
     """Tests for GET /recordings/{session_id}/locations"""
     
     def test_get_locations_empty(
-        self, client: TestClient, recording_session: RecordingSession
+        self, client: TestClient, recording_session: TripSession
     ):
         """Should return empty list when no points."""
         response = client.get(f"/recordings/{recording_session.id}/locations")
@@ -227,13 +227,13 @@ class TestGetLocationPoints:
         assert response.json() == []
     
     def test_get_locations_with_data(
-        self, client: TestClient, db: Session, recording_session: RecordingSession
+        self, client: TestClient, db: Session, recording_session: TripSession
     ):
         """Should return location points in order."""
         # Add some points directly
         from sqlalchemy import func
         for i in range(3):
-            point = LocationPoint(
+            point = TripSessionPoint(
                 session_id=recording_session.id,
                 timestamp=datetime.utcnow() + timedelta(seconds=i),
                 latitude=40.7128 + (i * 0.001),
@@ -257,9 +257,9 @@ class TestStaleSessionCleanup:
         self, client: TestClient, db: Session, approved_line: Line
     ):
         """Should mark old sessions as abandoned."""
-        stale_session = RecordingSession(
+        stale_session = TripSession(
             line_id=approved_line.id,
-            status=RecordingStatus.IN_PROGRESS,
+            status=SessionStatus.IN_PROGRESS,
             last_activity_at=datetime.utcnow() - timedelta(minutes=60),
         )
         db.add(stale_session)
@@ -275,14 +275,14 @@ class TestStaleSessionCleanup:
         assert response.status_code == 200
         data = response.json()
         assert data["abandoned_count"] >= 1
-        assert stale_id in data["session_ids"]
+        assert str(stale_id) in data["session_ids"]
         
         # Verify session is now abandoned
         db.refresh(stale_session)
-        assert stale_session.status == RecordingStatus.ABANDONED
+        assert stale_session.status == SessionStatus.ABANDONED
     
     def test_cleanup_preserves_active_sessions(
-        self, client: TestClient, recording_session: RecordingSession
+        self, client: TestClient, recording_session: TripSession
     ):
         """Should not affect recently active sessions."""
         response = client.post(
@@ -292,7 +292,7 @@ class TestStaleSessionCleanup:
         
         assert response.status_code == 200
         data = response.json()
-        assert recording_session.id not in data["session_ids"]
+        assert str(recording_session.id) not in data["session_ids"]
 
 
 class TestResumeRecording:
@@ -302,9 +302,9 @@ class TestResumeRecording:
         self, client: TestClient, db: Session, approved_line: Line
     ):
         """Should resume an abandoned session."""
-        abandoned = RecordingSession(
+        abandoned = TripSession(
             line_id=approved_line.id,
-            status=RecordingStatus.ABANDONED,
+            status=SessionStatus.ABANDONED,
             ended_at=datetime.utcnow() - timedelta(minutes=10),
         )
         db.add(abandoned)
@@ -319,7 +319,7 @@ class TestResumeRecording:
         assert data["ended_at"] is None
     
     def test_resume_non_abandoned_session(
-        self, client: TestClient, recording_session: RecordingSession
+        self, client: TestClient, recording_session: TripSession
     ):
         """Should fail when session is not abandoned."""
         response = client.post(f"/recordings/{recording_session.id}/resume")

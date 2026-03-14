@@ -1,22 +1,24 @@
-"""Merge transit lines and move recording sessions."""
+"""Merge transit lines and move trace sessions."""
+
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database.models.line import Line, LineStatus
-from database.models.recording import RecordingSession
+from database.models.trip import TripSession
 
 
 def merge_lines(
     db: Session,
-    line_ids: list[int],
+    line_ids: list[UUID],
     *,
-    target_line_id: int | None = None,
+    target_line_id: UUID | None = None,
 ) -> Line:
     """
     Merge multiple lines into one.
 
-    All recording sessions from the source lines are moved to the target line.
+    All trace sessions from the source lines are moved to the target line.
     Source lines (except the target) are marked as MERGED with merged_into_id set.
 
     Args:
@@ -44,9 +46,9 @@ def merge_lines(
 
     source_ids = [lid for lid in line_ids if lid != target_id]
 
-    # Move all recording sessions to the target line
+    # Move all trace sessions to the target line
     sessions = db.execute(
-        select(RecordingSession).where(RecordingSession.line_id.in_(line_ids))
+        select(TripSession).where(TripSession.line_id.in_(line_ids))
     ).scalars().all()
 
     for session in sessions:

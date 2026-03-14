@@ -25,7 +25,7 @@ os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 from database.connection import get_db
 from main import app
 from database.models.line import Line, LineStatus
-from database.models.recording import RecordingSession, RecordingStatus
+from database.models.trip import TripSession, SessionStatus
 
 
 def _create_test_database_if_not_exists():
@@ -138,14 +138,14 @@ def pending_line(db: Session) -> Line:
 
 
 @pytest.fixture
-def recording_session(db: Session, approved_line: Line) -> RecordingSession:
-    """Create an in-progress recording session."""
-    session = RecordingSession(
+def recording_session(db: Session, approved_line: Line) -> TripSession:
+    """Create an in-progress trace session."""
+    session = TripSession(
         line_id=approved_line.id,
         direction="northbound",
         device_model="Test Device",
         os_version="1.0",
-        status=RecordingStatus.IN_PROGRESS,
+        status=SessionStatus.IN_PROGRESS,
     )
     db.add(session)
     db.commit()
@@ -154,12 +154,12 @@ def recording_session(db: Session, approved_line: Line) -> RecordingSession:
 
 
 @pytest.fixture
-def completed_recording(db: Session, approved_line: Line) -> RecordingSession:
-    """Create a completed recording session."""
-    session = RecordingSession(
+def completed_recording(db: Session, approved_line: Line) -> TripSession:
+    """Create a completed trace session."""
+    session = TripSession(
         line_id=approved_line.id,
         direction="southbound",
-        status=RecordingStatus.COMPLETED,
+        status=SessionStatus.COMPLETED,
         ended_at=datetime.utcnow(),
     )
     db.add(session)

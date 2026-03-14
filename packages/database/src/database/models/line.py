@@ -1,13 +1,16 @@
+import uuid as _uuid
 from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
+from uuid import UUID
 
 from geoalchemy2 import Geometry
 from sqlalchemy import Column
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
-    from .recording import RecordingSession
+    from .route import RouteEstimation, Trip
+    from .trip import TripSession
 
 
 class LineStatus(str, Enum):
@@ -30,11 +33,12 @@ class Line(LineBase, table=True):
     A transit line (e.g., "Line 42", "Red Line").
 
     The path is stored as a PostGIS LINESTRING geometry in WGS84 (SRID 4326).
+    Auto-updated when all segments of a route estimation are confirmed.
     """
 
     __tablename__ = "lines"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -46,6 +50,8 @@ class Line(LineBase, table=True):
     )
 
     status: LineStatus = Field(default=LineStatus.PENDING)
-    merged_into_id: Optional[int] = Field(default=None, foreign_key="lines.id")
+    merged_into_id: Optional[UUID] = Field(default=None, foreign_key="lines.id")
 
-    recordings: list["RecordingSession"] = Relationship(back_populates="line")
+    trip_sessions: list["TripSession"] = Relationship(back_populates="line")
+    trips: list["Trip"] = Relationship(back_populates="line")
+    route_estimations: list["RouteEstimation"] = Relationship(back_populates="line")

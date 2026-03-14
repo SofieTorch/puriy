@@ -1,8 +1,9 @@
 import json
 from typing import Optional, Sequence
+from uuid import UUID
 
 from database.models.line import Line, LineStatus
-from database.models.recording import RecordingSession
+from database.models.trip import TripSession
 from fastapi import APIRouter, Depends, HTTPException, Query
 from geoalchemy2.functions import ST_AsGeoJSON
 from sqlalchemy import func, select, update
@@ -60,7 +61,7 @@ def list_lines(
 
 
 @router.get("/{line_id}", response_model=LineRead)
-def get_line(line_id: int, db: Session = Depends(get_db)) -> LineRead:
+def get_line(line_id: UUID, db: Session = Depends(get_db)) -> LineRead:
     """Get a specific line by ID."""
     line = db.get(Line, line_id)
     if not line:
@@ -70,7 +71,7 @@ def get_line(line_id: int, db: Session = Depends(get_db)) -> LineRead:
 
 @router.patch("/{line_id}", response_model=LineRead)
 def update_line(
-    line_id: int,
+    line_id: UUID,
     line_data: LineUpdate,
     db: Session = Depends(get_db)
 ) -> LineRead:
@@ -95,7 +96,7 @@ def update_line(
 
 
 @router.delete("/{line_id}", status_code=204)
-def delete_line(line_id: int, db: Session = Depends(get_db)) -> None:
+def delete_line(line_id: UUID, db: Session = Depends(get_db)) -> None:
     """Delete a line."""
     line = db.get(Line, line_id)
     if not line:
@@ -105,7 +106,7 @@ def delete_line(line_id: int, db: Session = Depends(get_db)) -> None:
 
 
 @router.get("/{line_id}/geojson")
-def get_line_geojson(line_id: int, db: Session = Depends(get_db)) -> dict:
+def get_line_geojson(line_id: UUID, db: Session = Depends(get_db)) -> dict:
     """Get line path as GeoJSON Feature."""
     line = db.get(Line, line_id)
     if not line:
@@ -153,14 +154,14 @@ def find_lines_nearby(
 
 @router.post("/{line_id}/merge/{target_line_id}", response_model=LineRead)
 def merge_line(
-    line_id: int,
-    target_line_id: int,
+    line_id: UUID,
+    target_line_id: UUID,
     db: Session = Depends(get_db)
 ) -> LineRead:
     """
     Merge a line into another line (admin operation).
 
-    All recordings from line_id will be moved to target_line_id.
+    All trace sessions from line_id will be moved to target_line_id.
     The source line will be marked as MERGED with a reference to the target.
     """
     if line_id == target_line_id:
@@ -187,8 +188,8 @@ def merge_line(
         )
 
     db.execute(
-        update(RecordingSession)
-        .where(RecordingSession.line_id == line_id)
+        update(TripSession)
+        .where(TripSession.line_id == line_id)
         .values(line_id=target_line_id)
     )
 
@@ -202,7 +203,7 @@ def merge_line(
 
 
 @router.post("/{line_id}/approve", response_model=LineRead)
-def approve_line(line_id: int, db: Session = Depends(get_db)) -> LineRead:
+def approve_line(line_id: UUID, db: Session = Depends(get_db)) -> LineRead:
     """Approve a pending line (admin operation)."""
     line = db.get(Line, line_id)
     if not line:

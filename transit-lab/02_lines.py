@@ -29,13 +29,13 @@ def _():
 
     from database.connection import SessionLocal
     from database.models.line import Line, LineStatus
-    from database.models.recording import RecordingSession
+    from database.models.trip import TripSession
     from geodata.merge import merge_lines
 
     return (
         Line,
         LineStatus,
-        RecordingSession,
+        TripSession,
         SessionLocal,
         math,
         merge_lines,
@@ -209,7 +209,7 @@ def _(
 
 @app.cell
 def _(
-    RecordingSession,
+    TripSession,
     db,
     math,
     mo,
@@ -247,7 +247,7 @@ def _(
     DEFAULT_ALPHA = 120
 
     if not selected_line_ids:
-        sessions_map = mo.md("Select one or more lines to see recording sessions on the map.")
+        sessions_map = mo.md("Select one or more lines to see trip sessions on the map.")
         plain_map = pdk.Deck(
             map_style="light",
             map_provider="carto",
@@ -264,9 +264,9 @@ def _(
     else:
         sessions_list = list(
             db.execute(
-                select(RecordingSession)
-                .where(RecordingSession.line_id.in_(selected_line_ids))
-                .order_by(RecordingSession.started_at.desc())
+                select(TripSession)
+                .where(TripSession.line_id.in_(selected_line_ids))
+                .order_by(TripSession.started_at.desc())
             ).scalars().all()
         )
 
@@ -377,7 +377,7 @@ def _(
                 mo.hstack([mo.md("**Maps**"), view_3d_switch], justify="space-between", align="center"),
                 mo.hstack(
                     [
-                        mo.vstack([mo.md("**Recording sessions**"), sessions_map], gap=0.5),
+                        mo.vstack([mo.md("**Trip sessions**"), sessions_map], gap=0.5),
                         mo.vstack([mo.md("**Plain map**"), plain_map], gap=0.5),
                     ],
                     widths=[1, 1],

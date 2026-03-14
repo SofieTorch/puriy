@@ -1,5 +1,7 @@
 import argparse
+import json
 import sys
+from uuid import UUID
 
 from database.connection import SessionLocal
 
@@ -119,6 +121,70 @@ def _cmd_simplify(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _cmd_generate(args: argparse.Namespace) -> int:
+    from .geojson import parse_route_from_geojson
+    from .simulate import generate_tracks
+
+    with open(args.route, encoding="utf-8") as f:
+        route = parse_route_from_geojson(f.read())
+
+    with open(args.config, encoding="utf-8") as f:
+        config = json.load(f)
+
+    seed = args.seed if args.seed >= 0 else None
+    records = generate_tracks(route, config, seed=seed)
+
+    num_tracks = max((r["track_id"] for r in records), default=0)
+    print(f"Generated {num_tracks} track(s) with {len(records)} point(s).")
+
+    if args.save_db:
+        from .persist import save_tracks_to_db
+
+        if args.line_id is None:
+            print("Error: --line-id is required when using --save-db", file=sys.stderr)
+            return 1
+
+        db = SessionLocal()
+        try:
+            sessions = save_tracks_to_db(
+                db, records, line_id=UUID(args.line_id), notes=args.notes
+            )
+            print(
+                f"Saved {len(sessions)} trip session(s) "
+                f"to line_id={args.line_id}."
+            )
+        finally:
+            db.close()
+    elif args.output:
+        geojson = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "track_id": r["track_id"],
+                        "point_index": r["point_index"],
+                        "timestamp": r["timestamp"],
+                    },
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [r["longitude"], r["latitude"]],
+                    },
+                }
+                for r in records
+            ],
+        }
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(geojson, f, indent=2)
+        print(f"Written to {args.output}")
+    else:
+        print(json.dumps(records[:5], indent=2))
+        if len(records) > 5:
+            print(f"... ({len(records) - 5} more)")
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="geodata")
     subparsers = parser.add_subparsers(
@@ -128,8 +194,8 @@ def main() -> int:
         help="Command to run",
     )
 
-    simplify_parser = subparsers.add_parser("simplify", help="Simplify a recording session path (RDP)")
-    simplify_parser.add_argument("record_id", type=int, help="Recording session ID")
+    simplify_parser = subparsers.add_parser("simplify", help="Simplify a trip session path (RDP)")
+    simplify_parser.add_argument("record_id", type=int, help="Trip session ID")
     simplify_parser.add_argument(
         "--tolerance",
         type=float,
@@ -143,6 +209,18 @@ def main() -> int:
         help="Print ASCII preview of path before and after simplification",
     )
     simplify_parser.set_defaults(handler=_cmd_simplify)
+
+    gen_parser = subparsers.add_parser(
+        "generate", help="Generate simulated GPS tracks from a route + config"
+    )
+    gen_parser.add_argument("--route", required=True, help="Path to .geojson route file")
+    gen_parser.add_argument("--config", required=True, help="Path to config .json file")
+    gen_parser.add_argument("--seed", type=int, default=42, help="Random seed (-1 for random)")
+    gen_parser.add_argument("--output", "-o", help="Write output GeoJSON to file")
+    gen_parser.add_argument("--save-db", action="store_true", help="Save tracks to the database")
+    gen_parser.add_argument("--line-id", help="Line UUID (required with --save-db)")
+    gen_parser.add_argument("--notes", default="simulated", help="Notes for trip sessions")
+    gen_parser.set_defaults(handler=_cmd_generate)
 
     args = parser.parse_args()
     return args.handler(args)
