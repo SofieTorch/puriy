@@ -30,8 +30,11 @@ def _():
     from database.connection import SessionLocal
     from database.models.line import Line, LineStatus
     from database.models.trip import TripSessionPoint, TripSession, SessionStatus
+    from database.models.route import Trip, TripPoint
     return (
         Line,
+        Trip,
+        TripPoint,
         TripSessionPoint,
         TripSession,
         SessionLocal,
@@ -84,7 +87,7 @@ def _(TripSession, db, lines_table, mo, pd, select):
 
     if not selected_line_ids:
         detail_output = mo.md(
-            "**Selecciona una o más líneas** en la tabla de arriba para ver sesiones y mapa."
+            "**Selecciona una o m\u00e1s l\u00edneas** en la tabla de arriba para ver sesiones y mapa."
         )
         sessions_table = None
         sessions = []
@@ -99,7 +102,7 @@ def _(TripSession, db, lines_table, mo, pd, select):
 
         if not sessions:
             detail_output = mo.md(
-                "No hay sesiones de grabación para las líneas seleccionadas."
+                "No hay sesiones de grabaci\u00f3n para las l\u00edneas seleccionadas."
             )
             sessions_table = None
         else:
@@ -111,8 +114,8 @@ def _(TripSession, db, lines_table, mo, pd, select):
                         "status": s.status.value,
                         "started_at": s.started_at,
                         "ended_at": s.ended_at,
-                        "direction": s.direction or "—",
-                        "device_model": s.device_model or "—",
+                        "direction": s.direction or "\u2014",
+                        "device_model": s.device_model or "\u2014",
                     }
                     for s in sessions
                 ]
@@ -123,39 +126,29 @@ def _(TripSession, db, lines_table, mo, pd, select):
                 pagination=True,
                 selection="single",
             )
-            detail_output = None  # Map + table rendered in next cell
+            detail_output = None
 
     detail_output
     return sessions, sessions_table
 
 
+# ---------------------------------------------------------------------------
+# Overview map: all sessions
+# ---------------------------------------------------------------------------
+
+
 @app.cell
 def _(TripSessionPoint, db, func, math, mo, pdk, select, sessions, sessions_table, to_shape):
-    # This cell builds map data and zoom buttons
     if sessions_table is None or not sessions:
         zoom_in_btn = zoom_out_btn = None
         view_3d_switch = None
         center_lat = center_lon = None
         layers = []
-        geo_points_count = None
-        selected_session = None
-        duration_seconds = None
-        distance_m = None
         agg_geo_points = None
         agg_duration_seconds = None
         agg_distance_m = None
     else:
-        selected_sessions = sessions_table.value
-        selected_session = None
-        if (
-            selected_sessions is not None
-            and not selected_sessions.empty
-            and "id" in selected_sessions.columns
-        ):
-            sid = selected_sessions["id"].iloc[0]
-            selected_session = next((s for s in sessions if s.id == sid), None)
-
-        def _path_coords(session):
+        def _path_coords_fn(session):
             if session.computed_path is not None:
                 try:
                     geom = to_shape(session.computed_path)
@@ -164,20 +157,7 @@ def _(TripSessionPoint, db, func, math, mo, pdk, select, sessions, sessions_tabl
                     pass
             return None
 
-        def _trip_data(path_coords, location_points=None):
-            if location_points and len(location_points) >= 2:
-                t0 = location_points[0].timestamp
-                timestamps = [(p.timestamp - t0).total_seconds() for p in location_points]
-                path = [
-                    [p.longitude, p.latitude, p.altitude if p.altitude else 0]
-                    for p in location_points
-                ]
-            else:
-                timestamps = list(range(len(path_coords)))
-                path = [[c[0], c[1], 0] for c in path_coords]
-            return {"path": path, "timestamps": timestamps}
-
-        PATH_COLORS = [
+        _PATH_COLORS = [
             [59, 130, 246],   # blue
             [34, 197, 94],    # green
             [234, 179, 8],    # amber
@@ -185,8 +165,9 @@ def _(TripSessionPoint, db, func, math, mo, pdk, select, sessions, sessions_tabl
             [236, 72, 153],   # pink
             [20, 184, 166],   # teal
         ]
+
         def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
-            R = 6_371_000  # Earth radius in meters
+            R = 6_371_000
             phi1, phi2 = math.radians(lat1), math.radians(lat2)
             dphi = math.radians(lat2 - lat1)
             dlambda = math.radians(lon2 - lon1)
@@ -194,122 +175,59 @@ def _(TripSessionPoint, db, func, math, mo, pdk, select, sessions, sessions_tabl
             c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
             return R * c
 
-        path_layer_data = []
-        all_coords = []
-        selected_trip_data = None
-        scatter_data = []
-        geo_points_count = None
-        duration_seconds = None
-        distance_m = None
+        _path_layer_data = []
+        _all_coords = []
 
-        # Aggregated stats across all sessions
-        session_ids = [s.id for s in sessions]
-        geo_counts = dict(
+        _session_ids = [s.id for s in sessions]
+        _geo_counts = dict(
             db.execute(
                 select(TripSessionPoint.session_id, func.count(TripSessionPoint.id))
-                .where(TripSessionPoint.session_id.in_(session_ids))
+                .where(TripSessionPoint.session_id.in_(_session_ids))
                 .group_by(TripSessionPoint.session_id)
             ).all()
         )
-        agg_geo_points = sum(geo_counts.get(sid, 0) for sid in session_ids)
+        agg_geo_points = sum(_geo_counts.get(_sid, 0) for _sid in _session_ids)
         agg_duration_seconds = 0
         agg_distance_m = 0.0
 
-        for i, s in enumerate(sessions):
-            path_coords = _path_coords(s)
-            if path_coords:
-                is_selected = selected_session and s.id == selected_session.id
-                if not is_selected:
-                    path_layer_data.append({
-                        "path": path_coords,
-                        "color": PATH_COLORS[i % len(PATH_COLORS)],
-                    })
-                all_coords.extend(path_coords)
-
-                # Per-session distance and duration for aggregates
-                session_distance = 0.0
-                for j in range(len(path_coords) - 1):
-                    lon1, lat1 = path_coords[j][0], path_coords[j][1]
-                    lon2, lat2 = path_coords[j + 1][0], path_coords[j + 1][1]
-                    session_distance += _haversine_m(lon1, lat1, lon2, lat2)
-                agg_distance_m += session_distance
-                end_time = s.ended_at or s.last_activity_at
-                if end_time:
-                    agg_duration_seconds += int((end_time - s.started_at).total_seconds())
-
-                if is_selected:
-                    loc_pts = list(
-                        db.execute(
-                            select(TripSessionPoint)
-                            .where(TripSessionPoint.session_id == s.id)
-                            .order_by(TripSessionPoint.timestamp)
-                        ).scalars().all()
-                    )
-                    selected_trip_data = _trip_data(path_coords, loc_pts if loc_pts else None)
-                    scatter_data = [
-                        {"coordinates": [p.longitude, p.latitude, p.altitude or 0]}
-                        for p in (loc_pts or [])
-                    ]
-                    geo_points_count = len(loc_pts) if loc_pts else 0
-                    duration_seconds = (
-                        int((end_time - s.started_at).total_seconds())
-                        if end_time else None
-                    )
-                    distance_m = session_distance
+        for _i, _s in enumerate(sessions):
+            _path_coords = _path_coords_fn(_s)
+            if _path_coords:
+                _path_layer_data.append({
+                    "path": _path_coords,
+                    "color": _PATH_COLORS[_i % len(_PATH_COLORS)],
+                })
+                _all_coords.extend(_path_coords)
+                _session_distance = 0.0
+                for _j in range(len(_path_coords) - 1):
+                    _lon1, _lat1 = _path_coords[_j][0], _path_coords[_j][1]
+                    _lon2, _lat2 = _path_coords[_j + 1][0], _path_coords[_j + 1][1]
+                    _session_distance += _haversine_m(_lon1, _lat1, _lon2, _lat2)
+                agg_distance_m += _session_distance
+                _end_time = _s.ended_at or _s.last_activity_at
+                if _end_time:
+                    agg_duration_seconds += int((_end_time - _s.started_at).total_seconds())
 
         layers = []
-        if path_layer_data:
+        if _path_layer_data:
             layers.append(
                 pdk.Layer(
                     "PathLayer",
-                    path_layer_data,
+                    _path_layer_data,
                     get_path="path",
                     get_color="color",
                     get_width=5,
                     width_min_pixels=3,
                 ),
             )
-        if selected_trip_data:
-            max_time = max(selected_trip_data["timestamps"]) if selected_trip_data["timestamps"] else 0
-            layers.append(
-                pdk.Layer(
-                    "TripsLayer",
-                    [selected_trip_data],
-                    get_path="path",
-                    get_timestamps="timestamps",
-                    get_color=[239, 68, 68],
-                    opacity=0.9,
-                    width_min_pixels=10,
-                    rounded=True,
-                    trail_length=max_time + 1,
-                    current_time=max_time,
-                ),
-            )
-        if scatter_data:
-            layers.append(
-                pdk.Layer(
-                    "ScatterplotLayer",
-                    data=scatter_data,
-                    get_position="coordinates",
-                    get_color=[239, 68, 68],
-                    get_radius=4,
-                    radius_min_pixels=4,
-                    stroked=True,
-                    get_line_color=[255, 255, 255],
-                    line_width_min_pixels=1,
-                ),
-            )
 
-        if scatter_data:
-            lons = [c["coordinates"][0] for c in scatter_data]
-            lats = [c["coordinates"][1] for c in scatter_data]
-        elif all_coords:
-            lons = [c[0] for c in all_coords]
-            lats = [c[1] for c in all_coords]
+        if _all_coords:
+            _lons = [c[0] for c in _all_coords]
+            _lats = [c[1] for c in _all_coords]
         else:
-            lons, lats = [], []
-        center_lat = sum(lats) / len(lats) if lats else 40.4
-        center_lon = sum(lons) / len(lons) if lons else -3.7
+            _lons, _lats = [], []
+        center_lat = sum(_lats) / len(_lats) if _lats else 40.4
+        center_lon = sum(_lons) / len(_lons) if _lons else -3.7
 
         zoom_in_btn = mo.ui.button(
             label="+",
@@ -318,28 +236,23 @@ def _(TripSessionPoint, db, func, math, mo, pdk, select, sessions, sessions_tabl
             kind="neutral",
         )
         zoom_out_btn = mo.ui.button(
-            label="−",
+            label="\u2212",
             value=0,
             on_click=lambda v: (v or 0) + 1,
             kind="neutral",
         )
-        view_3d_switch = mo.ui.switch(value=True, label="3D view")
+        view_3d_switch = mo.ui.switch(value=False, label="3D view")
     return (
         agg_distance_m,
         agg_duration_seconds,
         agg_geo_points,
         center_lat,
         center_lon,
-        distance_m,
-        duration_seconds,
-        geo_points_count,
         layers,
-        selected_session,
         view_3d_switch,
         zoom_in_btn,
         zoom_out_btn,
     )
-
 
 
 @app.cell
@@ -349,19 +262,14 @@ def _(
     agg_geo_points,
     center_lat,
     center_lon,
-    distance_m,
-    duration_seconds,
-    geo_points_count,
     layers,
     mo,
     pdk,
-    selected_session,
     sessions_table,
     view_3d_switch,
     zoom_in_btn,
     zoom_out_btn,
 ):
-    # This cell reads zoom button and switch values (created in previous cell) to build the deck
     if (
         sessions_table is None
         or zoom_in_btn is None
@@ -371,11 +279,11 @@ def _(
         or center_lon is None
         or not layers
     ):
-        map_display = None
+        overview_display = None
     else:
         def _format_duration(seconds: int | None) -> str:
             if seconds is None:
-                return "—"
+                return "\u2014"
             h, r = divmod(seconds, 3600)
             m, s = divmod(r, 60)
             if h:
@@ -384,10 +292,9 @@ def _(
                 return f"{m}m {s}s"
             return f"{s}s"
 
-
         def _format_distance(m: float | None) -> str:
             if m is None:
-                return "—"
+                return "\u2014"
             if m >= 1000:
                 return f"{m / 1000:.1f} km"
             return f"{int(m)} m"
@@ -409,18 +316,24 @@ def _(
             layers=layers,
             height=500,
         )
+
+        _fs_js = "this.closest('.map-container').requestFullscreen()"
+        _fullscreen_btn = mo.Html(
+            f'<button onclick="{_fs_js}" '
+            'style="background:var(--mo-ui-bg,#fff);border:1px solid var(--mo-ui-border,#ccc);'
+            'border-radius:4px;padding:2px 8px;cursor:pointer;font-size:14px" '
+            'title="Fullscreen">\u26f6</button>'
+        )
+
         zoom_controls = mo.hstack(
-            [zoom_out_btn, zoom_in_btn, view_3d_switch],
+            [zoom_out_btn, zoom_in_btn, view_3d_switch, _fullscreen_btn],
             gap=0.5,
             justify="start",
         )
-        map_section = mo.vstack(
+        _map_inner = mo.vstack(
             [
                 mo.hstack(
-                    [
-                        zoom_controls,
-                        mo.md("_Scroll to zoom · Drag to pan_"),
-                    ],
+                    [zoom_controls, mo.md("_Scroll to zoom \u00b7 Drag to pan_")],
                     justify="start",
                     gap=1,
                 ),
@@ -428,26 +341,18 @@ def _(
             ],
             align="stretch",
         )
-        table_header = mo.md("**Trip sessions**")
+        map_section = mo.Html(
+            f'<div class="map-container" style="background:var(--mo-bg,#fff)">{_map_inner.text}</div>'
+        )
+
         stats_display = None
-        if selected_session and geo_points_count is not None:
-            stats_display = mo.hstack(
-                [
-                    mo.stat(geo_points_count, label="Geopoints", bordered=False),
-                    mo.stat(_format_duration(duration_seconds), label="Time", bordered=False),
-                    mo.stat(_format_distance(distance_m), label="Distance", bordered=False),
-                ],
-                gap=1,
-                align="stretch",
-                justify="start",
-            )
-        elif selected_session is None and agg_geo_points is not None:
+        if agg_geo_points is not None:
             stats_display = mo.hstack(
                 [
                     mo.stat(agg_geo_points, label="Geopoints", bordered=False),
                     mo.stat(_format_duration(agg_duration_seconds or 0), label="Time", bordered=False),
                     mo.stat(
-                        f"{agg_distance_m / 1000:.1f} km" if agg_distance_m else "—",
+                        _format_distance(agg_distance_m) if agg_distance_m else "\u2014",
                         label="Distance",
                         bordered=False,
                     ),
@@ -459,20 +364,371 @@ def _(
         table_content = []
         if stats_display is not None:
             table_content.append(stats_display)
-        table_content.extend([table_header, sessions_table])
+        table_content.extend([mo.md("**Trip sessions**"), sessions_table])
         table_section = mo.vstack(table_content).style(
             style={"max-width": "540px"},
             overflow_x="auto",
         )
-        map_display = mo.hstack(
+        overview_display = mo.hstack(
             [map_section, table_section],
             widths=[1, 1],
             gap=1,
             justify="start",
         )
 
+    overview_display
+    return
 
-    map_display
+
+# ---------------------------------------------------------------------------
+# Selected session: extract, trip lookup, clean action
+# ---------------------------------------------------------------------------
+
+
+@app.cell
+def _(sessions, sessions_table):
+    _sel = sessions_table.value if sessions_table is not None else None
+    selected_session = None
+    if _sel is not None and not _sel.empty and "id" in _sel.columns:
+        _sid = _sel["id"].iloc[0]
+        selected_session = next((s for s in sessions if s.id == _sid), None)
+    return (selected_session,)
+
+
+@app.cell
+def _(Trip, db, mo, select, selected_session):
+    existing_trip = None
+    clean_btn = None
+    if selected_session is not None:
+        existing_trip = db.execute(
+            select(Trip).where(Trip.session_id == selected_session.id)
+        ).scalars().first()
+        if existing_trip is None:
+            clean_btn = mo.ui.button(
+                label="Clean / Map-match",
+                value=0,
+                on_click=lambda v: (v or 0) + 1,
+            )
+    return clean_btn, existing_trip
+
+
+@app.cell
+def _(clean_btn, db, mo, selected_session):
+    cleaned_trip = None
+    clean_result_output = None
+    if clean_btn is not None and (clean_btn.value or 0) > 0 and selected_session is not None:
+        from geodata.match import match_session
+
+        try:
+            _result = match_session(db, selected_session.id)
+            cleaned_trip = _result.trip
+            clean_result_output = mo.callout(
+                mo.md(
+                    f"Matched **{_result.points_before}** \u2192 **{_result.points_after}** points "
+                    f"(confidence: **{_result.confidence:.1%}**)"
+                ),
+                kind="success",
+            )
+        except Exception as _e:
+            clean_result_output = mo.callout(mo.md(f"Error: {_e}"), kind="danger")
+    return clean_result_output, cleaned_trip
+
+
+# ---------------------------------------------------------------------------
+# Detail section: selected session map + trip tables
+# ---------------------------------------------------------------------------
+
+
+@app.cell
+def _(
+    TripPoint,
+    TripSessionPoint,
+    clean_btn,
+    clean_result_output,
+    cleaned_trip,
+    db,
+    existing_trip,
+    math,
+    mo,
+    pd,
+    pdk,
+    select,
+    selected_session,
+    to_shape,
+):
+    if selected_session is None:
+        detail_section = None
+    else:
+        _trip_to_show = cleaned_trip or existing_trip
+
+        def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+            R = 6_371_000
+            phi1, phi2 = math.radians(lat1), math.radians(lat2)
+            dphi = math.radians(lat2 - lat1)
+            dlambda = math.radians(lon2 - lon1)
+            a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            return R * c
+
+        def _format_duration(seconds: int | None) -> str:
+            if seconds is None:
+                return "\u2014"
+            h, r = divmod(seconds, 3600)
+            m, s = divmod(r, 60)
+            if h:
+                return f"{h}h {m}m"
+            if m:
+                return f"{m}m {s}s"
+            return f"{s}s"
+
+        def _format_distance(m: float | None) -> str:
+            if m is None:
+                return "\u2014"
+            if m >= 1000:
+                return f"{m / 1000:.1f} km"
+            return f"{int(m)} m"
+
+        # -- Load raw session path + points --
+        _detail_layers = []
+        _all_coords = []
+
+        _raw_path_coords = None
+        if selected_session.computed_path is not None:
+            try:
+                _geom = to_shape(selected_session.computed_path)
+                _raw_path_coords = [[c[0], c[1], 0] for c in _geom.coords]
+            except Exception:
+                pass
+
+        _loc_pts = list(
+            db.execute(
+                select(TripSessionPoint)
+                .where(TripSessionPoint.session_id == selected_session.id)
+                .order_by(TripSessionPoint.timestamp)
+            ).scalars().all()
+        )
+
+        if _raw_path_coords:
+            _all_coords.extend(_raw_path_coords)
+            # Raw path as TripsLayer
+            if _loc_pts and len(_loc_pts) >= 2:
+                _t0 = _loc_pts[0].timestamp
+                _timestamps = [(p.timestamp - _t0).total_seconds() for p in _loc_pts]
+                _path = [
+                    [p.longitude, p.latitude, p.altitude if p.altitude else 0]
+                    for p in _loc_pts
+                ]
+            else:
+                _timestamps = list(range(len(_raw_path_coords)))
+                _path = [[c[0], c[1], 0] for c in _raw_path_coords]
+            _max_time = max(_timestamps) if _timestamps else 0
+            _detail_layers.append(
+                pdk.Layer(
+                    "TripsLayer",
+                    [{"path": _path, "timestamps": _timestamps}],
+                    get_path="path",
+                    get_timestamps="timestamps",
+                    get_color=[239, 68, 68],  # red
+                    opacity=0.9,
+                    width_min_pixels=10 if not _trip_to_show else 6,
+                    rounded=True,
+                    trail_length=_max_time + 1,
+                    current_time=_max_time,
+                ),
+            )
+            # Raw scatter
+            if _loc_pts:
+                _detail_layers.append(
+                    pdk.Layer(
+                        "ScatterplotLayer",
+                        data=[
+                            {"coordinates": [p.longitude, p.latitude, p.altitude or 0]}
+                            for p in _loc_pts
+                        ],
+                        get_position="coordinates",
+                        get_color=[239, 68, 68],
+                        get_radius=4,
+                        radius_min_pixels=4,
+                        stroked=True,
+                        get_line_color=[255, 255, 255],
+                        line_width_min_pixels=1,
+                    ),
+                )
+
+        # -- Load clean trip path + points --
+        _clean_pts = []
+        if _trip_to_show and _trip_to_show.computed_path is not None:
+            try:
+                _trip_geom = to_shape(_trip_to_show.computed_path)
+                _trip_coords = [[c[0], c[1], 0] for c in _trip_geom.coords]
+                _detail_layers.append(
+                    pdk.Layer(
+                        "PathLayer",
+                        [{"path": _trip_coords, "color": [34, 197, 94]}],
+                        get_path="path",
+                        get_color="color",
+                        get_width=5,
+                        width_min_pixels=3,
+                    ),
+                )
+                _all_coords.extend(_trip_coords)
+            except Exception:
+                pass
+            _clean_pts = list(
+                db.execute(
+                    select(TripPoint)
+                    .where(TripPoint.trip_id == _trip_to_show.id)
+                    .order_by(TripPoint.point_index)
+                ).scalars().all()
+            )
+            if _clean_pts:
+                _detail_layers.append(
+                    pdk.Layer(
+                        "ScatterplotLayer",
+                        data=[
+                            {"coordinates": [p.longitude, p.latitude, 0]}
+                            for p in _clean_pts
+                        ],
+                        get_position="coordinates",
+                        get_color=[34, 197, 94],
+                        get_radius=4,
+                        radius_min_pixels=4,
+                        stroked=True,
+                        get_line_color=[255, 255, 255],
+                        line_width_min_pixels=1,
+                    ),
+                )
+
+        # -- Stats --
+        _geo_points_count = len(_loc_pts)
+        _end_time = selected_session.ended_at or selected_session.last_activity_at
+        _duration_seconds = (
+            int((_end_time - selected_session.started_at).total_seconds())
+            if _end_time else None
+        )
+        _distance_m = 0.0
+        if _raw_path_coords:
+            for _j in range(len(_raw_path_coords) - 1):
+                _lon1, _lat1 = _raw_path_coords[_j][0], _raw_path_coords[_j][1]
+                _lon2, _lat2 = _raw_path_coords[_j + 1][0], _raw_path_coords[_j + 1][1]
+                _distance_m += _haversine_m(_lon1, _lat1, _lon2, _lat2)
+
+        # -- Build detail map --
+        if _all_coords:
+            _lons = [c[0] for c in _all_coords]
+            _lats = [c[1] for c in _all_coords]
+            _center_lat = sum(_lats) / len(_lats)
+            _center_lon = sum(_lons) / len(_lons)
+        else:
+            _center_lat, _center_lon = 40.4, -3.7
+
+        _legend_parts = ['<span style="color:#ef4444">\u25cf</span> Raw']
+        if _trip_to_show:
+            _legend_parts.append('<span style="color:#22c55e">\u25cf</span> Clean')
+
+        _detail_deck = pdk.Deck(
+            map_style="light",
+            map_provider="carto",
+            initial_view_state=pdk.ViewState(
+                latitude=_center_lat,
+                longitude=_center_lon,
+                zoom=14,
+                pitch=0,
+                bearing=0,
+            ),
+            layers=_detail_layers,
+            height=400,
+        )
+        _detail_fs_js = "this.closest('.map-container').requestFullscreen()"
+        _detail_fs_btn = mo.Html(
+            f'<button onclick="{_detail_fs_js}" '
+            'style="background:var(--mo-ui-bg,#fff);border:1px solid var(--mo-ui-border,#ccc);'
+            'border-radius:4px;padding:2px 8px;cursor:pointer;font-size:14px" '
+            'title="Fullscreen">\u26f6</button>'
+        )
+        _detail_stats = mo.hstack(
+            [
+                mo.stat(_geo_points_count, label="Geopoints", bordered=False),
+                mo.stat(_format_duration(_duration_seconds), label="Time", bordered=False),
+                mo.stat(_format_distance(_distance_m), label="Distance", bordered=False),
+            ],
+            gap=1,
+            justify="start",
+        )
+        _detail_map_inner = mo.vstack(
+            [
+                _detail_stats,
+                mo.hstack(
+                    [
+                        mo.md(" &nbsp; ".join(_legend_parts)),
+                        _detail_fs_btn,
+                        mo.md("_Scroll to zoom \u00b7 Drag to pan_"),
+                    ],
+                    justify="start",
+                    gap=1,
+                ),
+                _detail_deck,
+            ],
+            align="stretch",
+        )
+        _detail_map = mo.Html(
+            f'<div class="map-container" style="background:var(--mo-bg,#fff)">'
+            f'{_detail_map_inner.text}</div>'
+        )
+
+        # -- Right side: clean button / trip table + trip points table --
+        _right_content = []
+
+        if clean_btn is not None:
+            _right_content.append(clean_btn)
+        if clean_result_output is not None:
+            _right_content.append(clean_result_output)
+
+        if _trip_to_show:
+            _trip_df = pd.DataFrame([{
+                "id": str(_trip_to_show.id),
+                "status": _trip_to_show.status.value,
+                "match_score": f"{_trip_to_show.match_score:.1%}" if _trip_to_show.match_score is not None else "\u2014",
+                "frechet_distance": f"{_trip_to_show.frechet_distance:.2f}" if _trip_to_show.frechet_distance is not None else "\u2014",
+                "processed_at": _trip_to_show.processed_at,
+            }])
+            _right_content.append(mo.md("**Cleaned Trip**"))
+            _right_content.append(mo.ui.table(data=_trip_df, label="", pagination=False, selection=None))
+
+            if _clean_pts:
+                _pts_df = pd.DataFrame([
+                    {
+                        "index": p.point_index,
+                        "latitude": round(p.latitude, 6),
+                        "longitude": round(p.longitude, 6),
+                        "timestamp": p.timestamp,
+                    }
+                    for p in _clean_pts
+                ])
+                _right_content.append(mo.md(f"**Trip points** ({len(_clean_pts)})"))
+                _right_content.append(
+                    mo.ui.table(data=_pts_df, label="", pagination=True, selection=None)
+                )
+        elif clean_btn is None and _trip_to_show is None:
+            _right_content.append(mo.md("_No cleaned trip yet._"))
+
+        _right_section = mo.vstack(_right_content).style(
+            style={"max-width": "540px"},
+            overflow_x="auto",
+        )
+
+        detail_section = mo.vstack([
+            mo.md("---"),
+            mo.md(f"### Session detail"),
+            mo.hstack(
+                [_detail_map, _right_section],
+                widths=[1, 1],
+                gap=1,
+                justify="start",
+            ),
+        ])
+
+    detail_section
     return
 
 
