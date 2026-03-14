@@ -2,6 +2,7 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
+from dotenv import load_dotenv
 from geoalchemy2 import alembic_helpers
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
@@ -13,12 +14,11 @@ from database.models.route import (  # noqa: F401
     Trip, TripPoint, RouteEstimation, RouteSegment, SegmentVote, TravelTimeSample,
 )
 
+load_dotenv()
+
 config = context.config
 
-# Override sqlalchemy.url with environment variable if present
-database_url = os.getenv("DATABASE_URL")
-if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
