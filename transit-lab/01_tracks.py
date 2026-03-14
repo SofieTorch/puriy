@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.20.4"
-app = marimo.App(width="medium")
+app = marimo.App(width="full")
 
 
 @app.cell
@@ -27,18 +27,21 @@ def _():
     from geoalchemy2.shape import to_shape
     from sqlalchemy import func, select
 
+    from components.tracing import init_tracing
     from database.connection import SessionLocal
     from database.models.line import Line, LineStatus
     from database.models.trip import TripSessionPoint, TripSession, SessionStatus
     from database.models.route import Trip, TripPoint
+
     return (
         Line,
+        SessionLocal,
         Trip,
         TripPoint,
-        TripSessionPoint,
         TripSession,
-        SessionLocal,
+        TripSessionPoint,
         func,
+        init_tracing,
         math,
         mo,
         pd,
@@ -49,8 +52,9 @@ def _():
 
 
 @app.cell
-def _(SessionLocal):
+def _(SessionLocal, init_tracing):
     db = SessionLocal()
+    init_tracing()
     return (db,)
 
 
@@ -132,13 +136,19 @@ def _(TripSession, db, lines_table, mo, pd, select):
     return sessions, sessions_table
 
 
-# ---------------------------------------------------------------------------
-# Overview map: all sessions
-# ---------------------------------------------------------------------------
-
-
 @app.cell
-def _(TripSessionPoint, db, func, math, mo, pdk, select, sessions, sessions_table, to_shape):
+def _(
+    TripSessionPoint,
+    db,
+    func,
+    math,
+    mo,
+    pdk,
+    select,
+    sessions,
+    sessions_table,
+    to_shape,
+):
     if sessions_table is None or not sessions:
         zoom_in_btn = zoom_out_btn = None
         view_3d_switch = None
@@ -317,20 +327,12 @@ def _(
             height=500,
         )
 
-        _fs_js = "this.closest('.map-container').requestFullscreen()"
-        _fullscreen_btn = mo.Html(
-            f'<button onclick="{_fs_js}" '
-            'style="background:var(--mo-ui-bg,#fff);border:1px solid var(--mo-ui-border,#ccc);'
-            'border-radius:4px;padding:2px 8px;cursor:pointer;font-size:14px" '
-            'title="Fullscreen">\u26f6</button>'
-        )
-
         zoom_controls = mo.hstack(
-            [zoom_out_btn, zoom_in_btn, view_3d_switch, _fullscreen_btn],
+            [zoom_out_btn, zoom_in_btn, view_3d_switch],
             gap=0.5,
             justify="start",
         )
-        _map_inner = mo.vstack(
+        map_section = mo.vstack(
             [
                 mo.hstack(
                     [zoom_controls, mo.md("_Scroll to zoom \u00b7 Drag to pan_")],
@@ -340,9 +342,6 @@ def _(
                 deck,
             ],
             align="stretch",
-        )
-        map_section = mo.Html(
-            f'<div class="map-container" style="background:var(--mo-bg,#fff)">{_map_inner.text}</div>'
         )
 
         stats_display = None
@@ -378,11 +377,6 @@ def _(
 
     overview_display
     return
-
-
-# ---------------------------------------------------------------------------
-# Selected session: extract, trip lookup, clean action
-# ---------------------------------------------------------------------------
 
 
 @app.cell
@@ -432,11 +426,6 @@ def _(clean_btn, db, mo, selected_session):
         except Exception as _e:
             clean_result_output = mo.callout(mo.md(f"Error: {_e}"), kind="danger")
     return clean_result_output, cleaned_trip
-
-
-# ---------------------------------------------------------------------------
-# Detail section: selected session map + trip tables
-# ---------------------------------------------------------------------------
 
 
 @app.cell
@@ -639,13 +628,6 @@ def _(
             layers=_detail_layers,
             height=400,
         )
-        _detail_fs_js = "this.closest('.map-container').requestFullscreen()"
-        _detail_fs_btn = mo.Html(
-            f'<button onclick="{_detail_fs_js}" '
-            'style="background:var(--mo-ui-bg,#fff);border:1px solid var(--mo-ui-border,#ccc);'
-            'border-radius:4px;padding:2px 8px;cursor:pointer;font-size:14px" '
-            'title="Fullscreen">\u26f6</button>'
-        )
         _detail_stats = mo.hstack(
             [
                 mo.stat(_geo_points_count, label="Geopoints", bordered=False),
@@ -655,13 +637,20 @@ def _(
             gap=1,
             justify="start",
         )
-        _detail_map_inner = mo.vstack(
+
+        # -- Full-width header: title + stats --
+        _header_row = mo.hstack(
+            [mo.md("### Trip details"), _detail_stats],
+            justify="space-between",
+            align="center",
+        )
+
+        # -- Detail map --
+        _detail_map = mo.vstack(
             [
-                _detail_stats,
                 mo.hstack(
                     [
                         mo.md(" &nbsp; ".join(_legend_parts)),
-                        _detail_fs_btn,
                         mo.md("_Scroll to zoom \u00b7 Drag to pan_"),
                     ],
                     justify="start",
@@ -671,16 +660,10 @@ def _(
             ],
             align="stretch",
         )
-        _detail_map = mo.Html(
-            f'<div class="map-container" style="background:var(--mo-bg,#fff)">'
-            f'{_detail_map_inner.text}</div>'
-        )
 
         # -- Right side: clean button / trip table + trip points table --
         _right_content = []
 
-        if clean_btn is not None:
-            _right_content.append(clean_btn)
         if clean_result_output is not None:
             _right_content.append(clean_result_output)
 
@@ -692,7 +675,12 @@ def _(
                 "frechet_distance": f"{_trip_to_show.frechet_distance:.2f}" if _trip_to_show.frechet_distance is not None else "\u2014",
                 "processed_at": _trip_to_show.processed_at,
             }])
-            _right_content.append(mo.md("**Cleaned Trip**"))
+            _trip_header_items = [mo.md("**Cleaned Trip**")]
+            if clean_btn is not None:
+                _trip_header_items.append(clean_btn)
+            _right_content.append(
+                mo.hstack(_trip_header_items, justify="space-between", align="center")
+            )
             _right_content.append(mo.ui.table(data=_trip_df, label="", pagination=False, selection=None))
 
             if _clean_pts:
@@ -709,17 +697,20 @@ def _(
                 _right_content.append(
                     mo.ui.table(data=_pts_df, label="", pagination=True, selection=None)
                 )
-        elif clean_btn is None and _trip_to_show is None:
+        else:
+            _no_trip_items = [mo.md("**Cleaned Trip**")]
+            if clean_btn is not None:
+                _no_trip_items.append(clean_btn)
+            _right_content.append(
+                mo.hstack(_no_trip_items, justify="space-between", align="center")
+            )
             _right_content.append(mo.md("_No cleaned trip yet._"))
 
-        _right_section = mo.vstack(_right_content).style(
-            style={"max-width": "540px"},
-            overflow_x="auto",
-        )
+        _right_section = mo.vstack(_right_content, gap=0.5)
 
         detail_section = mo.vstack([
             mo.md("---"),
-            mo.md(f"### Session detail"),
+            _header_row,
             mo.hstack(
                 [_detail_map, _right_section],
                 widths=[1, 1],
