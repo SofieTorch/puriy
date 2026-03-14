@@ -5,6 +5,8 @@ description = "Geodata processing utilities"
 requires-python = ">=3.14"
 dependencies = [
   "geoalchemy2>=0.18.4",
+  "httpx>=0.28.0",
+  "opentelemetry-api>=1.20.0",
   "psycopg2-binary>=2.9.11",
   "shapely>=2.0.0",
   "sqlalchemy>=2.0.48",

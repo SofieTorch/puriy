@@ -5,12 +5,14 @@ receivers:
         endpoint: 0.0.0.0:4317  # listens for our app
 
 exporters:
-  otlp/tempo:
+  debug:
+    verbosity: detailed
+  otlp_grpc/tempo:
     endpoint: tempo:4317         # forwards traces to Tempo container
     tls:
       insecure: true
-  loki:
-    endpoint: http://loki:3100   # forwards logs to Loki container
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp   # forwards logs to Loki via native OTLP
   prometheus:
     endpoint: 0.0.0.0:8889       # exposes metrics for Prometheus to scrape
 
@@ -18,10 +20,10 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      exporters: [otlp/tempo]
+      exporters: [debug, otlp_grpc/tempo]
     logs:
       receivers: [otlp]
-      exporters: [loki]
+      exporters: [otlphttp/loki]
     metrics:
       receivers: [otlp]
       exporters: [prometheus]

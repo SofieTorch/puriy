@@ -121,6 +121,58 @@ def _cmd_simplify(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _cmd_match(args: argparse.Namespace) -> int:
+    from .match import match_session
+
+    db = SessionLocal()
+    try:
+        result = match_session(
+            db,
+            args.session_id,
+            costing=args.costing,
+            search_radius=args.search_radius,
+            gps_accuracy=args.gps_accuracy,
+        )
+        print(
+            f"Matched: {result.points_before} raw → {result.points_after} snapped points "
+            f"(confidence: {result.confidence:.2f})"
+        )
+        print(f"Trip ID: {result.trip.id}")
+        return 0
+    except (ValueError, RuntimeError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        db.close()
+
+
+def _cmd_match_line(args: argparse.Namespace) -> int:
+    from .match import match_line
+
+    db = SessionLocal()
+    try:
+        result = match_line(
+            db,
+            args.line_id,
+            costing=args.costing,
+            search_radius=args.search_radius,
+            gps_accuracy=args.gps_accuracy,
+        )
+        total = len(result.matched) + len(result.failed)
+        print(f"Found {total} RAW session(s) for line {args.line_id}")
+        for m in result.matched:
+            print(f"  ✓ {m.trip.session_id} → {m.points_before} raw → {m.points_after} snapped (confidence: {m.confidence:.2f})")
+        for session_id, err in result.failed:
+            print(f"  ✗ {session_id} — {err}")
+        print(f"\nDone: {len(result.matched)} matched, {len(result.failed)} failed")
+        return 0
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        db.close()
+
+
 def _cmd_generate(args: argparse.Namespace) -> int:
     from .geojson import parse_route_from_geojson
     from .simulate import generate_tracks
@@ -209,6 +261,36 @@ def main() -> int:
         help="Print ASCII preview of path before and after simplification",
     )
     simplify_parser.set_defaults(handler=_cmd_simplify)
+
+    match_parser = subparsers.add_parser(
+        "match", help="Map-match a trip session to the OSM road network via Valhalla"
+    )
+    match_parser.add_argument("session_id", type=UUID, help="TripSession UUID to map-match")
+    match_parser.add_argument(
+        "--costing", default="auto", help="Valhalla costing model (default: auto)"
+    )
+    match_parser.add_argument(
+        "--search-radius", type=int, default=50, help="Search radius in meters (default: 50)"
+    )
+    match_parser.add_argument(
+        "--gps-accuracy", type=int, default=20, help="Expected GPS accuracy in meters (default: 20)"
+    )
+    match_parser.set_defaults(handler=_cmd_match)
+
+    match_line_parser = subparsers.add_parser(
+        "match-line", help="Batch map-match all RAW trip sessions for a line"
+    )
+    match_line_parser.add_argument("line_id", type=UUID, help="Line UUID")
+    match_line_parser.add_argument(
+        "--costing", default="auto", help="Valhalla costing model (default: auto)"
+    )
+    match_line_parser.add_argument(
+        "--search-radius", type=int, default=50, help="Search radius in meters (default: 50)"
+    )
+    match_line_parser.add_argument(
+        "--gps-accuracy", type=int, default=20, help="Expected GPS accuracy in meters (default: 20)"
+    )
+    match_line_parser.set_defaults(handler=_cmd_match_line)
 
     gen_parser = subparsers.add_parser(
         "generate", help="Generate simulated GPS tracks from a route + config"

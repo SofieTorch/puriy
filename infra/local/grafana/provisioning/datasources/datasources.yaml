@@ -14,16 +14,3 @@ datasources:
     type: prometheus
     url: http://prometheus:9090
     isDefault: true
-```
-
-So the final local folder looks like:
-```
-infra/local/
-├── docker-compose.yml
-├── otel-collector.yaml
-├── tempo.yaml
-├── prometheus.yml
-└── grafana/
-    └── provisioning/
-        └── datasources/
-            └── datasources.yaml

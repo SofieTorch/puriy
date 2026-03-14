@@ -25,8 +25,11 @@ def _():
     from branca.element import Element
     from folium.plugins import Draw
 
+    from components.tracing import init_tracing
     from geodata.geojson import parse_route_from_geojson
     from database.connection import SessionLocal
+
+    init_tracing()
 
     return (
         Draw,

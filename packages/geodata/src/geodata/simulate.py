@@ -5,6 +5,7 @@ import random
 from datetime import datetime, timedelta
 
 from .geo_math import heading_and_perp, interpolate_route, offset_lon_lat
+from .telemetry import tracer
 
 
 def generate_tracks(
@@ -31,6 +32,15 @@ def generate_tracks(
     """
     if len(route) < 2:
         raise ValueError("Route needs at least 2 points")
+
+    span = tracer.start_span(
+        "generate_tracks",
+        attributes={
+            "route.points": len(route),
+            "config.num_tracks": int(config.get("sim_params", {}).get("Number of tracks", 5)),
+            "seed": seed if seed is not None else -1,
+        },
+    )
 
     sp = config.get("sim_params", {})
     noise = config.get("noise", {})
@@ -173,5 +183,8 @@ def generate_tracks(
                     "latitude": plat,
                 }
             )
+
+    span.set_attribute("points.total", len(records))
+    span.end()
 
     return records

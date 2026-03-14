@@ -6,6 +6,7 @@ from sqlalchemy import text
 
 from database.connection import engine
 from routes import lines_router, recordings_router
+from telemetry import init_tracing
 
 
 @asynccontextmanager
@@ -24,6 +25,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan
 )
+
+init_tracing(app, engine)
 
 # CORS: allow any origin (mobile apps, WebViews, web clients).
 # Native mobile apps don't enforce CORS; this mainly affects browsers and in-app WebViews.

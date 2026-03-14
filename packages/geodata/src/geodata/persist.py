@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from database.models import SessionStatus, TripSession, TripSessionPoint
 
+from .telemetry import tracer
+
 
 def save_tracks_to_db(
     db: Session,
@@ -34,46 +36,53 @@ def save_tracks_to_db(
     list of TripSession
         The created sessions (already committed).
     """
-    grouped: dict[int, list[dict]] = {}
-    for rec in tracks:
-        grouped.setdefault(rec["track_id"], []).append(rec)
+    with tracer.start_as_current_span(
+        "save_tracks_to_db",
+        attributes={"line_id": str(line_id), "tracks.total_points": len(tracks)},
+    ) as span:
+        grouped: dict[int, list[dict]] = {}
+        for rec in tracks:
+            grouped.setdefault(rec["track_id"], []).append(rec)
 
-    sessions: list[TripSession] = []
-    for track_id in sorted(grouped):
-        points = sorted(grouped[track_id], key=lambda r: r["point_index"])
+        sessions: list[TripSession] = []
+        for track_id in sorted(grouped):
+            points = sorted(grouped[track_id], key=lambda r: r["point_index"])
 
-        timestamps = [datetime.fromisoformat(p["timestamp"]) for p in points]
-        coords = [(p["longitude"], p["latitude"]) for p in points]
+            timestamps = [datetime.fromisoformat(p["timestamp"]) for p in points]
+            coords = [(p["longitude"], p["latitude"]) for p in points]
 
-        session = TripSession(
-            line_id=line_id,
-            status=SessionStatus.COMPLETED,
-            started_at=timestamps[0],
-            ended_at=timestamps[-1],
-            last_activity_at=timestamps[-1],
-            notes=notes or "simulated",
-            device_model="simulator",
-            computed_path=from_shape(LineString(coords), srid=4326)
-            if len(coords) >= 2
-            else None,
-        )
-        db.add(session)
-        db.flush()  # get session.id
-
-        for p in points:
-            ts = datetime.fromisoformat(p["timestamp"])
-            loc = TripSessionPoint(
-                session_id=session.id,
-                timestamp=ts,
-                latitude=p["latitude"],
-                longitude=p["longitude"],
-                point=from_shape(
-                    Point(p["longitude"], p["latitude"]), srid=4326
-                ),
+            session = TripSession(
+                line_id=line_id,
+                status=SessionStatus.COMPLETED,
+                started_at=timestamps[0],
+                ended_at=timestamps[-1],
+                last_activity_at=timestamps[-1],
+                notes=notes or "simulated",
+                device_model="simulator",
+                computed_path=from_shape(LineString(coords), srid=4326)
+                if len(coords) >= 2
+                else None,
             )
-            db.add(loc)
+            db.add(session)
+            db.flush()  # get session.id
 
-        sessions.append(session)
+            for p in points:
+                ts = datetime.fromisoformat(p["timestamp"])
+                loc = TripSessionPoint(
+                    session_id=session.id,
+                    timestamp=ts,
+                    latitude=p["latitude"],
+                    longitude=p["longitude"],
+                    point=from_shape(
+                        Point(p["longitude"], p["latitude"]), srid=4326
+                    ),
+                )
+                db.add(loc)
 
-    db.commit()
-    return sessions
+            sessions.append(session)
+
+        db.commit()
+
+        span.set_attribute("sessions.created", len(sessions))
+
+        return sessions
