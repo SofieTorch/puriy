@@ -641,15 +641,16 @@ def _(
             layers=_detail_layers,
         )
     
-        _detail_stats = mo.hstack(
-            [
-                mo.stat(_geo_points_count, label="Geopoints", bordered=False),
-                mo.stat(_format_duration(_duration_seconds), label="Time", bordered=False),
-                mo.stat(_format_distance(_distance_m), label="Distance", bordered=False),
-            ],
-            gap=1,
-            justify="end",
-        )
+        _stat_items = [
+            mo.stat(_geo_points_count, label="Geopoints", bordered=False),
+            mo.stat(_format_duration(_duration_seconds), label="Time", bordered=False),
+            mo.stat(_format_distance(_distance_m), label="Distance", bordered=False),
+        ]
+        if _trip_to_show is not None and _trip_to_show.match_score is not None:
+            _stat_items.append(
+                mo.stat(f"{_trip_to_show.match_score:.1%}", label="Match score", bordered=False)
+            )
+        _detail_stats = mo.hstack(_stat_items, gap=1, justify="end")
 
         # -- Full-width header: title + stats --
         _header_row = mo.hstack(
