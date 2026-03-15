@@ -360,19 +360,22 @@ def _(
                 align="stretch",
                 justify="start",
             )
+
         table_content = []
         if stats_display is not None:
             table_content.append(stats_display)
         table_content.extend([mo.md("**Trip sessions**"), sessions_table])
         table_section = mo.vstack(table_content).style(
-            style={"max-width": "540px"},
+            style={"max-width": "45vw"},
             overflow_x="auto",
         )
+
         overview_display = mo.hstack(
             [map_section, table_section],
             widths=[1, 1],
             gap=1,
-            justify="start",
+            justify="center",
+            align="stretch"
         )
 
     overview_display
@@ -425,7 +428,9 @@ def _(clean_btn, db, mo, selected_session):
             )
         except Exception as _e:
             clean_result_output = mo.callout(mo.md(f"Error: {_e}"), kind="danger")
-    return clean_result_output, cleaned_trip
+
+    clean_result_output
+    return (cleaned_trip,)
 
 
 @app.cell
@@ -433,7 +438,6 @@ def _(
     TripPoint,
     TripSessionPoint,
     clean_btn,
-    clean_result_output,
     cleaned_trip,
     db,
     existing_trip,
@@ -626,8 +630,8 @@ def _(
                 bearing=0,
             ),
             layers=_detail_layers,
-            height=400,
         )
+    
         _detail_stats = mo.hstack(
             [
                 mo.stat(_geo_points_count, label="Geopoints", bordered=False),
@@ -635,14 +639,15 @@ def _(
                 mo.stat(_format_distance(_distance_m), label="Distance", bordered=False),
             ],
             gap=1,
-            justify="start",
+            justify="end",
         )
 
         # -- Full-width header: title + stats --
         _header_row = mo.hstack(
-            [mo.md("### Trip details"), _detail_stats],
+            [mo.md("## Trip details"), _detail_stats],
             justify="space-between",
             align="center",
+            gap=0,
         )
 
         # -- Detail map --
@@ -655,17 +660,15 @@ def _(
                     ],
                     justify="start",
                     gap=1,
-                ),
+                ).style(style={"margin": 0}),
                 _detail_deck,
             ],
-            align="stretch",
-        )
+            justify="start"
+        ).style(style={"margin": 0})
 
         # -- Right side: clean button / trip table + trip points table --
         _right_content = []
 
-        if clean_result_output is not None:
-            _right_content.append(clean_result_output)
 
         if _trip_to_show:
             _trip_df = pd.DataFrame([{
@@ -676,8 +679,10 @@ def _(
                 "processed_at": _trip_to_show.processed_at,
             }])
             _trip_header_items = [mo.md("**Cleaned Trip**")]
+
             if clean_btn is not None:
                 _trip_header_items.append(clean_btn)
+
             _right_content.append(
                 mo.hstack(_trip_header_items, justify="space-between", align="center")
             )
@@ -701,22 +706,22 @@ def _(
             _no_trip_items = [mo.md("**Cleaned Trip**")]
             if clean_btn is not None:
                 _no_trip_items.append(clean_btn)
+
             _right_content.append(
                 mo.hstack(_no_trip_items, justify="space-between", align="center")
             )
             _right_content.append(mo.md("_No cleaned trip yet._"))
 
-        _right_section = mo.vstack(_right_content, gap=0.5)
+        _right_section = mo.vstack(_right_content, gap=0, justify="start").style(style={"max-width": "45vw", "margin": 0})
 
         detail_section = mo.vstack([
-            mo.md("---"),
             _header_row,
             mo.hstack(
                 [_detail_map, _right_section],
                 widths=[1, 1],
                 gap=1,
                 justify="start",
-            ),
+            ).style(style={"margin": 0}),
         ])
 
     detail_section
