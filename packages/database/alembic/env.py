@@ -12,6 +12,7 @@ from database.models.line import Line  # noqa: F401
 from database.models.trip import TripSession, TripSessionPoint, TripSensorReading  # noqa: F401
 from database.models.route import (  # noqa: F401
     Trip, TripPoint, RouteEstimation, RouteSegment, SegmentVote, TravelTimeSample,
+    ResampledTrip, ResampledTripPoint,
 )
 
 load_dotenv()
@@ -38,6 +39,8 @@ _APP_TABLES = {
     "route_segments",
     "segment_votes",
     "travel_time_samples",
+    "resampled_trips",
+    "resampled_trip_points",
 }
 
 

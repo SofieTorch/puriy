@@ -1,6 +1,8 @@
 from .line import Line, LineBase, LineStatus
 from .route import (
     EstimationStatus,
+    ResampledTrip,
+    ResampledTripPoint,
     RouteEstimation,
     RouteSegment,
     SegmentStatus,
@@ -44,4 +46,6 @@ __all__ = [
     "SegmentVote",
     "VoteChoice",
     "TravelTimeSample",
+    "ResampledTrip",
+    "ResampledTripPoint",
 ]

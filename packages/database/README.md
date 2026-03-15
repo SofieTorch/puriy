@@ -16,7 +16,8 @@ alembic revision --autogenerate -m "initial"
 ```
 
 Before applying migrations, the generated migration needs to import sqlmodel
-and add the PostGIS extension to the schema, so add the following lines:
+and add the PostGIS extension to the schema, also make sure that the types
+are removed in the downgrade, so add the following lines:
 
 ```python
 import sqlmodel
@@ -27,6 +28,16 @@ def upgrade() -> None:
     # Ensure PostGIS extension is available
     op.execute('CREATE EXTENSION IF NOT EXISTS postgis')
     ...
+
+def downgrade() -> None:
+    # Add at the end of everything
+    op.execute('DROP TYPE IF EXISTS linestatus')
+    op.execute('DROP TYPE IF EXISTS estimationstatus')
+    op.execute('DROP TYPE IF EXISTS sessionstatus')
+    op.execute('DROP TYPE IF EXISTS processingstatus')
+    op.execute('DROP TYPE IF EXISTS segmentstatus')
+    op.execute('DROP TYPE IF EXISTS tripstatus')
+    op.execute('DROP TYPE IF EXISTS votechoice')
 ```
 
 Now we can apply our brand-new migration:

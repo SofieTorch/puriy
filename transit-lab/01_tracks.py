@@ -60,6 +60,7 @@ def _(SessionLocal, init_tracing):
 
 @app.cell
 def _(Line, db, mo, pd, select):
+    db.rollback()
     all_lines = db.execute(select(Line).order_by(Line.name)).scalars().all()
 
     lines_df = pd.DataFrame(
@@ -81,7 +82,7 @@ def _(Line, db, mo, pd, select):
 
 @app.cell
 def _(TripSession, db, lines_table, mo, pd, select):
-    # Get selected lines from the table (value is selected rows, or None)
+    db.rollback()
     selected = lines_table.value
     selected_line_ids = (
         selected["id"].tolist()
@@ -149,6 +150,7 @@ def _(
     sessions_table,
     to_shape,
 ):
+    db.rollback()
     if sessions_table is None or not sessions:
         zoom_in_btn = zoom_out_btn = None
         view_3d_switch = None
@@ -394,6 +396,7 @@ def _(sessions, sessions_table):
 
 @app.cell
 def _(Trip, db, mo, select, selected_session):
+    db.rollback()
     existing_trip = None
     clean_btn = None
     if selected_session is not None:
@@ -410,14 +413,16 @@ def _(Trip, db, mo, select, selected_session):
 
 
 @app.cell
-def _(clean_btn, db, mo, selected_session):
+def _(clean_btn, mo, selected_session):
     cleaned_trip = None
     clean_result_output = None
     if clean_btn is not None and (clean_btn.value or 0) > 0 and selected_session is not None:
+        from database.connection import SessionLocal as _SessionLocal
         from geodata.match import match_session
 
+        _db = _SessionLocal(expire_on_commit=False)
         try:
-            _result = match_session(db, selected_session.id)
+            _result = match_session(_db, selected_session.id)
             cleaned_trip = _result.trip
             clean_result_output = mo.callout(
                 mo.md(
@@ -427,7 +432,10 @@ def _(clean_btn, db, mo, selected_session):
                 kind="success",
             )
         except Exception as _e:
+            _db.rollback()
             clean_result_output = mo.callout(mo.md(f"Error: {_e}"), kind="danger")
+        finally:
+            _db.close()
 
     clean_result_output
     return (cleaned_trip,)
@@ -449,6 +457,7 @@ def _(
     selected_session,
     to_shape,
 ):
+    db.rollback()
     if selected_session is None:
         detail_section = None
     else:
@@ -725,6 +734,228 @@ def _(
         ])
 
     detail_section
+    return
+
+
+@app.cell
+def _(cleaned_trip, existing_trip, mo):
+    _active_trip = cleaned_trip or existing_trip
+    if _active_trip is None:
+        resample_interval_input = None
+        resample_btn = None
+    else:
+        resample_interval_input = mo.ui.number(
+            value=20, start=1, stop=500, step=1, label="Interval (m)"
+        )
+        resample_btn = mo.ui.button(
+            label="Resample",
+            value=0,
+            on_click=lambda v: (v or 0) + 1,
+        )
+    return resample_btn, resample_interval_input
+
+
+@app.cell
+def _(cleaned_trip, db, existing_trip, mo, resample_btn, resample_interval_input, select):
+    db.rollback()
+    from database.models.route import ResampledTrip as _ResampledTrip
+
+    _active_trip = cleaned_trip or existing_trip
+    resampled_trips_list = []
+    selected_resampled_id = None
+    _resample_callout = None
+
+    if _active_trip is not None:
+        if resample_btn is not None and (resample_btn.value or 0) > 0 and resample_interval_input is not None:
+            from database.connection import SessionLocal as _SessionLocal
+            from geodata.resample import resample_trip as _resample_trip
+
+            _db = _SessionLocal(expire_on_commit=False)
+            try:
+                _result = _resample_trip(_db, _active_trip.id, float(resample_interval_input.value))
+                selected_resampled_id = str(_result.resampled_trip.id)
+                _verb = "Already resampled" if _result.was_existing else "Resampled"
+                _kind = "info" if _result.was_existing else "success"
+                _resample_callout = mo.callout(
+                    mo.md(
+                        f"{_verb} at **{_result.interval_meters:.0f} m** — "
+                        f"**{_result.point_count}** points"
+                    ),
+                    kind=_kind,
+                )
+            except Exception as _e:
+                _db.rollback()
+                _resample_callout = mo.callout(mo.md(f"Error: {_e}"), kind="danger")
+            finally:
+                _db.close()
+
+        resampled_trips_list = (
+            db.execute(
+                select(_ResampledTrip)
+                .where(_ResampledTrip.trip_id == _active_trip.id)
+                .order_by(_ResampledTrip.interval_meters)
+            )
+            .scalars()
+            .all()
+        )
+
+    _resample_callout
+    return resampled_trips_list, selected_resampled_id
+
+
+@app.cell
+def _(mo, resampled_trips_list, selected_resampled_id):
+    if not resampled_trips_list:
+        resample_dropdown = None
+    else:
+        _options = {
+            f"{rt.interval_meters:.0f} m  ({rt.point_count} pts)": str(rt.id)
+            for rt in resampled_trips_list
+        }
+        _default_key = next(
+            (k for k, v in _options.items() if v == selected_resampled_id),
+            next(iter(_options)),
+        )
+        resample_dropdown = mo.ui.dropdown(
+            options=_options,
+            value=_default_key,
+            label="Show resampled",
+        )
+    return (resample_dropdown,)
+
+
+@app.cell
+def _(
+    cleaned_trip,
+    db,
+    existing_trip,
+    mo,
+    pdk,
+    resample_btn,
+    resample_dropdown,
+    resample_interval_input,
+    resampled_trips_list,
+    select,
+):
+    db.rollback()
+    from database.models.route import ResampledTripPoint as _ResampledTripPoint
+
+    _active_trip = cleaned_trip or existing_trip
+
+    if _active_trip is None or resample_interval_input is None:
+        resample_section = None
+    else:
+        _controls = mo.hstack(
+            [resample_interval_input, resample_btn]
+            + ([resample_dropdown] if resample_dropdown is not None else []),
+            gap=1,
+            align="end",
+        )
+
+        _rt = None
+        if resample_dropdown is not None and resample_dropdown.value is not None:
+            _rt = next(
+                (rt for rt in resampled_trips_list if str(rt.id) == resample_dropdown.value),
+                None,
+            )
+        elif resampled_trips_list:
+            _rt = resampled_trips_list[0]
+
+        if _rt is not None:
+            _pts = (
+                db.execute(
+                    select(_ResampledTripPoint)
+                    .where(_ResampledTripPoint.resampled_trip_id == _rt.id)
+                    .order_by(_ResampledTripPoint.point_index)
+                )
+                .scalars()
+                .all()
+            )
+
+            if _pts:
+                _coords = [[p.longitude, p.latitude, 0] for p in _pts]
+                _lons = [c[0] for c in _coords]
+                _lats = [c[1] for c in _coords]
+                _center_lat = sum(_lats) / len(_lats)
+                _center_lon = sum(_lons) / len(_lons)
+
+                _layers = [
+                    pdk.Layer(
+                        "PathLayer",
+                        [{"path": _coords, "color": [99, 102, 241]}],
+                        get_path="path",
+                        get_color="color",
+                        get_width=5,
+                        width_min_pixels=3,
+                    ),
+                    pdk.Layer(
+                        "ScatterplotLayer",
+                        data=[{"coordinates": c} for c in _coords],
+                        get_position="coordinates",
+                        get_color=[99, 102, 241],
+                        get_radius=5,
+                        radius_min_pixels=4,
+                        stroked=True,
+                        get_line_color=[255, 255, 255],
+                        line_width_min_pixels=1,
+                    ),
+                ]
+
+                _deck = pdk.Deck(
+                    map_style="light",
+                    map_provider="carto",
+                    initial_view_state=pdk.ViewState(
+                        latitude=_center_lat,
+                        longitude=_center_lon,
+                        zoom=14,
+                        pitch=0,
+                        bearing=0,
+                    ),
+                    layers=_layers,
+                    height=450,
+                )
+
+                _stats = mo.hstack(
+                    [
+                        mo.stat(len(_pts), label="Points", bordered=False),
+                        mo.stat(f"{_rt.interval_meters:.0f} m", label="Interval", bordered=False),
+                        mo.stat(
+                            f"{_rt.match_score:.1%}" if _rt.match_score else "—",
+                            label="Match score",
+                            bordered=False,
+                        ),
+                    ],
+                    gap=1,
+                    justify="start",
+                )
+
+                _map_area = mo.vstack(
+                    [
+                        mo.hstack(
+                            [
+                                mo.md('<span style="color:#6366f1">●</span> Resampled'),
+                                mo.md("_Scroll to zoom · Drag to pan_"),
+                            ],
+                            gap=1,
+                            justify="start",
+                        ),
+                        _deck,
+                        _stats,
+                    ]
+                )
+            else:
+                _map_area = mo.md("_No points found for this resampled trip._")
+        else:
+            _map_area = mo.md(
+                "_No resampled trip yet. Set an interval and click **Resample**._"
+            )
+
+        resample_section = mo.vstack(
+            [mo.md("## Resampled trip"), _controls, _map_area],
+            gap=1,
+        )
+
+    resample_section
     return
 
 
