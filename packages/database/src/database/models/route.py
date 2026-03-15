@@ -187,7 +187,7 @@ class ResampledTrip(SQLModel, table=True):
     trip_id: UUID = Field(foreign_key="trips.id", index=True)
 
     interval_meters: float = Field(description="Resampling interval in metres")
-    match_score: float = Field(description="Match score of the source Trip")
+    match_score: Optional[float] = Field(default=None, description="Min score filter used when batch-resampled; null for manual resamples")
     point_count: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

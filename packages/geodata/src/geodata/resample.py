@@ -33,7 +33,6 @@ class ResampledPoint:
 def resample_points(
     points: list[TripPoint],
     interval_meters: float,
-    simplify_tolerance_m: float = 0.0,
 ) -> list[ResampledPoint]:
     """Resample a list of TripPoints to uniform distance intervals.
 
@@ -47,10 +46,6 @@ def resample_points(
         Cleaned trip points sorted by timestamp.
     interval_meters : float
         Desired spacing between output points in metres (e.g. 10, 20).
-    simplify_tolerance_m : float
-        Douglas-Peucker simplification tolerance in metres applied before
-        resampling.  Jogs shorter than this value are removed.  Default 0
-        (no simplification).
 
     Returns
     -------
@@ -68,20 +63,6 @@ def resample_points(
 
     sorted_pts = sorted(points, key=lambda p: p.timestamp)
 
-    # Optional: remove small jogs before resampling (Douglas-Peucker).
-    # Shapely simplify keeps the original vertices, so we can match back by
-    # coordinate to preserve timestamps.
-    if simplify_tolerance_m > 0 and len(sorted_pts) >= 3:
-        from shapely.geometry import LineString as _LS
-        _tolerance_deg = simplify_tolerance_m / 111_320.0
-        _simplified = _LS(
-            [(p.longitude, p.latitude) for p in sorted_pts]
-        ).simplify(_tolerance_deg, preserve_topology=False)
-        _kept = set(map(tuple, _simplified.coords))
-        _filtered = [p for p in sorted_pts if (p.longitude, p.latitude) in _kept]
-        if len(_filtered) >= 2:
-            sorted_pts = _filtered
-
     # Cumulative arc-length at each original point
     cum: list[float] = [0.0]
     for i in range(1, len(sorted_pts)):
@@ -92,21 +73,12 @@ def resample_points(
     if total <= 0:
         return []
 
-    # Build uniform distance grid, then merge backbone positions in so that
-    # every simplified/structural point appears exactly in the output.
+    # Build uniform distance grid
     grid: list[float] = []
     d = 0.0
     while d <= total + 1e-6:
         grid.append(d)
         d += interval_meters
-
-    # Merge + sort, then remove positions closer than 0.5 m to their predecessor
-    # (handles floating-point near-duplicates and grid/backbone collisions).
-    _merged = sorted(set(grid + cum))
-    grid = [_merged[0]]
-    for _pos in _merged[1:]:
-        if _pos - grid[-1] > 0.5:
-            grid.append(_pos)
 
     orig_ts = [p.timestamp.timestamp() for p in sorted_pts]
     orig_lat = [p.latitude for p in sorted_pts]
@@ -156,7 +128,7 @@ def resample_trip(
     db: Session,
     trip_id: UUID,
     interval_meters: float,
-    simplify_tolerance_m: float | None = None,
+    filter_min_score: float | None = None,
 ) -> ResampleResult:
     """Resample a single Trip to uniform distance intervals and persist the result.
 
@@ -216,13 +188,12 @@ def resample_trip(
         if len(raw_points) < 2:
             raise ValueError(f"Trip {trip_id} has fewer than 2 points — cannot resample")
 
-        tolerance = simplify_tolerance_m if simplify_tolerance_m is not None else interval_meters * 0.5
-        resampled = resample_points(raw_points, interval_meters, simplify_tolerance_m=tolerance)
+        resampled = resample_points(raw_points, interval_meters)
 
         rt = ResampledTrip(
             trip_id=trip_id,
             interval_meters=interval_meters,
-            match_score=trip.match_score or 0.0,
+            match_score=filter_min_score,
             point_count=len(resampled),
         )
         db.add(rt)
@@ -272,7 +243,6 @@ def resample_line(
     line_id: UUID,
     interval_meters: float,
     min_match_score: float = 0.0,
-    simplify_tolerance_m: float | None = None,
 ) -> BatchResampleResult:
     """Resample all eligible Trips for a line.
 
@@ -327,7 +297,7 @@ def resample_line(
                 continue
 
             try:
-                result.resampled.append(resample_trip(db, trip.id, interval_meters, simplify_tolerance_m))
+                result.resampled.append(resample_trip(db, trip.id, interval_meters, filter_min_score=min_match_score))
             except (ValueError, RuntimeError) as e:
                 result.failed.append((trip.id, str(e)))
 

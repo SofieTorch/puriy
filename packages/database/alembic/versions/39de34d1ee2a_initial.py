@@ -1,8 +1,8 @@
 """initial
 
-Revision ID: c0684faa5277
+Revision ID: 39de34d1ee2a
 Revises: 
-Create Date: 2026-03-15 15:08:19.751662
+Create Date: 2026-03-15 15:56:24.549524
 
 """
 from typing import Sequence, Union
@@ -14,7 +14,7 @@ from geoalchemy2 import Geometry
 import sqlmodel
 
 # revision identifiers, used by Alembic.
-revision: str = 'c0684faa5277'
+revision: str = '39de34d1ee2a'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -138,7 +138,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Uuid(), nullable=False),
     sa.Column('trip_id', sa.Uuid(), nullable=False),
     sa.Column('interval_meters', sa.Float(), nullable=False),
-    sa.Column('match_score', sa.Float(), nullable=False),
+    sa.Column('match_score', sa.Float(), nullable=True),
     sa.Column('point_count', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.ForeignKeyConstraint(['trip_id'], ['trips.id'], ),
