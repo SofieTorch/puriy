@@ -66,58 +66,38 @@ def _decode_polyline6(encoded: str) -> list[tuple[float, float]]:
     return coords
 
 
-def _interpolate_timestamps(
-    original_points: list[TripSessionPoint],
-    matched_coords: list[tuple[float, float]],
-) -> list[float]:
-    """Assign timestamps to matched points by interpolating from originals.
-
-    For each matched point, find the nearest original point (by index proportion
-    along the path) and linearly interpolate its timestamp.
-    """
-    if not original_points or not matched_coords:
-        return []
-
-    orig_ts = [p.timestamp.timestamp() for p in original_points]
-    n_orig = len(orig_ts)
-    n_matched = len(matched_coords)
-
-    timestamps: list[float] = []
-    for i in range(n_matched):
-        frac = i / max(n_matched - 1, 1)
-        pos = frac * (n_orig - 1)
-        lo = int(pos)
-        hi = min(lo + 1, n_orig - 1)
-        t = pos - lo
-        ts = orig_ts[lo] + t * (orig_ts[hi] - orig_ts[lo])
-        timestamps.append(ts)
-
-    return timestamps
+@dataclass
+class _TraceOutput:
+    shape_coords: list[tuple[float, float]]   # dense road geometry (lat, lon)
+    matched_points: list[dict]                # one entry per input GPS point
+    match_score: float                        # fraction of non-unmatched points (0–1)
+    mean_snap_distance: float                 # mean GPS-to-road distance in metres
 
 
 def trace_match(
     points: list[dict],
     *,
-    costing: str = "auto",
-    search_radius: int = 50,
+    costing: str = "bus",
+    search_radius: int = 60,
     gps_accuracy: int = 20,
-) -> list[tuple[float, float]]:
-    """Send raw GPS points to Valhalla trace_route and return matched (lat, lon) pairs.
+) -> _TraceOutput:
+    """Send raw GPS points to Valhalla trace_attributes and return match results.
 
     Parameters
     ----------
     points : list of dict
         Each dict must have "lat" and "lon" keys, and optionally "time" (unix epoch).
     costing : str
-        Valhalla costing model ("auto", "bus", "pedestrian", etc.)
+        Valhalla costing model ("bus", "auto", "pedestrian", etc.)
     search_radius : int
-        Search radius in meters for candidate matching.
+        Search radius in meters for candidate road matching.
     gps_accuracy : int
         Expected GPS accuracy in meters.
 
     Returns
     -------
-    list of (lat, lon) tuples — the snapped path on the road network.
+    _TraceOutput
+        Dense matched path, per-point match data, and quality metrics.
     """
     shape = []
     for p in points:
@@ -137,32 +117,54 @@ def trace_match(
     }
 
     with tracer.start_as_current_span(
-        "valhalla.trace_route",
+        "valhalla.trace_attributes",
         attributes={"valhalla.costing": costing, "valhalla.num_points": len(shape)},
-    ):
-        resp = httpx.post(f"{VALHALLA_URL}/trace_route", json=body, timeout=30.0)
+    ) as span:
+        resp = httpx.post(f"{VALHALLA_URL}/trace_attributes", json=body, timeout=30.0)
         resp.raise_for_status()
         data = resp.json()
 
-    encoded_shape = data["trip"]["legs"][0]["shape"]
-    return _decode_polyline6(encoded_shape)
+    shape_coords = _decode_polyline6(data["shape"])
+    matched_points: list[dict] = data.get("matched_points", [])
+
+    if matched_points:
+        strictly_matched = [p for p in matched_points if p.get("type") == "matched"]
+        match_score = len(strictly_matched) / len(matched_points)
+        snap_distances = [p.get("distance_from_trace_point", 0.0) for p in strictly_matched]
+        mean_snap = sum(snap_distances) / len(snap_distances) if snap_distances else 0.0
+    else:
+        match_score = 1.0
+        mean_snap = 0.0
+
+    span.set_attributes({
+        "match.score": match_score,
+        "match.mean_snap_distance": mean_snap,
+        "match.shape_points": len(shape_coords),
+    })
+
+    return _TraceOutput(
+        shape_coords=shape_coords,
+        matched_points=matched_points,
+        match_score=match_score,
+        mean_snap_distance=mean_snap,
+    )
 
 
 def match_session(
     db: Session,
     session_id: UUID,
     *,
-    costing: str = "auto",
-    search_radius: int = 50,
+    costing: str = "bus",
+    search_radius: int = 60,
     gps_accuracy: int = 20,
 ) -> MatchResult:
     """Map-match a TripSession and save the result as a Trip + TripPoints.
 
     Steps:
     1. Load raw TripSessionPoints
-    2. Send to Valhalla trace_route (HMM map-matching)
-    3. Create Trip with matched geometry
-    4. Create TripPoints with interpolated timestamps
+    2. Send to Valhalla trace_attributes (HMM map-matching)
+    3. Create Trip with matched geometry, match_score, and mean snap distance
+    4. Create TripPoints from matched GPS positions with exact timestamps
     5. Update TripSession.processing_status
     """
     with tracer.start_as_current_span(
@@ -193,10 +195,17 @@ def match_session(
         session.processing_status = ProcessingStatus.PROCESSING
         db.flush()
 
-        shape = [{"lat": p.latitude, "lon": p.longitude} for p in raw_points]
+        shape = [
+            {
+                "lat": p.latitude,
+                "lon": p.longitude,
+                "time": int(p.timestamp.timestamp()),
+            }
+            for p in raw_points
+        ]
 
         try:
-            matched_coords = trace_match(
+            result = trace_match(
                 shape,
                 costing=costing,
                 search_radius=search_radius,
@@ -211,52 +220,55 @@ def match_session(
                 f"Valhalla map-matching failed: {e.response.status_code} — {e.response.text}"
             ) from e
 
-        timestamps = _interpolate_timestamps(raw_points, matched_coords)
-
-        # Build the matched path geometry
-        line_coords = [(lon, lat) for lat, lon in matched_coords]
+        # Build the matched path geometry from the snapped point positions,
+        # not the routing shape — the routing shape can take detours via
+        # turn restrictions between consecutive edges.
+        valid_matched = [mp for mp in result.matched_points if mp.get("type") != "unmatched"]
+        line_coords = [(mp["lon"], mp["lat"]) for mp in valid_matched]
         matched_path = from_shape(LineString(line_coords), srid=4326) if len(line_coords) >= 2 else None
-
-        # Compute a simple confidence: ratio of matched points to original
-        confidence = len(matched_coords) / len(raw_points) if raw_points else 0.0
 
         trip = Trip(
             session_id=session_id,
             line_id=session.line_id,
             status=TripStatus.CLEAN,
-            match_score=min(confidence, 1.0),
+            match_score=result.match_score,
+            frechet_distance=result.mean_snap_distance,
             computed_path=matched_path,
         )
         db.add(trip)
         db.flush()
 
-        from datetime import datetime, timezone
-
-        for i, (lat, lon) in enumerate(matched_coords):
+        # TripPoints: one per GPS input, snapped to road, with exact timestamp
+        points_saved = 0
+        for i, mp in enumerate(result.matched_points):
+            if mp.get("type") == "unmatched":
+                continue
             tp = TripPoint(
                 trip_id=trip.id,
-                point_index=i,
-                timestamp=datetime.fromtimestamp(timestamps[i], tz=timezone.utc),
-                latitude=lat,
-                longitude=lon,
-                point=from_shape(Point(lon, lat), srid=4326),
+                point_index=points_saved,
+                timestamp=raw_points[i].timestamp,
+                latitude=mp["lat"],
+                longitude=mp["lon"],
+                point=from_shape(Point(mp["lon"], mp["lat"]), srid=4326),
             )
             db.add(tp)
+            points_saved += 1
 
         session.processing_status = ProcessingStatus.PROCESSED
         db.commit()
 
         span.set_attributes({
-            "points.matched": len(matched_coords),
-            "match.confidence": min(confidence, 1.0),
+            "points.matched": points_saved,
+            "match.score": result.match_score,
+            "match.mean_snap_distance": result.mean_snap_distance,
             "trip.id": str(trip.id),
         })
 
         return MatchResult(
             trip=trip,
             points_before=len(raw_points),
-            points_after=len(matched_coords),
-            confidence=min(confidence, 1.0),
+            points_after=points_saved,
+            confidence=result.match_score,
         )
 
 
@@ -277,8 +289,8 @@ def match_line(
     db: Session,
     line_id: UUID,
     *,
-    costing: str = "auto",
-    search_radius: int = 50,
+    costing: str = "bus",
+    search_radius: int = 60,
     gps_accuracy: int = 20,
 ) -> BatchMatchResult:
     """Map-match all RAW trip sessions for a given line.

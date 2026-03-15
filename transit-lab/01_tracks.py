@@ -640,16 +640,21 @@ def _(
             ),
             layers=_detail_layers,
         )
-    
+
         _stat_items = [
             mo.stat(_geo_points_count, label="Geopoints", bordered=False),
             mo.stat(_format_duration(_duration_seconds), label="Time", bordered=False),
             mo.stat(_format_distance(_distance_m), label="Distance", bordered=False),
         ]
-        if _trip_to_show is not None and _trip_to_show.match_score is not None:
-            _stat_items.append(
-                mo.stat(f"{_trip_to_show.match_score:.1%}", label="Match score", bordered=False)
-            )
+        if _trip_to_show is not None:
+            if _trip_to_show.match_score is not None:
+                _stat_items.append(
+                    mo.stat(f"{_trip_to_show.match_score:.1%}", label="Direct match", bordered=False)
+                )
+            if _trip_to_show.frechet_distance is not None:
+                _stat_items.append(
+                    mo.stat(f"{_trip_to_show.frechet_distance:.1f} m", label="Snap dist", bordered=False)
+                )
         _detail_stats = mo.hstack(_stat_items, gap=1, justify="end")
 
         # -- Full-width header: title + stats --
@@ -685,7 +690,7 @@ def _(
                 "id": str(_trip_to_show.id),
                 "status": _trip_to_show.status.value,
                 "match_score": f"{_trip_to_show.match_score:.1%}" if _trip_to_show.match_score is not None else "\u2014",
-                "frechet_distance": f"{_trip_to_show.frechet_distance:.2f}" if _trip_to_show.frechet_distance is not None else "\u2014",
+                "snap_distance_m": f"{_trip_to_show.frechet_distance:.1f} m" if _trip_to_show.frechet_distance is not None else "\u2014",
                 "processed_at": _trip_to_show.processed_at,
             }])
             _trip_header_items = [mo.md("**Cleaned Trip**")]
@@ -757,7 +762,15 @@ def _(cleaned_trip, existing_trip, mo):
 
 
 @app.cell
-def _(cleaned_trip, db, existing_trip, mo, resample_btn, resample_interval_input, select):
+def _(
+    cleaned_trip,
+    db,
+    existing_trip,
+    mo,
+    resample_btn,
+    resample_interval_input,
+    select,
+):
     db.rollback()
     from database.models.route import ResampledTrip as _ResampledTrip
 
@@ -894,7 +907,7 @@ def _(
                         data=[{"coordinates": c} for c in _coords],
                         get_position="coordinates",
                         get_color=[99, 102, 241],
-                        get_radius=5,
+                        get_radius=2,
                         radius_min_pixels=4,
                         stroked=True,
                         get_line_color=[255, 255, 255],
