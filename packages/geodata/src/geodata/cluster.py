@@ -1,18 +1,27 @@
-"""DBSCAN-based route reconstruction from pooled clean trip segments.
+"""DBSCAN-based route reconstruction from pooled clean trip vertices.
 
 Algorithm
 ---------
-1. Decompose each Trip.computed_path into segments (consecutive vertex pairs).
-2. Represent each segment by its midpoint.
-3. Run DBSCAN with haversine distance on midpoints to cluster segments.
-4. ``filter_cluster_route`` discards noise and small clusters, keeps the
-   surviving segments per trip in their original order, and merges them
-   across trips to produce the final route.
+1. Pool all vertices from each Trip.computed_path across all trips.
+2. Run DBSCAN with haversine distance on the raw (lat, lon) vertices.
+3. Select the largest non-noise cluster — this is the main road.
+4. Order those vertices along the route using PCA on the first principal
+   component (robust to slight curves; handles bidirectionality).
+5. Spatially thin the ordered sequence: keep one vertex per ``thin_meters``
+   of arc length.
+6. The thinned sequence becomes the reconstructed route.
+
+Why the largest cluster is the road
+------------------------------------
+Because GPS points are very dense (small gaps between consecutive vertices),
+road points cluster tightly together and dominate by count.  Noise points
+(GPS jumps, bad map-match snaps) are sparse and either form tiny clusters
+or are labelled as noise by DBSCAN.
 
 Typical usage
 -------------
     result = filter_cluster_route(db, line_id, eps_meters=30.0)
-    print(result.n_kept_segments, "segments kept →", result.n_route_segments, "route segments")
+    print(result.n_kept_segments, "vertices kept →", result.n_route_segments, "route segments")
 """
 
 from dataclasses import dataclass, field
@@ -39,31 +48,35 @@ from .telemetry import tracer
 _EARTH_RADIUS_M = 6_371_000.0
 
 
-# ---------------------------------------------------------------------P------
+# ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------
 
 
 @dataclass
 class ClusterSegment:
-    """A single trip segment with its DBSCAN assignment."""
+    """A single trip segment (consecutive vertex pair) with its cluster info.
+
+    A segment is considered *kept* when both its start and end vertex
+    are in the main (largest) cluster.
+    """
     start_lat: float
     start_lon: float
     end_lat: float
     end_lon: float
-    cluster_label: int   # -1 = noise
-    kept: bool           # True if it survived filtering
+    cluster_label: int   # label of the start vertex; -1 = noise
+    kept: bool           # True if both endpoints are in the main cluster
 
 
 @dataclass
 class FilteredRouteResult:
     estimation: RouteEstimation
     n_trips: int
-    n_segments_total: int     # total segments pooled across all trips
-    n_noise_segments: int     # segments labelled noise (-1)
+    n_segments_total: int     # total vertices pooled across all trips
+    n_noise_segments: int     # vertices labelled as noise (-1)
     n_clusters: int           # DBSCAN clusters found
-    n_small_clusters: int     # clusters removed for being too small
-    n_kept_segments: int      # segments that survived filtering
+    n_small_clusters: int     # clusters that are not the main cluster
+    n_kept_segments: int      # vertices in the main cluster
     n_route_segments: int     # RouteSegments saved in the estimation
     cluster_segments: list[ClusterSegment] = field(default_factory=list)
 
@@ -101,6 +114,14 @@ def _load_trips(
     return trips
 
 
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Haversine distance in metres between two (lat, lon) points."""
+    dlat = np.radians(lat2 - lat1)
+    dlon = np.radians(lon2 - lon1)
+    a = np.sin(dlat / 2) ** 2 + np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.sin(dlon / 2) ** 2
+    return 2 * _EARTH_RADIUS_M * np.arcsin(np.sqrt(a))
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
@@ -115,13 +136,14 @@ def filter_cluster_route(
     eps_meters: float = 30.0,
     min_samples: int | None = None,
     min_cluster_segments: int = 0,
+    thin_meters: float | None = None,
 ) -> FilteredRouteResult:
-    """Cluster trip segments via DBSCAN, filter outliers, build route.
+    """Cluster trip vertices via DBSCAN, select the main road cluster, build route.
 
-    Each trip's computed_path is decomposed into segments (consecutive vertex
-    pairs).  Segments are clustered by midpoint proximity.  Noise and small
-    clusters are discarded.  Surviving segments are kept per trip in order,
-    then merged across trips by fractional-position interpolation + averaging.
+    All vertices from every trip's computed_path are pooled and clustered by
+    geographic proximity.  The largest non-noise cluster is taken as the main
+    road.  Its vertices are ordered along the route using PCA, spatially
+    thinned, and persisted as a RouteEstimation.
 
     Parameters
     ----------
@@ -139,18 +161,23 @@ def filter_cluster_route(
     min_samples:
         DBSCAN core-point threshold.  Defaults to ``max(2, n_trips // 3)``.
     min_cluster_segments:
-        Clusters with fewer segments than this are discarded.
-        Defaults to 0 (keep every non-noise cluster).
+        Kept for API compatibility; not used in the new algorithm.
+    thin_meters:
+        Spatial thinning step: only keep a vertex when it is at least this
+        far from the previous kept vertex.  Defaults to ``eps_meters``.
 
     Returns
     -------
     FilteredRouteResult
     """
+    _thin_meters = thin_meters if thin_meters is not None else eps_meters
+
     with tracer.start_as_current_span(
         "filter_cluster_route",
         attributes={
             "line_id": str(line_id),
             "eps_meters": eps_meters,
+            "thin_meters": _thin_meters,
         },
     ) as span:
         line = db.get(Line, line_id)
@@ -165,45 +192,37 @@ def filter_cluster_route(
         span.set_attribute("trips.total", n_trips)
 
         # ------------------------------------------------------------------
-        # 2. Decompose each trip into segments, compute midpoints
+        # 2. Pool all vertices from every trip's computed_path
         # ------------------------------------------------------------------
-        # For each segment we store:
-        #   midpoint (lat, lon) — used for DBSCAN
-        #   start/end vertices  — used for visualization and route building
-        #   trip index          — which trip it belongs to
-        midpoints: list[tuple[float, float]] = []
-        seg_starts: list[tuple[float, float]] = []   # (lat, lon)
-        seg_ends: list[tuple[float, float]] = []     # (lat, lon)
-        trip_indices: list[int] = []
-        # Per-trip segment slices: (start_idx, end_idx) into the arrays above
-        trip_slices: list[tuple[int, int]] = []
+        points: list[tuple[float, float]] = []    # (lat, lon)
+        point_trip_indices: list[int] = []
+        trip_vertex_slices: list[tuple[int, int]] = []
 
         for trip_idx, trip in enumerate(trips):
             geom = to_shape(trip.computed_path)
-            coords_list = list(geom.coords)  # [(lon, lat, ...), ...]
-            slice_start = len(midpoints)
-            for i in range(len(coords_list) - 1):
-                a_lon, a_lat = coords_list[i][0], coords_list[i][1]
-                b_lon, b_lat = coords_list[i + 1][0], coords_list[i + 1][1]
-                midpoints.append(((a_lat + b_lat) / 2, (a_lon + b_lon) / 2))
-                seg_starts.append((a_lat, a_lon))
-                seg_ends.append((b_lat, b_lon))
-                trip_indices.append(trip_idx)
-            trip_slices.append((slice_start, len(midpoints)))
+            coords = list(geom.coords)            # [(lon, lat, ...), ...]
+            slice_start = len(points)
+            for coord in coords:
+                lon, lat = coord[0], coord[1]
+                points.append((lat, lon))
+                point_trip_indices.append(trip_idx)
+            trip_vertex_slices.append((slice_start, len(points)))
 
-        n_total = len(midpoints)
+        n_total = len(points)
         if n_total < 2:
             raise ValueError(
-                f"Not enough segments for line {line_id} after pooling "
-                f"({n_total} segments total)"
+                f"Not enough vertices for line {line_id} after pooling "
+                f"({n_total} vertices total)"
             )
 
-        mid_arr = np.array(midpoints)  # shape (N, 2) — (lat, lon)
+        pts_arr = np.array(points)   # shape (N, 2) — (lat, lon)
 
         # ------------------------------------------------------------------
-        # 3. Run DBSCAN on segment midpoints
+        # 3. Run DBSCAN on vertices
         # ------------------------------------------------------------------
-        effective_min_samples = min_samples if min_samples is not None else max(2, n_trips // 3)
+        effective_min_samples = (
+            min_samples if min_samples is not None else max(2, n_trips // 3)
+        )
         eps_rad = eps_meters / _EARTH_RADIUS_M
 
         labels = DBSCAN(
@@ -211,7 +230,7 @@ def filter_cluster_route(
             min_samples=effective_min_samples,
             algorithm="ball_tree",
             metric="haversine",
-        ).fit_predict(np.radians(mid_arr))
+        ).fit_predict(np.radians(pts_arr))
 
         n_noise = int(np.sum(labels == -1))
         unique_labels = sorted(lbl for lbl in set(labels) if lbl != -1)
@@ -220,76 +239,110 @@ def filter_cluster_route(
         span.set_attributes({
             "dbscan.n_clusters": n_clusters,
             "dbscan.n_noise": n_noise,
-            "dbscan.n_segments": n_total,
+            "dbscan.n_vertices": n_total,
         })
 
-        # ------------------------------------------------------------------
-        # 4. Filter out noise and small clusters
-        # ------------------------------------------------------------------
-        cluster_sizes = {lbl: int(np.sum(labels == lbl)) for lbl in unique_labels}
-        valid_labels = {lbl for lbl, sz in cluster_sizes.items() if sz >= min_cluster_segments}
-        n_small_clusters = n_clusters - len(valid_labels)
-
-        keep_mask = np.array([lbl in valid_labels for lbl in labels])
-        n_kept = int(keep_mask.sum())
-
-        span.set_attributes({
-            "filter.min_cluster_segments": min_cluster_segments,
-            "filter.small_clusters_removed": n_small_clusters,
-            "filter.kept_segments": n_kept,
-        })
-
-        if n_kept < 1:
+        if n_clusters == 0:
             raise ValueError(
-                f"No segments survived filtering. "
-                f"Try increasing eps_meters, reducing min_samples, or lowering "
-                f"min_cluster_segments."
+                f"DBSCAN found no clusters for line {line_id}. "
+                f"Try increasing eps_meters or reducing min_samples."
             )
 
         # ------------------------------------------------------------------
-        # 5. Build route: keep each trip's surviving segments in order,
-        #    chain vertices, then merge across trips
+        # 4. Select the largest cluster — this is the main road
         # ------------------------------------------------------------------
-        filtered_trips: list[np.ndarray] = []
-        for slice_start, slice_end in trip_slices:
-            trip_keep = keep_mask[slice_start:slice_end]
-            if trip_keep.sum() < 1:
+        cluster_sizes = {lbl: int(np.sum(labels == lbl)) for lbl in unique_labels}
+        main_label = max(cluster_sizes, key=cluster_sizes.__getitem__)
+        n_small_clusters = n_clusters - 1   # every other cluster is "small"
+
+        main_mask = labels == main_label
+        n_kept = int(main_mask.sum())
+
+        span.set_attributes({
+            "filter.main_label": main_label,
+            "filter.main_cluster_size": n_kept,
+            "filter.small_clusters_removed": n_small_clusters,
+        })
+
+        if n_kept < 2:
+            raise ValueError(
+                f"Main cluster has only {n_kept} vertices. "
+                f"Try increasing eps_meters or reducing min_samples."
+            )
+
+        # ------------------------------------------------------------------
+        # 5. Order main-cluster vertices along the route.
+        #
+        # Strategy: greedy nearest-neighbour chain.
+        #   1. Use PCA to identify one terminus (extreme of PC1).
+        #   2. Walk greedily: always step to the nearest unvisited point.
+        #
+        # This handles curves and L-shaped turns correctly.  PCA alone
+        # fails at turns because it projects both arms onto a single axis,
+        # mixing their ordering.
+        # ------------------------------------------------------------------
+        main_pts = pts_arr[main_mask]   # shape (K, 2) — (lat, lon)
+        n_main = len(main_pts)
+
+        # PCA — used only to pick the starting terminus
+        centroid = main_pts.mean(axis=0)
+        centred = main_pts - centroid
+        _, _, Vt = np.linalg.svd(centred, full_matrices=False)
+        pc1 = Vt[0]
+        projections = centred @ pc1
+        start_idx = int(np.argmin(projections))   # one extreme end of the route
+
+        # Greedy NN chain from the starting terminus
+        main_pts_rad = np.radians(main_pts)       # precompute for haversine
+        visited = np.zeros(n_main, dtype=bool)
+        chain = np.empty(n_main, dtype=int)
+        chain[0] = start_idx
+        visited[start_idx] = True
+
+        for step in range(1, n_main):
+            prev = chain[step - 1]
+            prev_rad = main_pts_rad[prev]
+            dlat = main_pts_rad[:, 0] - prev_rad[0]
+            dlon = main_pts_rad[:, 1] - prev_rad[1]
+            a = (
+                np.sin(dlat / 2) ** 2
+                + np.cos(prev_rad[0]) * np.cos(main_pts_rad[:, 0]) * np.sin(dlon / 2) ** 2
+            )
+            dists = 2 * _EARTH_RADIUS_M * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+            dists[visited] = np.inf
+            nearest = int(np.argmin(dists))
+            chain[step] = nearest
+            visited[nearest] = True
+
+        ordered_pts = main_pts[chain]              # shape (K, 2) — (lat, lon)
+
+        # ------------------------------------------------------------------
+        # 6. Spatially thin: keep one vertex per thin_meters
+        # ------------------------------------------------------------------
+        waypoints: list[tuple[float, float]] = []
+        for lat, lon in ordered_pts:
+            if not waypoints:
+                waypoints.append((lat, lon))
                 continue
-            vertices: list[tuple[float, float]] = []
-            for j in range(slice_start, slice_end):
-                if keep_mask[j]:
-                    if not vertices:
-                        vertices.append(seg_starts[j])
-                    vertices.append(seg_ends[j])
-            if len(vertices) >= 2:
-                filtered_trips.append(np.array(vertices))
+            prev_lat, prev_lon = waypoints[-1]
+            if _haversine_m(prev_lat, prev_lon, lat, lon) >= _thin_meters:
+                waypoints.append((lat, lon))
 
-        if not filtered_trips:
-            raise ValueError("No trips with surviving segments after filtering.")
+        # Always include the last ordered vertex so the route reaches the end
+        last_lat, last_lon = float(ordered_pts[-1, 0]), float(ordered_pts[-1, 1])
+        if waypoints[-1] != (last_lat, last_lon):
+            waypoints.append((last_lat, last_lon))
 
-        # Merge across trips: resample each filtered trip at N equal
-        # fractional positions, then average.
-        n_waypoints = int(np.median([len(ft) for ft in filtered_trips]))
-        n_waypoints = max(n_waypoints, 2)
-        fractions = np.linspace(0.0, 1.0, n_waypoints)
+        if len(waypoints) < 2:
+            raise ValueError("Not enough distinct waypoints to form a route.")
 
-        def _resample_at_fractions(pts: np.ndarray, fracs: np.ndarray) -> np.ndarray:
-            n = len(pts)
-            if n == 1:
-                return np.tile(pts[0], (len(fracs), 1))
-            idx_float = fracs * (n - 1)
-            idx_low = np.clip(np.floor(idx_float).astype(int), 0, n - 2)
-            t = idx_float - idx_low
-            return pts[idx_low] * (1 - t)[:, None] + pts[idx_low + 1] * t[:, None]
-
-        resampled = np.stack([
-            _resample_at_fractions(ft, fractions) for ft in filtered_trips
-        ])
-        waypoints_arr = np.mean(resampled, axis=0)
-        waypoints = [(float(wp[0]), float(wp[1])) for wp in waypoints_arr]
+        span.set_attributes({
+            "route.waypoints": len(waypoints),
+            "route.thin_meters": _thin_meters,
+        })
 
         # ------------------------------------------------------------------
-        # 6. Supersede previous estimations
+        # 7. Supersede previous estimations
         # ------------------------------------------------------------------
         previous = db.execute(
             select(RouteEstimation)
@@ -307,7 +360,7 @@ def filter_cluster_route(
             db.add(prev)
 
         # ------------------------------------------------------------------
-        # 7. Persist RouteEstimation + RouteSegments
+        # 8. Persist RouteEstimation + RouteSegments
         # ------------------------------------------------------------------
         estimation = RouteEstimation(
             line_id=line_id,
@@ -322,7 +375,7 @@ def filter_cluster_route(
         for seq, (wp_a, wp_b) in enumerate(zip(waypoints[:-1], waypoints[1:])):
             path = from_shape(
                 LineString([
-                    (wp_a[1], wp_a[0]),  # (lon, lat)
+                    (wp_a[1], wp_a[0]),   # (lon, lat)
                     (wp_b[1], wp_b[0]),
                 ]),
                 srid=4326,
@@ -343,17 +396,23 @@ def filter_cluster_route(
             "segments.saved": n_route_segments,
         })
 
-        cluster_segments = [
-            ClusterSegment(
-                start_lat=seg_starts[i][0],
-                start_lon=seg_starts[i][1],
-                end_lat=seg_ends[i][0],
-                end_lon=seg_ends[i][1],
-                cluster_label=int(labels[i]),
-                kept=bool(keep_mask[i]),
-            )
-            for i in range(n_total)
-        ]
+        # ------------------------------------------------------------------
+        # Build ClusterSegment list for visualisation
+        # ------------------------------------------------------------------
+        cluster_segments: list[ClusterSegment] = []
+        for trip_idx in range(n_trips):
+            sl_start, sl_end = trip_vertex_slices[trip_idx]
+            for i in range(sl_start, sl_end - 1):
+                j = i + 1
+                both_kept = bool(main_mask[i]) and bool(main_mask[j])
+                cluster_segments.append(ClusterSegment(
+                    start_lat=points[i][0],
+                    start_lon=points[i][1],
+                    end_lat=points[j][0],
+                    end_lon=points[j][1],
+                    cluster_label=int(labels[i]) if both_kept else -1,
+                    kept=both_kept,
+                ))
 
         return FilteredRouteResult(
             estimation=estimation,
