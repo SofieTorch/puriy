@@ -73,6 +73,7 @@ def save_tracks_to_db(
                     timestamp=ts,
                     latitude=p["latitude"],
                     longitude=p["longitude"],
+                    horizontal_accuracy=p.get("accuracy"),
                     point=from_shape(
                         Point(p["longitude"], p["latitude"]), srid=4326
                     ),

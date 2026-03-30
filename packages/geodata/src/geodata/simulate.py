@@ -4,6 +4,8 @@ import math
 import random
 from datetime import datetime, timedelta
 
+from shapely.geometry import Point as _ShapelyPoint
+
 from .geo_math import heading_and_perp, interpolate_route, offset_lon_lat
 from .telemetry import tracer
 
@@ -12,6 +14,7 @@ def generate_tracks(
     route: list[list[float]],
     config: dict,
     seed: int | None = 42,
+    noise_zones: list[dict] | None = None,
 ) -> list[dict]:
     """Generate simulated GPS tracks along *route* (list of [lon, lat]).
 
@@ -24,11 +27,18 @@ def generate_tracks(
         matching the JSON format saved by the notebook.
     seed : int or None
         Random seed for reproducibility.  ``None`` or ``-1`` means random.
+    noise_zones : list of dict, optional
+        Each entry must have a ``"polygon"`` key (a Shapely geometry) and a
+        ``"multiplier"`` key (float >= 1).  When a point falls inside a zone
+        the effective isotropic sigma is multiplied by the zone's value.
+        Overlapping zones use the maximum multiplier.
 
     Returns
     -------
     list of dict
-        Each dict has: track_id, point_index, timestamp, longitude, latitude.
+        Each dict has: track_id, point_index, timestamp, longitude, latitude,
+        and ``accuracy`` (1-sigma horizontal accuracy in metres, matching the
+        convention used by Android/iOS) when isotropic noise is active.
     """
     if len(route) < 2:
         raise ValueError("Route needs at least 2 points")
@@ -57,8 +67,8 @@ def generate_tracks(
         effective_seed = None
 
     # Noise params helpers
-    def _on(key: str) -> bool:
-        return noise.get(key, {}).get("Enabled", True)
+    def _on(key: str, default: bool = True) -> bool:
+        return noise.get(key, {}).get("Enabled", default)
 
     def _p(key: str, param: str, default: float = 0.0) -> float:
         return float(noise.get(key, {}).get(param, default))
@@ -74,6 +84,13 @@ def generate_tracks(
     drift_bearing = math.radians(_p("biased_drift", "Bearing (deg)", 70.0))
     lat_drift_total = _p("lateral_drift", "Total (m)", 3.0)
     ts_jitter = _p("timestamp_jitter", "Sigma (s)", 0.15)
+
+    # OU drift parameters — disabled by default so old configs are unaffected
+    ou_enabled = _on("ou_drift", default=False)
+    ou_mean = _p("ou_drift", "Mean sigma (m)", 5.0)
+    ou_theta = _p("ou_drift", "Reversion rate", 0.05)   # mean-reversion speed, 0-1
+    ou_vol = _p("ou_drift", "Volatility", 2.0)           # OU noise volatility
+    ou_max = _p("ou_drift", "Max sigma (m)", 50.0)
 
     records: list[dict] = []
     start_time = datetime.utcnow().replace(microsecond=0)
@@ -96,7 +113,14 @@ def generate_tracks(
             base_points = [base_points[i] for i in idxs]
 
         drift_acc_m = 0.0
-        noisy_points: list[tuple[float, float, float]] = []
+        # OU state — initialise near the mean with a small random offset
+        ou_sigma = (
+            max(1.0, min(ou_max, rng.gauss(ou_mean, ou_mean * 0.2)))
+            if ou_enabled else 0.0
+        )
+
+        # noisy_points stores (lon, lat, elapsed_s, effective_sigma)
+        noisy_points: list[tuple[float, float, float, float]] = []
         elapsed_s = 0.0
 
         for i, (lon, lat) in enumerate(base_points):
@@ -104,10 +128,40 @@ def generate_tracks(
             east_m = 0.0
             north_m = 0.0
 
-            if _on("gaussian"):
-                east_m += rng.gauss(0, gaussian_m)
-                north_m += rng.gauss(0, gaussian_m)
+            # ------------------------------------------------------------------
+            # Compute effective isotropic sigma for this point.
+            # OU drift (when enabled) drives a slowly-varying sigma that
+            # replaces the fixed gaussian sigma.  Zone multipliers are then
+            # applied on top of whichever base is active.
+            # ------------------------------------------------------------------
+            if ou_enabled:
+                ou_sigma += ou_theta * (ou_mean - ou_sigma) + ou_vol * rng.gauss(0, 1)
+                ou_sigma = max(1.0, min(ou_max, ou_sigma))
+                effective_sigma = ou_sigma
+            elif _on("gaussian") and gaussian_m > 0:
+                effective_sigma = gaussian_m
+            else:
+                effective_sigma = 0.0
 
+            # Zone multiplier — evaluated against the original route point
+            # (before any noise is applied), using the maximum multiplier when
+            # a point falls inside multiple overlapping zones.
+            if noise_zones and effective_sigma > 0:
+                _pt = _ShapelyPoint(lon, lat)
+                _zone_mult = 1.0
+                for _zone in noise_zones:
+                    if _zone["polygon"].contains(_pt):
+                        _zone_mult = max(_zone_mult, float(_zone.get("multiplier", 1.0)))
+                effective_sigma *= _zone_mult
+
+            # Apply isotropic Gaussian noise with the final effective sigma
+            if effective_sigma > 0:
+                east_m += rng.gauss(0, effective_sigma)
+                north_m += rng.gauss(0, effective_sigma)
+
+            # ------------------------------------------------------------------
+            # Remaining noise types (independent of OU / zones)
+            # ------------------------------------------------------------------
             if _on("perpendicular") and perpendicular_m > 0:
                 perp_offset = rng.gauss(0, perpendicular_m)
                 east_m += perp[0] * perp_offset
@@ -156,7 +210,7 @@ def generate_tracks(
                 )
                 elapsed_s += max(0.2, sampling_rate_s + jitter)
 
-            noisy_points.append((nlon, nlat, elapsed_s))
+            noisy_points.append((nlon, nlat, elapsed_s, effective_sigma))
 
         if _on("missing"):
             kept_points = []
@@ -172,17 +226,18 @@ def generate_tracks(
             kept_points = noisy_points
 
         track_start = start_time + timedelta(minutes=track_idx)
-        for point_idx, (plon, plat, t_s) in enumerate(kept_points):
+        for point_idx, (plon, plat, t_s, eff_sig) in enumerate(kept_points):
             timestamp = track_start + timedelta(seconds=t_s)
-            records.append(
-                {
-                    "track_id": track_idx + 1,
-                    "point_index": point_idx + 1,
-                    "timestamp": timestamp.isoformat(),
-                    "longitude": plon,
-                    "latitude": plat,
-                }
-            )
+            record: dict = {
+                "track_id": track_idx + 1,
+                "point_index": point_idx + 1,
+                "timestamp": timestamp.isoformat(),
+                "longitude": plon,
+                "latitude": plat,
+            }
+            if eff_sig > 0:
+                record["accuracy"] = round(eff_sig, 1)
+            records.append(record)
 
     span.set_attribute("points.total", len(records))
     span.end()

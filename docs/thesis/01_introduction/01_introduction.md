@@ -1,0 +1,11 @@
+# 1. Introducción
+
+El departamento de Cochabamba, es una de las tres ciudades más grandes de Bolivia, con más de un millón y medio de habitantes (Instituto Nacional de Estadística INE, 2015) en donde el 65.7% se moviliza principalmente por transporte público (Cabrera et al., 2018), y aun así, sin un medio confiable y actualizado que ofrezca información sobre las líneas y rutas que lo conforman.
+
+Debido al carácter local, dinámico y privado del transporte de pasajeros en las ciudades de Bolivia (Cabrera et al., 2018), aplicaciones como Moovit o Google Maps no operan en el país o lo hacen de manera limitada, restringiéndose principalmente a funcionalidades de mapas. Alternativas locales como Llajta Rutas o Trufi surgieron debido a esta necesidad; sin embargo, no lograron sostenerse en el tiempo.
+
+Ante esta situación, el presente proyecto propone la implementación de una aplicación móvil que centralice información sobre las diferentes líneas, tarifas, rutas y sus variantes dentro del transporte público de la ciudad de Cochabamba. Para ello, se plantea el crowdsourcing como estrategia principal para mantener la información actualizada, así como la adopción de un enfoque open source, permitiendo a la población y a la comunidad de desarrolladores contribuir al mantenimiento y evolución del proyecto a largo plazo.
+
+El sistema de transporte público en Cochabamba presenta diversas particularidades, como los distintos tipos de vehículos y el hecho de que una misma línea pueda recorrer dos o más rutas diferentes, identificadas mediante distintivos como colores o banderas. En este contexto, el proyecto busca identificar y analizar las fortalezas de aplicaciones de referencia en el ámbito del transporte público, como Google Maps, que proporciona información sobre la dirección de las líneas, o SBB Mobile, que registra con precisión las rutas seguidas por los usuarios, con el fin de adaptar dichas funcionalidades a la realidad local y ofrecer un servicio útil y de calidad.
+
+Finalmente, en los siguientes apartados se profundiza en el planteamiento del problema, los antecedentes y las propuestas existentes, junto con los objetivos, el alcance y la metodología del proyecto, proporcionando el contexto necesario sobre la solución propuesta.

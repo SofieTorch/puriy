@@ -55,16 +55,19 @@ def _(mo):
     get_active_tab, set_active_tab = mo.state("Draw path")
     get_loaded_config, set_loaded_config = mo.state(None)
     get_save_db_message, set_save_db_message = mo.state("")
+    get_noise_zones, set_noise_zones = mo.state([])
     return (
         get_active_tab,
         get_last_generate_click,
         get_loaded_config,
+        get_noise_zones,
         get_save_db_message,
         get_simulated_points,
         get_simulation_message,
         set_active_tab,
         set_last_generate_click,
         set_loaded_config,
+        set_noise_zones,
         set_save_db_message,
         set_simulated_points,
         set_simulation_message,
@@ -249,17 +252,154 @@ def _(get_loaded_config, mo):
         "timestamp_jitter": _noise("timestamp_jitter", "Timestamp jitter",
             "*Adds random variation to the time interval between points, simulating irregular sampling.*",
             {"Sigma (s)": mo.ui.number(value=_nval("timestamp_jitter", "Sigma (s)", 0.15), start=0, step=0.05)}),
+        # ou_drift is built manually so its Enabled checkbox defaults to False
+        "ou_drift": mo.ui.dictionary({
+            "Enabled": mo.ui.checkbox(value=_nval("ou_drift", "Enabled", False)),
+            "Description": mo.md(
+                "*Slowly-varying GPS accuracy via an Ornstein-Uhlenbeck process. "
+                "Replaces the fixed Gaussian sigma with a signal that drifts over time, "
+                "simulating changing satellite geometry or urban-canyon entry/exit. "
+                "Per-point accuracy is stored in the DB and passed to Valhalla.*"
+            ).batch(),
+            "Mean sigma (m)": mo.ui.number(value=_nval("ou_drift", "Mean sigma (m)", 5.0), start=1.0, step=0.5),
+            "Reversion rate": mo.ui.number(value=_nval("ou_drift", "Reversion rate", 0.05), start=0.01, stop=1.0, step=0.01),
+            "Volatility": mo.ui.number(value=_nval("ou_drift", "Volatility", 2.0), start=0.1, step=0.5),
+            "Max sigma (m)": mo.ui.number(value=_nval("ou_drift", "Max sigma (m)", 50.0), start=1.0, step=5.0),
+        }, label="OU accuracy drift"),
     }
     return (noise_config,)
 
 
 @app.cell
+def _(Path, mo):
+    _zones_dir = Path.cwd() / "seed" / "zones"
+    _zones_dir.mkdir(parents=True, exist_ok=True)
+    zones_file_browser = mo.ui.file_browser(
+        initial_path=_zones_dir,
+        filetypes=[".geojson"],
+        multiple=False,
+        label="Load zones GeoJSON",
+    )
+    default_zone_mult = mo.ui.number(
+        value=3.0,
+        start=1.0,
+        step=0.5,
+        label="Default multiplier",
+    )
+    return default_zone_mult, zones_file_browser
+
+
+@app.cell
+def _(default_zone_mult, set_noise_zones, zones_file_browser):
+    import json as _json
+
+    # Store raw GeoJSON geometry dicts (JSON-serializable) rather than Shapely
+    # objects so Marimo's state machinery never needs to inspect them with vars().
+    # Shapely conversion happens in the generate cell, on demand.
+    if zones_file_browser.value:
+        try:
+            with open(zones_file_browser.path(0), encoding="utf-8") as _f:
+                _gj = _json.load(_f)
+            _zones = []
+            for _feat in _gj.get("features", []):
+                _mult = float(
+                    (_feat.get("properties") or {}).get(
+                        "multiplier", default_zone_mult.value
+                    )
+                )
+                _zones.append({"geometry": _feat["geometry"], "multiplier": _mult})
+            set_noise_zones(_zones)
+        except Exception:
+            set_noise_zones([])
+    else:
+        set_noise_zones([])
+    return
+
+
+@app.cell
+def _(Draw, Element, folium, geojson_file_browser, mo, parse_route_from_geojson):
+    _zones_map = folium.Map(
+        location=[-17.3895, -66.1568],
+        zoom_start=13,
+        tiles="CartoDB positron",
+        control_scale=True,
+    )
+    Draw(
+        export=True,
+        filename="zones.geojson",
+        position="topleft",
+        draw_options={
+            "polyline": False,
+            "polygon": True,
+            "rectangle": True,
+            "circle": False,
+            "marker": False,
+            "circlemarker": False,
+        },
+        edit_options={"edit": True, "remove": True},
+    ).add_to(_zones_map)
+
+    _zones_map.get_root().html.add_child(Element("""<style>
+        #export {
+            background-color: #f59e0b !important;
+            color: white !important;
+            padding: 6px 16px !important;
+            border-radius: 4px !important;
+            font-weight: 600 !important;
+            font-size: 13px !important;
+            text-decoration: none !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+            z-index: 1000 !important;
+            position: absolute !important;
+            top: 12px !important;
+            right: 12px !important;
+        }
+    </style>"""))
+
+    # Overlay the route if one is loaded
+    _selected_path = geojson_file_browser.path(0) if geojson_file_browser.value else None
+    if _selected_path:
+        try:
+            with open(_selected_path, encoding="utf-8") as _f:
+                _route_coords = parse_route_from_geojson(_f.read())
+            if len(_route_coords) >= 2:
+                folium.PolyLine(
+                    locations=[[lat, lon] for lon, lat in _route_coords],
+                    color="#6366f1",
+                    weight=3,
+                    opacity=0.7,
+                    dash_array="8",
+                ).add_to(_zones_map)
+                _lats = [c[1] for c in _route_coords]
+                _lons = [c[0] for c in _route_coords]
+                _zones_map.fit_bounds([[min(_lats), min(_lons)], [max(_lats), max(_lons)]])
+        except Exception:
+            pass
+
+    zones_map_section = mo.vstack([
+        mo.md(
+            "1. Draw polygons over the noisy areas &nbsp;&nbsp; "
+            "2. Click **Export** (saves `zones.geojson`) &nbsp;&nbsp; "
+            "3. Move the file to `seed/zones/` &nbsp;&nbsp; "
+            "4. Load it with the sidebar file browser"
+        ),
+        mo.md(
+            "Add a `multiplier` property to each feature in the GeoJSON to override the default multiplier per zone."
+        ),
+        mo.Html(_zones_map._repr_html_()),
+    ], gap=0.5, align="stretch")
+    return (zones_map_section,)
+
+
+@app.cell
 def _(
+    default_zone_mult,
     generate_tracks_button,
     geojson_file_browser,
     mo,
     noise_config,
     sim_params,
+    zones_file_browser,
 ):
     mo.sidebar(
         [
@@ -280,6 +420,12 @@ def _(
             noise_config["lateral_drift"],
             noise_config["timestamp_jitter"],
             mo.md("---"),
+            noise_config["ou_drift"],
+            mo.md("---"),
+            mo.md("**Noise zones**"),
+            zones_file_browser,
+            default_zone_mult,
+            mo.md("---"),
             generate_tracks_button,
         ],
         width="310px",
@@ -292,6 +438,7 @@ def _(
     generate_tracks_button,
     geojson_file_browser,
     get_last_generate_click,
+    get_noise_zones,
     noise_config,
     parse_route_from_geojson,
     set_active_tab,
@@ -337,15 +484,28 @@ def _(
             set_simulated_points([])
             set_simulation_message("Route needs at least 2 points.")
         else:
+            # Convert stored GeoJSON geometry dicts to Shapely objects here,
+            # just before calling generate_tracks (not in state).
+            from shapely.geometry import shape as _shape
+            _raw_zones = get_noise_zones()
+            _zones = (
+                [{"polygon": _shape(z["geometry"]), "multiplier": z["multiplier"]} for z in _raw_zones]
+                if _raw_zones else None
+            )
             _records = generate_tracks(
                 _route,
                 _config,
                 seed=_seed_value if _seed_value >= 0 else None,
+                noise_zones=_zones,
             )
             _num_tracks = max((r["track_id"] for r in _records), default=0)
+            _has_accuracy = any("accuracy" in r for r in _records)
+            _zone_info = f", {len(_zones)} zone(s) active" if _zones else ""
+            _acc_info = " · accuracy tracked" if _has_accuracy else ""
             set_simulated_points(_records)
             set_simulation_message(
-                f"Generated {_num_tracks} track(s) with {len(_records)} geopoint(s) total."
+                f"Generated {_num_tracks} track(s) with {len(_records)} geopoint(s) total"
+                f"{_zone_info}{_acc_info}."
             )
             set_active_tab("Generated tracks")
     return
@@ -420,6 +580,58 @@ def _(
 
         center_lat = float(generated_df["latitude"].mean())
         center_lon = float(generated_df["longitude"].mean())
+
+        _layers = [
+            pdk.Layer(
+                "PathLayer",
+                path_layer_data,
+                get_path="path",
+                get_color="color",
+                get_width=0.5,
+                width_min_pixels=1,
+                pickable=True,
+            )
+        ]
+        _tooltip = {"text": "Track {track_id}"}
+
+        # Accuracy layer — shown when per-point accuracy was simulated.
+        # Use plain Python dicts (not a DataFrame) to avoid pydeck's numpy
+        # serialization issues with the color list column.
+        _acc_col = generated_df.get("accuracy") if "accuracy" in generated_df.columns else None
+        if _acc_col is not None and _acc_col.notna().any():
+            _acc_min = float(_acc_col.min())
+            _acc_max = float(_acc_col.max())
+            _acc_range = max(_acc_max - _acc_min, 0.01)
+            _acc_points = []
+            for _row in generated_df.itertuples(index=False):
+                _v = getattr(_row, "accuracy", None)
+                if _v is None or (_v != _v):  # None or NaN
+                    _color = [150, 150, 150, 80]
+                    _acc_val = None
+                else:
+                    _t = (float(_v) - _acc_min) / _acc_range
+                    _color = [int(min(255, _t * 510)), int(min(255, (1.0 - _t) * 510)), 0, 200]
+                    _acc_val = round(float(_v), 1)
+                _acc_points.append({
+                    "longitude": float(_row.longitude),
+                    "latitude": float(_row.latitude),
+                    "track_id": int(_row.track_id),
+                    "accuracy": _acc_val,
+                    "color": _color,
+                })
+            _layers.append(
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    _acc_points,
+                    get_position=["longitude", "latitude"],
+                    get_fill_color="color",
+                    get_radius=6,
+                    radius_min_pixels=3,
+                    pickable=True,
+                )
+            )
+            _tooltip = {"text": "Track {track_id}\nAccuracy: {accuracy} m"}
+
         deck = pdk.Deck(
             map_style="light",
             map_provider="carto",
@@ -430,18 +642,8 @@ def _(
                 pitch=0,
                 bearing=0,
             ),
-            layers=[
-                pdk.Layer(
-                    "PathLayer",
-                    path_layer_data,
-                    get_path="path",
-                    get_color="color",
-                    get_width=0.5,
-                    width_min_pixels=1,
-                    pickable=True,
-                )
-            ],
-            tooltip={"text": "Track {track_id}"},
+            layers=_layers,
+            tooltip=_tooltip,
             height=420,
         )
 
@@ -500,10 +702,12 @@ def _(
     get_active_tab,
     mo,
     save_load_config_section,
+    zones_map_section,
 ):
     mo.ui.tabs(
         {
             "Draw path": draw_map_section,
+            "Noise zones": zones_map_section,
             "Generated tracks": generated_tracks_section,
             "Configuration": save_load_config_section,
         },

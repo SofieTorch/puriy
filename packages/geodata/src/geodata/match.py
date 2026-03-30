@@ -195,14 +195,16 @@ def match_session(
         session.processing_status = ProcessingStatus.PROCESSING
         db.flush()
 
-        shape = [
-            {
+        shape = []
+        for p in raw_points:
+            entry: dict = {
                 "lat": p.latitude,
                 "lon": p.longitude,
                 "time": int(p.timestamp.timestamp()),
             }
-            for p in raw_points
-        ]
+            if p.horizontal_accuracy is not None:
+                entry["accuracy"] = p.horizontal_accuracy
+            shape.append(entry)
 
         try:
             result = trace_match(
