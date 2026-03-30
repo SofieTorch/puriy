@@ -32,8 +32,19 @@ def init_tracing(service_name: str = "transit-lab") -> None:
 
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource)
-    provider.add_span_processor(
-        SimpleSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
-    )
+
+    try:
+        import grpc
+        channel = grpc.insecure_channel(endpoint.replace("http://", ""))
+        grpc.channel_ready_future(channel).result(timeout=1)
+        channel.close()
+        provider.add_span_processor(
+            SimpleSpanProcessor(OTLPSpanExporter(endpoint=endpoint, insecure=True))
+        )
+    except Exception:
+        # Collector not reachable — tracing is a no-op, spans are recorded
+        # but not exported.  This avoids blocking notebook cells.
+        pass
+
     trace.set_tracer_provider(provider)
     _initialized = True

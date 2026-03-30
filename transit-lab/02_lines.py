@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.20.4"
-app = marimo.App(width="medium")
+app = marimo.App(width="full")
 
 
 @app.cell
@@ -21,24 +21,32 @@ def _():
     from geoalchemy2.shape import to_shape
     from sqlalchemy import select
 
+    from components.reconstruction_ui import build_approach_selector, build_param_panel
     from components.tracing import init_tracing
     from database.connection import SessionLocal
     from database.models.line import Line, LineStatus
     from database.models.trip import TripSession
     from database.models.route import Trip, EstimationStatus, RouteEstimation, RouteSegment
-    from geodata.cluster import filter_cluster_route
+    from geodata.reconstruction import get_approach, get_approaches, resolve_params
+    from geodata.reconstruction.dbscan import FilteredRouteResult
+    from geodata.reconstruction.arman_tampere import ArmanTampereResult
     from geodata.match import match_line
     from geodata.merge import merge_lines
     from geodata.validate import validate_trip_directions
 
     return (
+        ArmanTampereResult,
+        FilteredRouteResult,
         Line,
         LineStatus,
         RouteSegment,
         SessionLocal,
         Trip,
         TripSession,
-        filter_cluster_route,
+        build_approach_selector,
+        build_param_panel,
+        get_approach,
+        get_approaches,
         init_tracing,
         match_line,
         math,
@@ -46,6 +54,7 @@ def _():
         mo,
         pd,
         pdk,
+        resolve_params,
         select,
         to_shape,
         validate_trip_directions,
@@ -59,30 +68,18 @@ def _(SessionLocal, init_tracing, mo):
     get_refresh, set_refresh = mo.state(0)
     get_preserved_line_ids, set_preserved_line_ids = mo.state([])
     get_direction_result, set_direction_result = mo.state(None)
-    get_filter_result, set_filter_result = mo.state(None)
+    get_reconstruction_result, set_reconstruction_result = mo.state(None)
     return (
         db,
         get_direction_result,
-        get_filter_result,
         get_preserved_line_ids,
+        get_reconstruction_result,
         get_refresh,
         set_direction_result,
-        set_filter_result,
         set_preserved_line_ids,
+        set_reconstruction_result,
         set_refresh,
     )
-
-
-@app.cell
-def _(merge_btn, mo):
-    table_header = mo.hstack(
-        [mo.md("**Lines**"), merge_btn],
-        justify="space-between",
-        align="center",
-    )
-
-    table_header
-    return
 
 
 @app.cell
@@ -114,8 +111,6 @@ def _(Line, db, get_preserved_line_ids, get_refresh, mo, pd, select):
         pagination=True,
         initial_selection=initial_selection,
     )
-
-    lines_table
     return (lines_table,)
 
 
@@ -159,16 +154,6 @@ def _(
 
 
 @app.cell
-def _(mo):
-    view_3d_switch = mo.ui.switch(value=False, label="3D view")
-    color_switch = mo.ui.switch(value=True, label="Colors")
-    confidence_slider = mo.ui.number(
-        value=0.0, start=0.0, stop=1.0, step=0.05, label="Min confidence",
-    )
-    return color_switch, confidence_slider, view_3d_switch
-
-
-@app.cell
 def _(LineStatus, mo):
     new_line_name = mo.ui.text(value="", label="Name")
     new_line_status = mo.ui.dropdown(
@@ -183,14 +168,6 @@ def _(LineStatus, mo):
         on_click=lambda v: (v or 0) + 1,
         kind="neutral",
     )
-    create_section = mo.hstack(
-        [mo.md("### New line:"), new_line_name, new_line_status, new_line_description, create_btn],
-        gap=1,
-        align="center",
-        justify="start", 
-    )
-
-    create_section
     return create_btn, new_line_description, new_line_name, new_line_status
 
 
@@ -223,9 +200,7 @@ def _(
         except Exception as _e:
             db.rollback()
             create_result_output = mo.callout(mo.md(f"Error: {_e}"), kind="danger")
-
-    mo.plain(create_result_output)
-    return
+    return (create_result_output,)
 
 
 @app.cell
@@ -305,6 +280,89 @@ def _(
                 set_preserved_line_ids(selected_line_ids)
                 set_refresh(lambda v: v + 1)
     return
+
+
+@app.cell
+def _(
+    create_btn,
+    create_result_output,
+    lines_table,
+    merge_btn,
+    mo,
+    new_line_description,
+    new_line_name,
+    new_line_status,
+):
+    lines_tab_content = mo.vstack(
+        [
+            mo.hstack(
+                [mo.md("**Lines**"), merge_btn],
+                justify="space-between",
+                align="center",
+            ),
+            lines_table,
+            mo.hstack(
+                [mo.md("### New line:"), new_line_name, new_line_status, new_line_description, create_btn],
+                gap=1,
+                align="center",
+                justify="start",
+            ),
+            mo.plain(create_result_output) if create_result_output else mo.md(""),
+        ],
+        gap=1,
+        align="stretch",
+    )
+    return (lines_tab_content,)
+
+
+@app.cell
+def _(mo):
+    view_3d_switch = mo.ui.switch(value=False, label="3D view")
+    color_switch = mo.ui.switch(value=True, label="Colors")
+    confidence_slider = mo.ui.number(
+        value=0.0, start=0.0, stop=1.0, step=0.05, label="Min confidence",
+    )
+    return color_switch, confidence_slider, view_3d_switch
+
+
+@app.cell
+def _(mo, selected_line_ids):
+    clean_btn = mo.ui.button(
+        label="Batch clean sessions",
+        value=0,
+        on_click=lambda v: (v or 0) + 1,
+        kind="neutral",
+        disabled=len(selected_line_ids) != 1,
+    )
+    return (clean_btn,)
+
+
+@app.cell
+def _(
+    clean_btn,
+    db,
+    match_line,
+    mo,
+    selected_line_ids,
+    set_preserved_line_ids,
+    set_refresh,
+):
+    clean_result_output = None
+    if (clean_btn.value or 0) > 0 and len(selected_line_ids) == 1:
+        try:
+            _result = match_line(db, selected_line_ids[0])
+            _msg = f"Matched **{len(_result.matched)}** sessions"
+            if _result.failed:
+                _msg += f", **{len(_result.failed)}** failed"
+            if _result.skipped:
+                _msg += f", **{_result.skipped}** skipped"
+            clean_result_output = mo.callout(mo.md(_msg), kind="success")
+            set_preserved_line_ids(selected_line_ids)
+            set_refresh(lambda v: v + 1)
+        except Exception as _e:
+            db.rollback()
+            clean_result_output = mo.callout(mo.md(f"Error: {_e}"), kind="danger")
+    return (clean_result_output,)
 
 
 @app.cell
@@ -534,69 +592,43 @@ def _(
 
 
 @app.cell
-def _(mo, sessions_map, trips_map):
-    mo.hstack(
-        [
-            mo.vstack([mo.md("**Raw sessions**"), sessions_map], gap=0.5),
-            mo.vstack([mo.md("**Cleaned trips**"), trips_map], gap=0.5),
-        ],
-        widths=[1, 1],
-        gap=1,
-    )
-    return
-
-
-@app.cell
-def _(clean_btn, color_switch, confidence_slider, mo, view_3d_switch):
-    mo.hstack(
-        [mo.md("**Maps**"), clean_btn, confidence_slider, color_switch, view_3d_switch],
-        justify="space-between",
-        align="center",
-    )
-    return
-
-
-@app.cell
-def _(mo, selected_line_ids):
-    clean_btn = mo.ui.button(
-        label="Batch clean sessions",
-        value=0,
-        on_click=lambda v: (v or 0) + 1,
-        kind="neutral",
-        disabled=len(selected_line_ids) != 1,
-    )
-    return (clean_btn,)
-
-
-@app.cell
 def _(
     clean_btn,
-    db,
-    match_line,
+    clean_result_output,
+    color_switch,
+    confidence_slider,
     mo,
     selected_line_ids,
-    set_preserved_line_ids,
-    set_refresh,
+    sessions_map,
+    trips_map,
+    view_3d_switch,
 ):
-    clean_result_output = None
-    if (clean_btn.value or 0) > 0 and len(selected_line_ids) == 1:
-        try:
-            _result = match_line(db, selected_line_ids[0])
-            _msg = f"Matched **{len(_result.matched)}** sessions"
-            if _result.failed:
-                _msg += f", **{len(_result.failed)}** failed"
-            if _result.skipped:
-                _msg += f", **{_result.skipped}** skipped"
-            clean_result_output = mo.callout(mo.md(_msg), kind="success")
-            set_preserved_line_ids(selected_line_ids)
-            set_refresh(lambda v: v + 1)
-        except Exception as _e:
-            db.rollback()
-            clean_result_output = mo.callout(mo.md(f"Error: {_e}"), kind="danger")
+    if not selected_line_ids:
+        trips_tab_content = mo.callout(
+            mo.md("Select a line in the **Lines** tab to see its trips."),
+            kind="info",
+        )
+    else:
+        _controls = mo.hstack(
+            [clean_btn, confidence_slider, color_switch, view_3d_switch],
+            gap=1,
+            align="center",
+        )
+        _maps = mo.hstack(
+            [
+                mo.vstack([mo.md("**Raw sessions**"), sessions_map], gap=0.5),
+                mo.vstack([mo.md("**Cleaned trips**"), trips_map], gap=0.5),
+            ],
+            widths=[1, 1],
+            gap=1,
+        )
+        _items = [_controls]
+        if clean_result_output is not None:
+            _items.append(clean_result_output)
+        _items.append(_maps)
 
-    if clean_result_output is not None:
-        mo.plain(clean_result_output)
-    return
+        trips_tab_content = mo.vstack(_items, gap=1, align="stretch")
+    return (trips_tab_content,)
 
 
 @app.cell
@@ -609,31 +641,12 @@ def _(mo, selected_line_ids):
         kind="neutral",
         disabled=not _has_line,
     )
-    eps_input = mo.ui.number(value=30, start=5, stop=200, step=5, label="ε (m)")
-    min_samples_input = mo.ui.number(value=0, start=0, stop=50, step=1, label="Min samples (0=auto)")
     direction_filter_dropdown = mo.ui.dropdown(
         options={"All trips": "all", "Forward only": "forward", "Reverse only": "reverse"},
         value="All trips",
         label="Direction filter",
     )
-    min_cluster_segs_input = mo.ui.number(
-        value=0, start=0, stop=200, step=1, label="Min cluster segs",
-    )
-    filter_btn = mo.ui.button(
-        label="Cluster & filter",
-        value=0,
-        on_click=lambda v: (v or 0) + 1,
-        kind="neutral",
-        disabled=not _has_line,
-    )
-    return (
-        direction_filter_dropdown,
-        eps_input,
-        filter_btn,
-        min_cluster_segs_input,
-        min_samples_input,
-        validate_direction_btn,
-    )
+    return direction_filter_dropdown, validate_direction_btn
 
 
 @app.cell
@@ -656,7 +669,7 @@ def _(
             set_direction_result(_result)
             _msg = f"**{_result.n_forward}** forward · **{_result.n_reverse}** reverse · **{_result.n_unknown}** unknown"
             if _result.is_mixed:
-                _msg += " — ⚠️ mixed directions detected, use direction filter below"
+                _msg += " — mixed directions detected, use direction filter below"
             validate_direction_output = mo.callout(
                 mo.md(_msg), kind="warn" if _result.is_mixed else "success",
             )
@@ -708,7 +721,7 @@ def _(Trip, db, get_direction_result, mo, pdk, select, to_shape):
                 mo.stat(_dir_result.n_forward, label="Forward", bordered=False),
                 mo.stat(_dir_result.n_reverse, label="Reverse", bordered=False),
                 mo.stat(_dir_result.n_unknown, label="Unknown", bordered=False),
-                mo.stat("Yes ⚠️" if _dir_result.is_mixed else "No", label="Mixed", bordered=False),
+                mo.stat("Yes" if _dir_result.is_mixed else "No", label="Mixed", bordered=False),
             ],
             gap=1, justify="start",
         )
@@ -740,65 +753,96 @@ def _(Trip, db, get_direction_result, mo, pdk, select, to_shape):
 
 
 @app.cell
+def _(build_approach_selector, get_approaches):
+    _approaches = get_approaches()
+    approach_dropdown = build_approach_selector(_approaches)
+    return (approach_dropdown,)
+
+
+@app.cell
+def _(approach_dropdown, build_param_panel, get_approach, mo):
+    _key = approach_dropdown.value
+    _info, _fn = get_approach(_key)
+    param_panel = build_param_panel(_info.params)
+    approach_description = mo.md(f"_{_info.description}_")
+    return approach_description, param_panel
+
+
+@app.cell
+def _(mo, selected_line_ids):
+    reconstruct_btn = mo.ui.button(
+        label="Reconstruct route",
+        value=0,
+        on_click=lambda v: (v or 0) + 1,
+        kind="neutral",
+        disabled=len(selected_line_ids) != 1,
+    )
+    return (reconstruct_btn,)
+
+
+@app.cell
 def _(
+    approach_dropdown,
     confidence_slider,
     db,
     direction_filter_dropdown,
-    eps_input,
-    filter_btn,
-    filter_cluster_route,
+    get_approach,
     get_direction_result,
-    min_cluster_segs_input,
-    min_samples_input,
     mo,
+    param_panel,
+    reconstruct_btn,
+    resolve_params,
     selected_line_ids,
-    set_filter_result,
     set_preserved_line_ids,
+    set_reconstruction_result,
     set_refresh,
 ):
-    filter_result_output = None
-    if (filter_btn.value or 0) > 0 and len(selected_line_ids) == 1:
+    reconstruct_output = None
+    if (reconstruct_btn.value or 0) > 0 and len(selected_line_ids) == 1:
         try:
-            _eps = float(eps_input.value)
-            _min_s = int(min_samples_input.value) or None
-            _min_cs = int(min_cluster_segs_input.value)
-            _min_score = confidence_slider.value if confidence_slider.value > 0 else None
+            _key = approach_dropdown.value
+            _info, _fn = get_approach(_key)
+
+            # Collect approach-specific params
+            _raw_params = dict(param_panel.value)
+            _params = resolve_params(_info, _raw_params)
+
+            # Direction filtering
             _trip_ids = None
             _dir_result = get_direction_result()
             if direction_filter_dropdown.value == "forward" and _dir_result is not None:
                 _trip_ids = [t.trip_id for t in _dir_result.forward_trips]
             elif direction_filter_dropdown.value == "reverse" and _dir_result is not None:
                 _trip_ids = [t.trip_id for t in _dir_result.reverse_trips]
-            _result = filter_cluster_route(
+
+            _min_score = confidence_slider.value if confidence_slider.value > 0 else None
+
+            _result = _fn(
                 db,
                 selected_line_ids[0],
                 min_match_score=_min_score,
                 trip_ids=_trip_ids,
-                eps_meters=_eps,
-                min_samples=_min_s,
-                min_cluster_segments=_min_cs,
+                **_params,
             )
-            set_filter_result(_result)
+            set_reconstruction_result(_result)
             set_preserved_line_ids(selected_line_ids)
             set_refresh(lambda v: v + 1)
-            _msg = (
-                f"**{_result.n_kept_segments}** segments kept"
-                f" from **{_result.n_clusters}** clusters"
-                f" → **{_result.n_route_segments}** route segments"
-                f" · {_result.n_noise_segments} noise + {_result.n_small_clusters} small clusters removed"
+
+            reconstruct_output = mo.callout(
+                mo.md(f"**{_info.label}** produced **{_result.n_route_segments}** route segments (v{_result.estimation.version})"),
+                kind="success",
             )
-            filter_result_output = mo.callout(mo.md(_msg), kind="success")
         except Exception as _e:
             db.rollback()
-            filter_result_output = mo.callout(mo.md(f"Error: {_e}"), kind="danger")
-    return (filter_result_output,)
+            reconstruct_output = mo.callout(mo.md(f"Error: {_e}"), kind="danger")
+    return (reconstruct_output,)
 
 
 @app.cell
-def _(get_filter_result, mo, pdk):
-    _fr = get_filter_result()
-    if _fr is None or not _fr.cluster_segments:
-        filter_clusters_map = mo.md("_Run **Cluster & filter** to see segment cluster assignments._")
+def _(FilteredRouteResult, get_reconstruction_result, mo, pdk):
+    _result = get_reconstruction_result()
+    if not isinstance(_result, FilteredRouteResult) or not _result.cluster_segments:
+        dbscan_diagnostics = None
     else:
         _CLUSTER_COLORS = [
             [59, 130, 246],   # blue
@@ -816,7 +860,7 @@ def _(get_filter_result, mo, pdk):
         _kept_data = []
         _discarded_data = []
         _all_coords = []
-        for _seg in _fr.cluster_segments:
+        for _seg in _result.cluster_segments:
             _path = [
                 [_seg.start_lon, _seg.start_lat, 0],
                 [_seg.end_lon, _seg.end_lat, 0],
@@ -874,16 +918,17 @@ def _(get_filter_result, mo, pdk):
 
         _stats = mo.hstack(
             [
-                mo.stat(_fr.n_kept_segments, label="Kept segs", bordered=False),
-                mo.stat(_fr.n_noise_segments, label="Noise segs", bordered=False),
-                mo.stat(_fr.n_clusters, label="Clusters", bordered=False),
-                mo.stat(_fr.n_small_clusters, label="Small clusters", bordered=False),
-                mo.stat(_fr.n_segments_total, label="Total segs", bordered=False),
+                mo.stat(_result.n_kept_segments, label="Kept segs", bordered=False),
+                mo.stat(_result.n_noise_segments, label="Noise segs", bordered=False),
+                mo.stat(_result.n_clusters, label="Clusters", bordered=False),
+                mo.stat(_result.n_small_clusters, label="Small clusters", bordered=False),
+                mo.stat(_result.n_segments_total, label="Total segs", bordered=False),
             ],
             gap=1, justify="start",
         )
-        filter_clusters_map = mo.vstack(
+        dbscan_diagnostics = mo.vstack(
             [
+                mo.md("**Cluster assignments**"),
                 _stats,
                 pdk.Deck(
                     map_style="light", map_provider="carto",
@@ -900,23 +945,60 @@ def _(get_filter_result, mo, pdk):
             ],
             gap=0.5,
         )
-    return (filter_clusters_map,)
+    return (dbscan_diagnostics,)
 
 
 @app.cell
-def _(RouteSegment, db, get_filter_result, mo, pdk, select, to_shape):
-    _fr = get_filter_result()
-    if _fr is None:
-        filtered_route_map = mo.md("_Run **Filter route** to see the filtered route._")
+def _(ArmanTampereResult, get_reconstruction_result, mo):
+    _result = get_reconstruction_result()
+    if not isinstance(_result, ArmanTampereResult):
+        arman_diagnostics = None
+    else:
+        _items = [mo.md("**Centerline construction**")]
+
+        _stats = mo.hstack(
+            [
+                mo.stat(_result.segmentation.n_trajectories, label="Trajectories", bordered=False),
+                mo.stat(_result.segmentation.n_bundles, label="Bundles", bordered=False),
+                mo.stat(len(_result.segmentation.segments), label="Segments", bordered=False),
+                mo.stat(len(_result.segmentation.nodes), label="Nodes", bordered=False),
+            ],
+            gap=1, justify="start",
+        )
+        _items.append(_stats)
+
+        # Show centerline details per segment
+        for i, cl in enumerate(_result.centerlines):
+            _items.append(
+                mo.hstack(
+                    [
+                        mo.stat(cl.n_trajectories_used, label=f"Seg {i} trajectories", bordered=False),
+                        mo.stat(cl.n_outliers_removed, label="Outliers removed", bordered=False),
+                        mo.stat(cl.n_pairs_selected, label="Pairs selected", bordered=False),
+                        mo.stat(len(cl.points), label="Centerline pts", bordered=False),
+                    ],
+                    gap=1, justify="start",
+                )
+            )
+
+        arman_diagnostics = mo.vstack(_items, gap=0.5)
+    return (arman_diagnostics,)
+
+
+@app.cell
+def _(RouteSegment, db, get_reconstruction_result, mo, pdk, select, to_shape):
+    _result = get_reconstruction_result()
+    if _result is None:
+        route_map = mo.md("_Run **Reconstruct route** to see the result._")
     else:
         _segments = db.execute(
             select(RouteSegment)
-            .where(RouteSegment.estimation_id == _fr.estimation.id)
+            .where(RouteSegment.estimation_id == _result.estimation.id)
             .order_by(RouteSegment.sequence)
         ).scalars().all()
 
         if not _segments:
-            filtered_route_map = mo.md("_No segments found for this estimation._")
+            route_map = mo.md("_No segments found for this estimation._")
         else:
             _layer_data = []
             _all_coords = []
@@ -947,15 +1029,14 @@ def _(RouteSegment, db, get_filter_result, mo, pdk, select, to_shape):
 
             _stats = mo.hstack(
                 [
-                    mo.stat(f"v{_fr.estimation.version}", label="Version", bordered=False),
-                    mo.stat(_fr.n_kept_segments, label="Kept segs", bordered=False),
-                    mo.stat(len(_segments), label="Segments", bordered=False),
-                    mo.stat(_fr.n_trips, label="Trips", bordered=False),
+                    mo.stat(f"v{_result.estimation.version}", label="Version", bordered=False),
+                    mo.stat(_result.n_route_segments, label="Segments", bordered=False),
                 ],
                 gap=1, justify="start",
             )
-            filtered_route_map = mo.vstack(
+            route_map = mo.vstack(
                 [
+                    mo.md("**Reconstructed route**"),
                     _stats,
                     pdk.Deck(
                         map_style="light", map_provider="carto",
@@ -978,58 +1059,87 @@ def _(RouteSegment, db, get_filter_result, mo, pdk, select, to_shape):
                 ],
                 gap=0.5,
             )
-    return (filtered_route_map,)
+    return (route_map,)
 
 
 @app.cell
 def _(
+    approach_description,
+    approach_dropdown,
+    arman_diagnostics,
+    confidence_slider,
+    dbscan_diagnostics,
     direction_filter_dropdown,
     direction_map,
-    eps_input,
-    filter_btn,
-    filter_clusters_map,
-    filter_result_output,
-    filtered_route_map,
-    min_cluster_segs_input,
-    min_samples_input,
     mo,
+    param_panel,
+    reconstruct_btn,
+    reconstruct_output,
+    route_map,
     selected_line_ids,
     validate_direction_btn,
     validate_direction_output,
 ):
-    _items = []
-
     if not selected_line_ids:
-        _items.append(mo.callout(mo.md("Select a line to see its trips."), kind="info"))
+        reconstruct_tab_content = mo.callout(
+            mo.md("Select a line in the **Lines** tab to reconstruct its route."),
+            kind="info",
+        )
+    elif len(selected_line_ids) != 1:
+        reconstruct_tab_content = mo.callout(
+            mo.md("Select exactly **one** line to reconstruct."),
+            kind="info",
+        )
     else:
-        # ---- Direction + clustering ----
-        _items.append(mo.md("---"))
+        _items = []
+
+        # Direction validation
         _items.append(
             mo.hstack(
-                [
-                    mo.md("**Direction & Clustering**"),
-                    validate_direction_btn,
-                    eps_input,
-                    min_samples_input,
-                    direction_filter_dropdown,
-                    min_cluster_segs_input,
-                    filter_btn,
-                ],
-                gap=1,
-                align="end",
+                [mo.md("### Direction validation"), validate_direction_btn],
+                gap=1, align="center",
             )
         )
         if validate_direction_output is not None:
             _items.append(validate_direction_output)
-        _items.append(mo.vstack([mo.md("**Direction classification**"), direction_map], gap=0.5))
-        if filter_result_output is not None:
-            _items.append(filter_result_output)
-        _items.append(mo.vstack([mo.md("**Clustered segments**"), filter_clusters_map], gap=0.5))
-        _items.append(mo.vstack([mo.md("**Reconstructed route**"), filtered_route_map], gap=0.5))
+        _items.append(direction_map)
 
-    (
-        mo.vstack(_items, gap=1, align="stretch")
-        .style(style={"max-width": "100%"}, overflow_x="auto")
+        # Approach selection + params
+        _items.append(mo.md("---"))
+        _items.append(mo.md("### Route reconstruction"))
+        _items.append(
+            mo.hstack(
+                [approach_dropdown, direction_filter_dropdown, confidence_slider],
+                gap=1, align="end",
+            )
+        )
+        _items.append(approach_description)
+        _items.append(param_panel)
+        _items.append(
+            mo.hstack([reconstruct_btn], justify="start")
+        )
+
+        # Results
+        if reconstruct_output is not None:
+            _items.append(reconstruct_output)
+        if dbscan_diagnostics is not None:
+            _items.append(dbscan_diagnostics)
+        if arman_diagnostics is not None:
+            _items.append(arman_diagnostics)
+        _items.append(route_map)
+
+        reconstruct_tab_content = mo.vstack(_items, gap=1, align="stretch")
+    return (reconstruct_tab_content,)
+
+
+@app.cell
+def _(lines_tab_content, mo, reconstruct_tab_content, trips_tab_content):
+    mo.ui.tabs(
+        {
+            "Lines": lines_tab_content,
+            "Trips": trips_tab_content,
+            "Reconstruct": reconstruct_tab_content,
+        },
     )
     return
 

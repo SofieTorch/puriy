@@ -6,43 +6,26 @@ app = marimo.App(width="full")
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.Html("""<style>
-        label { white-space: nowrap; }
-        .markdown p { margin: 0; padding: 0; }
-        input[type="number"] { max-width: 5em; }
-    </style>""")
+    from components.styles import GLOBAL_STYLES
+
+    mo.Html(GLOBAL_STYLES)
     return
 
 
 @app.cell
 def _():
     import json
-    import folium
     import marimo as mo
     import pandas as pd
     import pydeck as pdk
     from pathlib import Path
-    from branca.element import Element
-    from folium.plugins import Draw
 
     from components.tracing import init_tracing
     from geodata.geojson import parse_route_from_geojson
     from database.connection import SessionLocal
 
     init_tracing()
-
-    return (
-        Draw,
-        Element,
-        Path,
-        SessionLocal,
-        folium,
-        json,
-        mo,
-        parse_route_from_geojson,
-        pd,
-        pdk,
-    )
+    return Path, SessionLocal, json, mo, parse_route_from_geojson, pd, pdk
 
 
 @app.cell
@@ -75,6 +58,19 @@ def _(mo):
 
 
 @app.cell
+def _(Path, mo):
+    _routes_dir = Path.cwd() / "seed" / "routes"
+    _routes_dir.mkdir(parents=True, exist_ok=True)
+    geojson_file_browser = mo.ui.file_browser(
+        initial_path=_routes_dir,
+        filetypes=[".geojson"],
+        multiple=False,
+        label="Select a GeoJSON file",
+    )
+    return (geojson_file_browser,)
+
+
+@app.cell
 def _(mo):
     export_filename = mo.ui.text(
         label="Export filename",
@@ -85,77 +81,20 @@ def _(mo):
 
 
 @app.cell
-def _(
-    Draw,
-    Element,
-    export_filename,
-    folium,
-    geojson_file_browser,
-    mo,
-    parse_route_from_geojson,
-):
-    draw_map = folium.Map(
-        location=[-17.3895, -66.1568],
-        zoom_start=13,
-        tiles="CartoDB positron",
-        control_scale=True,
+def _(export_filename, geojson_file_browser, mo, parse_route_from_geojson):
+    from components.maps import create_draw_map, overlay_route
+
+    _draw_map = create_draw_map(
+        export_filename=export_filename.value or "trajectory.geojson",
+        draw_polyline=True,
     )
 
-    Draw(
-        export=True,
-
-        filename=export_filename.value or "trajectory.geojson",
-        position="topleft",
-        draw_options={
-            "polyline": True,
-            "polygon": False,
-            "rectangle": False,
-            "circle": False,
-            "marker": False,
-            "circlemarker": False,
-        },
-        edit_options={"edit": False, "remove": True},
-    ).add_to(draw_map)
-
-    draw_map.get_root().html.add_child(Element("""<style>
-        #export {
-            background-color: #22c55e !important;
-            color: white !important;
-            padding: 6px 16px !important;
-            border-radius: 4px !important;
-            font-weight: 600 !important;
-            font-size: 13px !important;
-            text-decoration: none !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
-            z-index: 1000 !important;
-            position: absolute !important;
-            top: 12px !important;
-            right: 12px !important;
-            left: auto !important;
-            bottom: auto !important;
-        }
-        #export:hover {
-            background-color: #16a34a !important;
-        }
-    </style>"""))
-
-    # Overlay the selected GeoJSON route
     _selected_path = geojson_file_browser.path(0) if geojson_file_browser.value else None
     if _selected_path:
         try:
             with open(_selected_path, encoding="utf-8") as _f:
-                route_coords = parse_route_from_geojson(_f.read())
-            if len(route_coords) >= 2:
-                folium.PolyLine(
-                    locations=[[lat, lon] for lon, lat in route_coords],
-                    color="#6366f1",
-                    weight=3,
-                    opacity=0.7,
-                    dash_array="8",
-                ).add_to(draw_map)
-                lats = [c[1] for c in route_coords]
-                lons = [c[0] for c in route_coords]
-                draw_map.fit_bounds([[min(lats), min(lons)], [max(lats), max(lons)]])
+                _route = parse_route_from_geojson(_f.read())
+            overlay_route(_draw_map, _route)
         except Exception:
             pass
 
@@ -167,25 +106,12 @@ def _(
                 " 5. Select it in the sidebar file browser"
             ),
             mo.hstack([export_filename], align="center"),
-            mo.Html(draw_map._repr_html_()),
+            mo.Html(_draw_map._repr_html_()),
         ],
         gap=0.5,
         align="stretch",
     )
     return (draw_map_section,)
-
-
-@app.cell
-def _(Path, mo):
-    _routes_dir = Path.cwd() / "seed" / "routes"
-    _routes_dir.mkdir(parents=True, exist_ok=True)
-    geojson_file_browser = mo.ui.file_browser(
-        initial_path=_routes_dir,
-        filetypes=[".geojson"],
-        multiple=False,
-        label="Select a GeoJSON file",
-    )
-    return (geojson_file_browser,)
 
 
 @app.cell
@@ -211,62 +137,10 @@ def _(get_loaded_config, mo):
 
 
 @app.cell
-def _(get_loaded_config, mo):
-    _ncfg = (get_loaded_config() or {}).get("noise", {})
+def _(get_loaded_config):
+    from components.noise_ui import build_noise_config
 
-    def _nval(key: str, param: str, default):
-        return _ncfg.get(key, {}).get(param, default)
-
-    def _noise(key: str, name: str, tip: str, params: dict):
-        return mo.ui.dictionary({
-            "Enabled": mo.ui.checkbox(value=_nval(key, "Enabled", True)),
-            "Description": mo.md(tip).batch(),
-            **params,
-        }, label=name)
-
-    noise_config = {
-        "gaussian": _noise("gaussian", "Gaussian GPS noise",
-            "*Adds random isotropic noise to each point, simulating typical GPS inaccuracy.*",
-            {"Sigma (m)": mo.ui.number(value=_nval("gaussian", "Sigma (m)", 3.0), start=0, step=0.5)}),
-        "perpendicular": _noise("perpendicular", "Perpendicular road noise",
-            "*Adds noise perpendicular to the road direction, simulating lane-width uncertainty.*",
-            {"Sigma (m)": mo.ui.number(value=_nval("perpendicular", "Sigma (m)", 2.0), start=0, step=0.5)}),
-        "zigzag": _noise("zigzag", "Zig-zag noise",
-            "*Adds a periodic sine-wave offset perpendicular to the path, simulating systematic oscillation.*",
-            {"Amplitude (m)": mo.ui.number(value=_nval("zigzag", "Amplitude (m)", 1.5), start=0, step=0.5),
-             "Period (points)": mo.ui.number(value=_nval("zigzag", "Period (points)", 8), start=2, step=1)}),
-        "jumps": _noise("jumps", "Random jumps",
-            "*Occasionally teleports a point to a random nearby location, simulating GPS multipath errors.*",
-            {"Probability": mo.ui.number(value=_nval("jumps", "Probability", 0.02), start=0, stop=1, step=0.01),
-             "Distance (m)": mo.ui.number(value=_nval("jumps", "Distance (m)", 40.0), start=0, step=5)}),
-        "missing": _noise("missing", "Missing points",
-            "*Randomly drops points from the track, simulating signal loss or sampling gaps.*",
-            {"Probability": mo.ui.number(value=_nval("missing", "Probability", 0.03), start=0, stop=0.95, step=0.01)}),
-        "biased_drift": _noise("biased_drift", "Biased drift",
-            "*Accumulates a constant offset in a fixed direction over time, simulating receiver bias drift.*",
-            {"Drift (m/pt)": mo.ui.number(value=_nval("biased_drift", "Drift (m/pt)", 0.05), start=0, step=0.01),
-             "Bearing (deg)": mo.ui.number(value=_nval("biased_drift", "Bearing (deg)", 70.0), start=0, stop=360, step=5)}),
-        "lateral_drift": _noise("lateral_drift", "Lateral drift",
-            "*Gradually shifts the track sideways along its length, simulating systematic lateral error.*",
-            {"Total (m)": mo.ui.number(value=_nval("lateral_drift", "Total (m)", 3.0), step=0.5)}),
-        "timestamp_jitter": _noise("timestamp_jitter", "Timestamp jitter",
-            "*Adds random variation to the time interval between points, simulating irregular sampling.*",
-            {"Sigma (s)": mo.ui.number(value=_nval("timestamp_jitter", "Sigma (s)", 0.15), start=0, step=0.05)}),
-        # ou_drift is built manually so its Enabled checkbox defaults to False
-        "ou_drift": mo.ui.dictionary({
-            "Enabled": mo.ui.checkbox(value=_nval("ou_drift", "Enabled", False)),
-            "Description": mo.md(
-                "*Slowly-varying GPS accuracy via an Ornstein-Uhlenbeck process. "
-                "Replaces the fixed Gaussian sigma with a signal that drifts over time, "
-                "simulating changing satellite geometry or urban-canyon entry/exit. "
-                "Per-point accuracy is stored in the DB and passed to Valhalla.*"
-            ).batch(),
-            "Mean sigma (m)": mo.ui.number(value=_nval("ou_drift", "Mean sigma (m)", 5.0), start=1.0, step=0.5),
-            "Reversion rate": mo.ui.number(value=_nval("ou_drift", "Reversion rate", 0.05), start=0.01, stop=1.0, step=0.01),
-            "Volatility": mo.ui.number(value=_nval("ou_drift", "Volatility", 2.0), start=0.1, step=0.5),
-            "Max sigma (m)": mo.ui.number(value=_nval("ou_drift", "Max sigma (m)", 50.0), start=1.0, step=5.0),
-        }, label="OU accuracy drift"),
-    }
+    noise_config = build_noise_config(get_loaded_config())
     return (noise_config,)
 
 
@@ -293,9 +167,6 @@ def _(Path, mo):
 def _(default_zone_mult, set_noise_zones, zones_file_browser):
     import json as _json
 
-    # Store raw GeoJSON geometry dicts (JSON-serializable) rather than Shapely
-    # objects so Marimo's state machinery never needs to inspect them with vars().
-    # Shapely conversion happens in the generate cell, on demand.
     if zones_file_browser.value:
         try:
             with open(zones_file_browser.path(0), encoding="utf-8") as _f:
@@ -317,62 +188,25 @@ def _(default_zone_mult, set_noise_zones, zones_file_browser):
 
 
 @app.cell
-def _(Draw, Element, folium, geojson_file_browser, mo, parse_route_from_geojson):
-    _zones_map = folium.Map(
-        location=[-17.3895, -66.1568],
-        zoom_start=13,
-        tiles="CartoDB positron",
-        control_scale=True,
+def _(geojson_file_browser, mo, parse_route_from_geojson):
+    from components.maps import create_draw_map as _create_draw_map
+    from components.maps import overlay_route as _overlay_route
+
+    _zones_map = _create_draw_map(
+        export_filename="zones.geojson",
+        draw_polygon=True,
+        draw_rectangle=True,
+        edit=True,
+        button_color="#f59e0b",
+        button_hover_color="#d97706",
     )
-    Draw(
-        export=True,
-        filename="zones.geojson",
-        position="topleft",
-        draw_options={
-            "polyline": False,
-            "polygon": True,
-            "rectangle": True,
-            "circle": False,
-            "marker": False,
-            "circlemarker": False,
-        },
-        edit_options={"edit": True, "remove": True},
-    ).add_to(_zones_map)
 
-    _zones_map.get_root().html.add_child(Element("""<style>
-        #export {
-            background-color: #f59e0b !important;
-            color: white !important;
-            padding: 6px 16px !important;
-            border-radius: 4px !important;
-            font-weight: 600 !important;
-            font-size: 13px !important;
-            text-decoration: none !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
-            z-index: 1000 !important;
-            position: absolute !important;
-            top: 12px !important;
-            right: 12px !important;
-        }
-    </style>"""))
-
-    # Overlay the route if one is loaded
     _selected_path = geojson_file_browser.path(0) if geojson_file_browser.value else None
     if _selected_path:
         try:
             with open(_selected_path, encoding="utf-8") as _f:
-                _route_coords = parse_route_from_geojson(_f.read())
-            if len(_route_coords) >= 2:
-                folium.PolyLine(
-                    locations=[[lat, lon] for lon, lat in _route_coords],
-                    color="#6366f1",
-                    weight=3,
-                    opacity=0.7,
-                    dash_array="8",
-                ).add_to(_zones_map)
-                _lats = [c[1] for c in _route_coords]
-                _lons = [c[0] for c in _route_coords]
-                _zones_map.fit_bounds([[min(_lats), min(_lons)], [max(_lats), max(_lons)]])
+                _route = parse_route_from_geojson(_f.read())
+            _overlay_route(_zones_map, _route)
         except Exception:
             pass
 
@@ -384,7 +218,8 @@ def _(Draw, Element, folium, geojson_file_browser, mo, parse_route_from_geojson)
             "4. Load it with the sidebar file browser"
         ),
         mo.md(
-            "Add a `multiplier` property to each feature in the GeoJSON to override the default multiplier per zone."
+            "Add a `multiplier` property to each feature in the GeoJSON "
+            "to override the default multiplier per zone."
         ),
         mo.Html(_zones_map._repr_html_()),
     ], gap=0.5, align="stretch")
@@ -455,7 +290,6 @@ def _(
     else:
         set_last_generate_click(generate_click)
 
-        # Build config dict matching the saved JSON format
         _sp = sim_params.value
         _noise_cfg = {}
         for _key, _dict in noise_config.items():
@@ -465,7 +299,6 @@ def _(
 
         _seed_value = int(_sp["Seed (-1=random)"])
 
-        # Load route
         _route_error = None
         try:
             if not geojson_file_browser.value:
@@ -484,8 +317,6 @@ def _(
             set_simulated_points([])
             set_simulation_message("Route needs at least 2 points.")
         else:
-            # Convert stored GeoJSON geometry dicts to Shapely objects here,
-            # just before calling generate_tracks (not in state).
             from shapely.geometry import shape as _shape
             _raw_zones = get_noise_zones()
             _zones = (
@@ -545,6 +376,8 @@ def _(
     pdk,
     save_to_db_button,
 ):
+    from components.tracks_viz import build_path_layers
+
     generated_records = get_simulated_points()
     simulation_message = get_simulation_message()
 
@@ -558,86 +391,14 @@ def _(
             pagination=True,
         )
 
-        palette = [
-            [59, 130, 246],
-            [34, 197, 94],
-            [234, 179, 8],
-            [168, 85, 247],
-            [236, 72, 153],
-            [20, 184, 166],
-        ]
-        path_layer_data = []
-        for idx, (track_id, group) in enumerate(
-            generated_df.sort_values(["track_id", "point_index"]).groupby("track_id")
-        ):
-            path_layer_data.append(
-                {
-                    "track_id": int(track_id),
-                    "path": group[["longitude", "latitude"]].values.tolist(),
-                    "color": palette[idx % len(palette)],
-                }
-            )
-
-        center_lat = float(generated_df["latitude"].mean())
-        center_lon = float(generated_df["longitude"].mean())
-
-        _layers = [
-            pdk.Layer(
-                "PathLayer",
-                path_layer_data,
-                get_path="path",
-                get_color="color",
-                get_width=0.5,
-                width_min_pixels=1,
-                pickable=True,
-            )
-        ]
-        _tooltip = {"text": "Track {track_id}"}
-
-        # Accuracy layer — shown when per-point accuracy was simulated.
-        # Use plain Python dicts (not a DataFrame) to avoid pydeck's numpy
-        # serialization issues with the color list column.
-        _acc_col = generated_df.get("accuracy") if "accuracy" in generated_df.columns else None
-        if _acc_col is not None and _acc_col.notna().any():
-            _acc_min = float(_acc_col.min())
-            _acc_max = float(_acc_col.max())
-            _acc_range = max(_acc_max - _acc_min, 0.01)
-            _acc_points = []
-            for _row in generated_df.itertuples(index=False):
-                _v = getattr(_row, "accuracy", None)
-                if _v is None or (_v != _v):  # None or NaN
-                    _color = [150, 150, 150, 80]
-                    _acc_val = None
-                else:
-                    _t = (float(_v) - _acc_min) / _acc_range
-                    _color = [int(min(255, _t * 510)), int(min(255, (1.0 - _t) * 510)), 0, 200]
-                    _acc_val = round(float(_v), 1)
-                _acc_points.append({
-                    "longitude": float(_row.longitude),
-                    "latitude": float(_row.latitude),
-                    "track_id": int(_row.track_id),
-                    "accuracy": _acc_val,
-                    "color": _color,
-                })
-            _layers.append(
-                pdk.Layer(
-                    "ScatterplotLayer",
-                    _acc_points,
-                    get_position=["longitude", "latitude"],
-                    get_fill_color="color",
-                    get_radius=6,
-                    radius_min_pixels=3,
-                    pickable=True,
-                )
-            )
-            _tooltip = {"text": "Track {track_id}\nAccuracy: {accuracy} m"}
+        _layers, _tooltip = build_path_layers(generated_df)
 
         deck = pdk.Deck(
             map_style="light",
             map_provider="carto",
             initial_view_state=pdk.ViewState(
-                latitude=center_lat,
-                longitude=center_lon,
+                latitude=float(generated_df["latitude"].mean()),
+                longitude=float(generated_df["longitude"].mean()),
                 zoom=13,
                 pitch=0,
                 bearing=0,
