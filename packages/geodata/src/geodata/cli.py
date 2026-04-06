@@ -237,6 +237,42 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_evaluate_reconstruction(args: argparse.Namespace) -> int:
+    from .evaluate import (
+        evaluate_reconstruction_suite,
+        load_strategy_params,
+        suite_to_dict,
+    )
+
+    strategy_params = (
+        load_strategy_params(args.strategy_params)
+        if args.strategy_params
+        else None
+    )
+    suite = evaluate_reconstruction_suite(
+        args.route,
+        line_id=args.line_id,
+        trace_source=args.trace_source,
+        interval_meters=args.interval_meters,
+        min_match_score=args.min_match_score,
+        strategy_keys=args.strategy or None,
+        strategy_params=strategy_params,
+        runs_per_strategy=args.runs,
+        coverage_step_meters=args.coverage_step_meters,
+        coverage_tolerance_meters=args.coverage_tolerance_meters,
+    )
+    payload = suite_to_dict(suite)
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        print(f"Written to {args.output}")
+        return 0
+
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="geodata")
     subparsers = parser.add_subparsers(
@@ -303,6 +339,66 @@ def main() -> int:
     gen_parser.add_argument("--line-id", help="Line UUID (required with --save-db)")
     gen_parser.add_argument("--notes", default="simulated", help="Notes for trip sessions")
     gen_parser.set_defaults(handler=_cmd_generate)
+
+    evaluate_parser = subparsers.add_parser(
+        "evaluate-reconstruction",
+        help="Evaluate reconstruction strategies against a ground-truth route GeoJSON",
+    )
+    evaluate_parser.add_argument("--route", required=True, help="Path to .geojson route file")
+    evaluate_parser.add_argument(
+        "--line-id",
+        required=True,
+        help="Line UUID whose cleaned traces should be loaded from the database",
+    )
+    evaluate_parser.add_argument(
+        "--trace-source",
+        choices=["cleaned", "resampled"],
+        default="cleaned",
+        help="Which DB-backed trace representation to evaluate (default: cleaned)",
+    )
+    evaluate_parser.add_argument(
+        "--interval-meters",
+        type=float,
+        help="Resampling interval in meters; required when --trace-source=resampled",
+    )
+    evaluate_parser.add_argument(
+        "--min-match-score",
+        type=float,
+        help="Exact resampled trip match_score batch filter; only used with --trace-source=resampled",
+    )
+    evaluate_parser.add_argument(
+        "--strategy",
+        action="append",
+        help="Strategy key to evaluate; repeat to select multiple strategies",
+    )
+    evaluate_parser.add_argument(
+        "--strategy-params",
+        help="JSON file mapping strategy keys to parameter override objects",
+    )
+    evaluate_parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="Number of repeated runs per strategy over the same DB-backed traces (default: 1)",
+    )
+    evaluate_parser.add_argument(
+        "--coverage-step-meters",
+        type=float,
+        default=10.0,
+        help="Resampling step for coverage scoring in meters (default: 10)",
+    )
+    evaluate_parser.add_argument(
+        "--coverage-tolerance-meters",
+        type=float,
+        default=25.0,
+        help="Coverage tolerance in meters (default: 25)",
+    )
+    evaluate_parser.add_argument(
+        "--output",
+        "-o",
+        help="Write the evaluation suite JSON to a file instead of stdout",
+    )
+    evaluate_parser.set_defaults(handler=_cmd_evaluate_reconstruction)
 
     args = parser.parse_args()
     return args.handler(args)
