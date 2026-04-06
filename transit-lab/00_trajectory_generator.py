@@ -195,6 +195,7 @@ def _(get_loaded_config, mo):
         "Base speed (m/s)": mo.ui.number(value=_cfg.get("Base speed (m/s)", 8.0), start=0.5, step=0.5),
         "Speed jitter (%)": mo.ui.number(value=_cfg.get("Speed jitter (%)", 12.0), start=0, step=1),
         "Target pts/track (0=auto)": mo.ui.number(value=_cfg.get("Target pts/track (0=auto)", 0), start=0, step=10),
+        "Trace proportion (0-1)": mo.ui.number(value=_cfg.get("Trace proportion (0-1)", 1.0), start=0, stop=1, step=0.05),
         "Seed (-1=random)": mo.ui.number(value=_cfg.get("Seed (-1=random)", 42), start=-1, step=1),
     }, label="General sampling")
 

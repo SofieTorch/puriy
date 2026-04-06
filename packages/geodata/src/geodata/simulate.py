@@ -50,6 +50,8 @@ def generate_tracks(
     base_speed_mps = float(sp.get("Base speed (m/s)", 8.0))
     speed_jitter_pct = float(sp.get("Speed jitter (%)", 12.0))
     target_points = int(sp.get("Target pts/track (0=auto)", 0))
+    trace_proportion = float(sp.get("Trace proportion (0-1)", 1.0))
+    trace_proportion = max(0.0, min(1.0, trace_proportion))
 
     if seed is not None and seed >= 0:
         effective_seed = seed
@@ -94,6 +96,15 @@ def generate_tracks(
                 for i in range(target_points)
             ]
             base_points = [base_points[i] for i in idxs]
+
+        if trace_proportion < 1.0 and len(base_points) > 2:
+            subset_len = min(
+                len(base_points),
+                max(2, math.ceil(len(base_points) * trace_proportion)),
+            )
+            max_start = len(base_points) - subset_len
+            start_idx = 0 if max_start <= 0 else rng.randint(0, max_start)
+            base_points = base_points[start_idx : start_idx + subset_len]
 
         drift_acc_m = 0.0
         noisy_points: list[tuple[float, float, float]] = []
