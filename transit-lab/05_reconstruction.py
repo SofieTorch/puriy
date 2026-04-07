@@ -128,7 +128,7 @@ def _(Path, mo):
         value=next(iter(route_file_options), None),
         label="Route file",
     )
-    return route_file_options, route_file_selector
+    return (route_file_selector,)
 
 
 @app.cell
@@ -460,9 +460,9 @@ def _(
     all_points,
     mo,
     selected_line,
-    trips,
     strategy_dropdown,
     strategy_registry,
+    trips,
 ):
     if selected_line is None:
         line_info = mo.md("No line selected.")
@@ -602,8 +602,7 @@ def _(all_points, pdk, points_by_trip, reconstruction_result):
         center_lon = -66.1568
 
     deck = pdk.Deck(
-        map_style="light",
-        map_provider="carto",
+        map_style="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
         initial_view_state=pdk.ViewState(
             latitude=center_lat,
             longitude=center_lon,
@@ -612,7 +611,6 @@ def _(all_points, pdk, points_by_trip, reconstruction_result):
             bearing=0,
         ),
         layers=layers,
-        tooltip={"text": "Cleaned trace points and reconstructed route"},
         height=520,
     )
     return (deck,)
