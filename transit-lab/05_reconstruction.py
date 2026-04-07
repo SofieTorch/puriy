@@ -211,6 +211,30 @@ def _(mo, route_file_selector, strategy_dropdown, strategy_registry):
             },
             label="Strategy parameters",
         )
+    elif selected_strategy_key == "kde_density_ridge_preview":
+        strategy_params = mo.ui.dictionary(
+            {
+                "cell_size_meters": mo.ui.number(
+                    value=float(default_params.get("cell_size_meters", 5.0)),
+                    start=1.0,
+                    step=1.0,
+                    label="Cell size (m)",
+                ),
+                "bandwidth_meters": mo.ui.number(
+                    value=float(default_params.get("bandwidth_meters", 15.0)),
+                    start=1.0,
+                    step=1.0,
+                    label="Bandwidth (m)",
+                ),
+                "density_threshold": mo.ui.number(
+                    value=float(default_params.get("density_threshold", 0.15)),
+                    start=0.0,
+                    step=0.05,
+                    label="Density threshold (fraction of max)",
+                ),
+            },
+            label="Strategy parameters",
+        )
     elif selected_strategy_key == "edge_graph_consensus_preview":
         strategy_params = mo.ui.dictionary(
             {

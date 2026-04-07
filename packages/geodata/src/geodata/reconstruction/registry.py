@@ -4,6 +4,7 @@ from .base import ReconstructionStrategy
 from .dbscan_grid_search_preview import DBSCANGridSearchPreviewStrategy
 from .dbscan_preview import DBSCANConsensusPreviewStrategy
 from .edge_graph_consensus_preview import EdgeGraphConsensusPreviewStrategy
+from .kde_preview import KDEDensityRidgePreviewStrategy
 from .overlap_join_preview import OverlapJoinPreviewStrategy
 from .route_file_preview import RouteFilePreviewStrategy
 from .segment_vote_consensus_preview import SegmentVoteConsensusPreviewStrategy
@@ -17,6 +18,7 @@ def get_reconstruction_strategies() -> dict[str, ReconstructionStrategy]:
         OverlapJoinPreviewStrategy(),
         DBSCANConsensusPreviewStrategy(),
         DBSCANGridSearchPreviewStrategy(),
+        KDEDensityRidgePreviewStrategy(),
         EdgeGraphConsensusPreviewStrategy(),
         SegmentVoteConsensusPreviewStrategy(),
     ]
