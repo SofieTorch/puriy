@@ -8,7 +8,7 @@
 //   : 'https://api.yourdomain.com';  // Production
 
 // const API_BASE_URL = 'https://movility-cbba-ndkpt.ondigitalocean.app';
-export const API_BASE_URL = 'http://10.165.187.148:8000';
+export const API_BASE_URL = 'http://10.248.7.135:8000';
 const SERVER_CHECK_TIMEOUT_MS = 3000;
 
 /** True when the backend host responds (any HTTP status). */
@@ -70,6 +70,59 @@ export interface SensorReading {
   gyro_z: number | null;
   pressure: number | null;
   magnetic_heading: number | null;
+}
+
+export interface PendingLine {
+  line_id: string;
+  line_name: string;
+  line_description: string | null;
+  route_id: string;
+  pending_edge_count: number;
+  total_edge_count: number;
+}
+
+export interface VoteableEdge {
+  id: string;
+  sequence: number;
+  valhalla_edge_id: number | null;
+  path: number[][] | null;
+  confidence: number;
+  votes_for: number;
+  votes_against: number;
+}
+
+export interface VoteableSegment {
+  route_id: string;
+  line_name: string;
+  line_description: string | null;
+  edges: VoteableEdge[];
+  segment_geojson: object | null;
+}
+
+export interface VoteResponse {
+  edges_voted: number;
+  vote: 'approve' | 'reject';
+}
+
+export interface DirectionsLeg {
+  mode: 'bus' | 'walk';
+  line_name: string | null;
+  line_id: string | null;
+  geometry: [number, number][];
+  distance_m: number;
+  duration_s: number;
+}
+
+export interface DirectionsResponse {
+  legs: DirectionsLeg[];
+  total_distance_m: number;
+  total_duration_s: number;
+}
+
+export interface NearbyLine {
+  line_id: string;
+  line_name: string;
+  line_description: string | null;
 }
 
 class ApiClient {
@@ -184,6 +237,77 @@ class ApiClient {
     return this.request(`/recordings/${sessionId}/sensors/batch`, {
       method: 'POST',
       body: JSON.stringify({ readings }),
+    });
+  }
+  // ============================================================
+  // Voting
+  // ============================================================
+
+  async getPendingVotes(deviceId: string): Promise<PendingLine[]> {
+    return this.request<PendingLine[]>(
+      `/vote/pending?device_id=${encodeURIComponent(deviceId)}`
+    );
+  }
+
+  async getVoteableSegment(
+    lineId: string,
+    deviceId: string
+  ): Promise<VoteableSegment> {
+    return this.request<VoteableSegment>(
+      `/vote/${lineId}/segment?device_id=${encodeURIComponent(deviceId)}`
+    );
+  }
+
+  async submitVote(
+    lineId: string,
+    deviceId: string,
+    vote: 'approve' | 'reject'
+  ): Promise<VoteResponse> {
+    return this.request<VoteResponse>(`/vote/${lineId}`, {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId, vote }),
+    });
+  }
+
+  // ============================================================
+  // Directions
+  // ============================================================
+
+  async getDirections(
+    origin: [number, number],
+    destination: [number, number],
+    pendingLines: boolean = false,
+    pendingRoutes: boolean = false
+  ): Promise<DirectionsResponse> {
+    return this.request<DirectionsResponse>('/directions/', {
+      method: 'POST',
+      body: JSON.stringify({
+        origin,
+        destination,
+        include_pending_lines: pendingLines,
+        include_pending_routes: pendingRoutes,
+      }),
+    });
+  }
+
+  // ============================================================
+  // Line Familiarity Voting
+  // ============================================================
+
+  async getNearbyLines(deviceId: string): Promise<NearbyLine[]> {
+    return this.request<NearbyLine[]>(
+      `/vote/lines/nearby?device_id=${encodeURIComponent(deviceId)}`
+    );
+  }
+
+  async submitLineVote(
+    lineId: string,
+    deviceId: string,
+    vote: 'approve' | 'reject'
+  ): Promise<void> {
+    await this.request(`/vote/lines/${lineId}`, {
+      method: 'POST',
+      body: JSON.stringify({ device_id: deviceId, vote }),
     });
   }
 }

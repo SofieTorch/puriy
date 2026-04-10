@@ -10,6 +10,7 @@ def navbar() -> mo.Html:
             "/tracks": "Tracks",
             "/lines": "Lines",
             "/reconstruction": "Reconstruction",
+            "/routes": "Routes",
         },
         orientation="horizontal",
     )

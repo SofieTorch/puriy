@@ -59,9 +59,25 @@ services:
       build_admins: "False"
       build_time_zones: "False"
 
+  tileserver:
+    # Serves vector tiles from Protomaps' free planet basemap.
+    # Tiles are streamed on demand (no large download needed).
+    # Cache is stored in the volume for faster subsequent loads.
+    image: protomaps/go-pmtiles:latest
+    ports:
+      - "8003:8080"
+    volumes:
+      - tileserver_cache:/tmp/pmtiles
+    command:
+      - serve
+      - /tmp/pmtiles
+      - --bucket=https://build.protomaps.com/20250305.pmtiles
+      - --port=8080
+
 volumes:
   tempo_data:
   loki_data:
   prometheus_data:
   grafana_data:
   valhalla_data:
+  tileserver_cache:

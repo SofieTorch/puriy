@@ -237,6 +237,76 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_rebuild_graph(args: argparse.Namespace) -> int:
+    from .transit_graph import build_transit_graph
+
+    db = SessionLocal()
+    try:
+        graph = build_transit_graph(db)
+        print("Transit graph built:")
+        print(f"  Nodes: {len(graph.nodes)}")
+        print(f"  Bus edges: {sum(1 for edges in graph.adjacency.values() for e in edges if e.mode == 'bus')}")
+        print(f"  Transfer edges: {sum(1 for edges in graph.adjacency.values() for e in edges if e.mode == 'walk')}")
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        db.close()
+
+
+def _cmd_import_route(args: argparse.Namespace) -> int:
+    from .import_route import import_route_from_geojson, import_routes_from_directory
+
+    db = SessionLocal()
+    try:
+        if args.directory:
+            results = import_routes_from_directory(
+                db,
+                args.directory,
+                costing=args.costing,
+                search_radius=args.search_radius,
+                gps_accuracy=args.gps_accuracy,
+            )
+            for filename, route in results:
+                print(
+                    f"  ✓ {filename} → line={route.line_id} "
+                    f"route={route.id} ({len(route.edges)} edges)"
+                )
+            print(f"\nImported {len(results)} route(s).")
+            return 0
+
+        # Single file mode
+        if not args.route:
+            print("Error: --route or --directory is required", file=sys.stderr)
+            return 1
+        if not args.line_id:
+            print("Error: --line-id is required in single-file mode", file=sys.stderr)
+            return 1
+
+        with open(args.route, encoding="utf-8") as f:
+            raw = f.read()
+
+        route = import_route_from_geojson(
+            db,
+            raw,
+            UUID(args.line_id),
+            costing=args.costing,
+            search_radius=args.search_radius,
+            gps_accuracy=args.gps_accuracy,
+        )
+        print(
+            f"Imported route: route={route.id} "
+            f"({len(route.edges)} edges) for line={args.line_id}"
+        )
+        return 0
+    except (ValueError, RuntimeError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        db.close()
+
+
 def _cmd_evaluate_reconstruction(args: argparse.Namespace) -> int:
     from .evaluate import (
         evaluate_reconstruction_suite,
@@ -339,6 +409,32 @@ def main() -> int:
     gen_parser.add_argument("--line-id", help="Line UUID (required with --save-db)")
     gen_parser.add_argument("--notes", default="simulated", help="Notes for trip sessions")
     gen_parser.set_defaults(handler=_cmd_generate)
+
+    import_parser = subparsers.add_parser(
+        "import-route",
+        help="Import a GeoJSON route as an inferred route estimation with Valhalla edges",
+    )
+    import_parser.add_argument("--route", help="Path to .geojson route file (single-file mode)")
+    import_parser.add_argument("--line-id", help="Line UUID (required in single-file mode)")
+    import_parser.add_argument(
+        "--directory", help="Path to directory of .geojson files (bulk import mode)"
+    )
+    import_parser.add_argument(
+        "--costing", default="bus", help="Valhalla costing model (default: bus)"
+    )
+    import_parser.add_argument(
+        "--search-radius", type=int, default=60, help="Search radius in meters (default: 60)"
+    )
+    import_parser.add_argument(
+        "--gps-accuracy", type=int, default=20, help="GPS accuracy in meters (default: 20)"
+    )
+    import_parser.set_defaults(handler=_cmd_import_route)
+
+    rebuild_parser = subparsers.add_parser(
+        "rebuild-graph",
+        help="Build the transit graph from all active routes and print statistics",
+    )
+    rebuild_parser.set_defaults(handler=_cmd_rebuild_graph)
 
     evaluate_parser = subparsers.add_parser(
         "evaluate-reconstruction",

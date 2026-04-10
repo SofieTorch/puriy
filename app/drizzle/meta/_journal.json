@@ -8,6 +8,13 @@
       "when": 1771767763790,
       "tag": "0000_exotic_scarlet_witch",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1775609065818,
+      "tag": "0001_loose_thunderbird",
+      "breakpoints": true
     }
   ]
 }

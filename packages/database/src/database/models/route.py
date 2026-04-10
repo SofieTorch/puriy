@@ -1,4 +1,4 @@
-"""Route reconstruction models — cleaned trips, estimations, segments, and votes."""
+"""Route reconstruction models — cleaned trips, routes, edges, and votes."""
 
 import uuid as _uuid
 from datetime import datetime
@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID
 
 from geoalchemy2 import Geometry
-from sqlalchemy import Column
+from sqlalchemy import BigInteger, Column, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -53,7 +53,6 @@ class Trip(SQLModel, table=True):
     session: Optional["TripSession"] = Relationship(back_populates="trips")
     line: Optional["Line"] = Relationship(back_populates="trips")
     points: list["TripPoint"] = Relationship(back_populates="trip")
-    votes: list["SegmentVote"] = Relationship(back_populates="trip")
     travel_time_samples: list["TravelTimeSample"] = Relationship(back_populates="trip")
     resampled_trips: list["ResampledTrip"] = Relationship(back_populates="trip")
 
@@ -83,51 +82,63 @@ class TripPoint(SQLModel, table=True):
 
 
 # ---------------------------------------------------------------------------
-# Route estimation (DBSCAN consensus)
+# Route (versioned route for a line)
 # ---------------------------------------------------------------------------
 
 
-class EstimationStatus(str, Enum):
+class RouteStatus(str, Enum):
     PENDING = "pending"
     CONFIRMED = "confirmed"
     SUPERSEDED = "superseded"
 
 
-class RouteEstimation(SQLModel, table=True):
-    """A DBSCAN consensus route for a line (versioned)."""
+class RouteSource(str, Enum):
+    COMPUTED = "computed"
+    IMPORTED = "imported"
 
-    __tablename__ = "route_estimations"
+
+class Route(SQLModel, table=True):
+    """A versioned route for a line, composed of road-network edges."""
+
+    __tablename__ = "routes"
 
     id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
     line_id: UUID = Field(foreign_key="lines.id", index=True)
     version: int = Field(default=1)
 
-    status: EstimationStatus = Field(default=EstimationStatus.PENDING)
+    source: RouteSource = Field(default=RouteSource.COMPUTED)
+    status: RouteStatus = Field(default=RouteStatus.PENDING)
     trip_count: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    line: Optional["Line"] = Relationship(back_populates="route_estimations")
-    segments: list["RouteSegment"] = Relationship(back_populates="estimation")
+    line: Optional["Line"] = Relationship(back_populates="routes")
+    edges: list["RouteEdge"] = Relationship(back_populates="route")
 
 
 # ---------------------------------------------------------------------------
-# Route segments (chunks for voting)
+# Route edges (Valhalla road-network edges — atomic voting unit)
 # ---------------------------------------------------------------------------
 
 
-class SegmentStatus(str, Enum):
+class EdgeStatus(str, Enum):
     PENDING = "pending"
     CONFIRMED = "confirmed"
 
 
-class RouteSegment(SQLModel, table=True):
-    """A chunk of an estimated route — the unit of user voting."""
+class RouteEdge(SQLModel, table=True):
+    """A Valhalla road-network edge within an estimated route — the atomic voting unit."""
 
-    __tablename__ = "route_segments"
+    __tablename__ = "route_edges"
 
     id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
-    estimation_id: UUID = Field(foreign_key="route_estimations.id", index=True)
+    route_id: UUID = Field(foreign_key="routes.id", index=True)
     sequence: int
+
+    valhalla_edge_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(BigInteger, nullable=True),
+    )
+    forward: bool = Field(default=True)
 
     path: Any = Field(
         sa_column=Column(
@@ -137,18 +148,18 @@ class RouteSegment(SQLModel, table=True):
     )
 
     confidence: float = Field(default=0.0)
-    status: SegmentStatus = Field(default=SegmentStatus.PENDING)
+    status: EdgeStatus = Field(default=EdgeStatus.PENDING)
     votes_for: int = Field(default=0)
     votes_against: int = Field(default=0)
     confirmed_at: Optional[datetime] = Field(default=None)
 
-    estimation: Optional["RouteEstimation"] = Relationship(back_populates="segments")
-    votes: list["SegmentVote"] = Relationship(back_populates="segment")
-    travel_time_samples: list["TravelTimeSample"] = Relationship(back_populates="segment")
+    route: Optional["Route"] = Relationship(back_populates="edges")
+    votes: list["EdgeVote"] = Relationship(back_populates="edge")
+    travel_time_samples: list["TravelTimeSample"] = Relationship(back_populates="edge")
 
 
 # ---------------------------------------------------------------------------
-# Segment votes
+# Edge votes
 # ---------------------------------------------------------------------------
 
 
@@ -157,20 +168,22 @@ class VoteChoice(str, Enum):
     REJECT = "reject"
 
 
-class SegmentVote(SQLModel, table=True):
-    """A vote on a route segment, backed by a cleaned trip."""
+class EdgeVote(SQLModel, table=True):
+    """A vote on a route edge, attributed by device."""
 
-    __tablename__ = "segment_votes"
+    __tablename__ = "edge_votes"
+    __table_args__ = (
+        UniqueConstraint("edge_id", "device_id", name="uq_edge_vote_device"),
+    )
 
     id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
-    segment_id: UUID = Field(foreign_key="route_segments.id", index=True)
-    trip_id: UUID = Field(foreign_key="trips.id", index=True)
+    edge_id: UUID = Field(foreign_key="route_edges.id", index=True)
+    device_id: str = Field(max_length=255, index=True)
 
     vote: VoteChoice
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    segment: Optional["RouteSegment"] = Relationship(back_populates="votes")
-    trip: Optional["Trip"] = Relationship(back_populates="votes")
+    edge: Optional["RouteEdge"] = Relationship(back_populates="votes")
 
 
 # ---------------------------------------------------------------------------
@@ -231,11 +244,11 @@ class TravelTimeSample(SQLModel, table=True):
 
     id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
     trip_id: UUID = Field(foreign_key="trips.id", index=True)
-    segment_id: UUID = Field(foreign_key="route_segments.id", index=True)
+    edge_id: UUID = Field(foreign_key="route_edges.id", index=True)
 
     duration_seconds: float
     day_of_week: int = Field(ge=0, le=6)
     hour_of_day: int = Field(ge=0, le=23)
 
     trip: Optional["Trip"] = Relationship(back_populates="travel_time_samples")
-    segment: Optional["RouteSegment"] = Relationship(back_populates="travel_time_samples")
+    edge: Optional["RouteEdge"] = Relationship(back_populates="travel_time_samples")

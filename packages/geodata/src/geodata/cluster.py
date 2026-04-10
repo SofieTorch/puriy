@@ -41,12 +41,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database.models import (
-    EstimationStatus,
     Line,
     ResampledTrip,
     ResampledTripPoint,
-    RouteEstimation,
-    RouteSegment,
+    Route,
+    RouteEdge,
+    RouteSource,
+    RouteStatus,
     Trip,
 )
 
@@ -64,12 +65,12 @@ _EARTH_RADIUS_M = 6_371_000.0
 
 @dataclass
 class ClusterRouteResult:
-    estimation: RouteEstimation
+    route: Route
     n_trips: int          # trips included in clustering
     n_points_total: int   # pooled points fed to DBSCAN
     n_noise_points: int   # points labelled noise (-1)
     n_clusters: int       # DBSCAN clusters found
-    n_segments: int       # RouteSegments saved
+    n_segments: int       # RouteEdges saved
 
 
 @dataclass
@@ -237,10 +238,10 @@ def cluster_route(
         # 6. Supersede any previous estimations for this line
         # ------------------------------------------------------------------
         previous = db.execute(
-            select(RouteEstimation)
+            select(Route)
             .where(
-                RouteEstimation.line_id == line_id,
-                RouteEstimation.status != EstimationStatus.SUPERSEDED,
+                Route.line_id == line_id,
+                Route.status != RouteStatus.SUPERSEDED,
             )
         ).scalars().all()
 
@@ -248,19 +249,20 @@ def cluster_route(
         for prev in previous:
             if prev.version >= next_version:
                 next_version = prev.version + 1
-            prev.status = EstimationStatus.SUPERSEDED
+            prev.status = RouteStatus.SUPERSEDED
             db.add(prev)
 
         # ------------------------------------------------------------------
-        # 7. Persist RouteEstimation + RouteSegments
+        # 7. Persist Route + RouteEdges
         # ------------------------------------------------------------------
-        estimation = RouteEstimation(
+        route = Route(
             line_id=line_id,
             version=next_version,
-            status=EstimationStatus.PENDING,
+            source=RouteSource.COMPUTED,
+            status=RouteStatus.PENDING,
             trip_count=n_trips,
         )
-        db.add(estimation)
+        db.add(route)
         db.flush()
 
         n_segments = 0
@@ -275,24 +277,31 @@ def cluster_route(
                 ]),
                 srid=4326,
             )
-            db.add(RouteSegment(
-                estimation_id=estimation.id,
+            db.add(RouteEdge(
+                route_id=route.id,
                 sequence=seq,
                 path=path,
                 confidence=confidence,
             ))
             n_segments += 1
 
+        # Migrate votes from superseded routes
+        db.flush()
+        for prev in previous:
+            from .migrate_votes import migrate_votes_to_new_route
+
+            migrate_votes_to_new_route(db, prev.id, route.id)
+
         db.commit()
 
         span.set_attributes({
-            "estimation.id": str(estimation.id),
-            "estimation.version": next_version,
+            "route.id": str(route.id),
+            "route.version": next_version,
             "segments.saved": n_segments,
         })
 
         return ClusterRouteResult(
-            estimation=estimation,
+            route=route,
             n_trips=n_trips,
             n_points_total=core.n_points_total,
             n_noise_points=core.n_noise_points,

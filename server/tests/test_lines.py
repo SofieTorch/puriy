@@ -1,7 +1,6 @@
 """Tests for the lines API endpoints."""
 from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 

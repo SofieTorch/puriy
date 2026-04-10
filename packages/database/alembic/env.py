@@ -8,10 +8,10 @@ from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
 # Import all models so they're registered with SQLModel.metadata
-from database.models.line import Line  # noqa: F401
+from database.models.line import Line, LineVote  # noqa: F401
 from database.models.trip import TripSession, TripSessionPoint, TripSensorReading  # noqa: F401
 from database.models.route import (  # noqa: F401
-    Trip, TripPoint, RouteEstimation, RouteSegment, SegmentVote, TravelTimeSample,
+    Trip, TripPoint, Route, RouteEdge, EdgeVote, TravelTimeSample,
     ResampledTrip, ResampledTripPoint,
 )
 
@@ -35,9 +35,10 @@ _APP_TABLES = {
     "trip_sensor_readings",
     "trips",
     "trip_points",
-    "route_estimations",
-    "route_segments",
-    "segment_votes",
+    "routes",
+    "route_edges",
+    "edge_votes",
+    "line_votes",
     "travel_time_samples",
     "resampled_trips",
     "resampled_trip_points",

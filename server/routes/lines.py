@@ -1,34 +1,25 @@
-import json
 from typing import Optional, Sequence
 from uuid import UUID
 
 from database.models.line import Line, LineStatus
 from database.models.trip import TripSession
-from fastapi import APIRouter, Depends, HTTPException, Query
-from geoalchemy2.functions import ST_AsGeoJSON
-from sqlalchemy import func, select, update
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
-from schemas.line import LineCreate, LineRead, LineUpdate, path_to_linestring
+from schemas.line import LineCreate, LineRead, LineUpdate
+from schemas.route import RouteRead
 
 router = APIRouter(prefix="/lines", tags=["lines"])
 
 
 @router.post("/", response_model=LineRead, status_code=201)
 def create_line(line_data: LineCreate, db: Session = Depends(get_db)) -> LineRead:
-    """
-    Create a new transit line.
-
-    Path is optional; new lines (e.g. from recordings) often have no path yet.
-    A daily cron job computes line paths from recording geopoints.
-    """
-    path_wkt = path_to_linestring(line_data.path) if line_data.path else None
-
+    """Create a new transit line."""
     line = Line(
         name=line_data.name,
         description=line_data.description,
-        path=path_wkt,
     )
     db.add(line)
     db.commit()
@@ -81,11 +72,6 @@ def update_line(
         raise HTTPException(status_code=404, detail="Line not found")
 
     update_data = line_data.model_dump(exclude_unset=True)
-
-    if "path" in update_data:
-        path_wkt = path_to_linestring(update_data.pop("path"))
-        line.path = path_wkt
-
     for key, value in update_data.items():
         setattr(line, key, value)
 
@@ -103,53 +89,6 @@ def delete_line(line_id: UUID, db: Session = Depends(get_db)) -> None:
         raise HTTPException(status_code=404, detail="Line not found")
     db.delete(line)
     db.commit()
-
-
-@router.get("/{line_id}/geojson")
-def get_line_geojson(line_id: UUID, db: Session = Depends(get_db)) -> dict:
-    """Get line path as GeoJSON Feature."""
-    line = db.get(Line, line_id)
-    if not line:
-        raise HTTPException(status_code=404, detail="Line not found")
-
-    if line.path is None:
-        raise HTTPException(status_code=404, detail="Line has no path defined")
-
-    result = db.execute(
-        select(ST_AsGeoJSON(Line.path)).where(Line.id == line_id)
-    ).scalar_one()
-
-    return {
-        "type": "Feature",
-        "properties": {
-            "id": line.id,
-            "name": line.name,
-        },
-        "geometry": json.loads(result)
-    }
-
-
-@router.get("/nearby/", response_model=list[LineRead])
-def find_lines_nearby(
-    longitude: float,
-    latitude: float,
-    radius_meters: float = 1000,
-    db: Session = Depends(get_db)
-) -> Sequence[LineRead]:
-    """Find lines with paths within a given radius of a point."""
-    point = f"SRID=4326;POINT({longitude} {latitude})"
-
-    query = select(Line).where(
-        Line.path.isnot(None),
-        func.ST_DWithin(
-            func.ST_Transform(Line.path, 3857),
-            func.ST_Transform(func.ST_GeomFromEWKT(point), 3857),
-            radius_meters
-        )
-    )
-
-    lines = db.execute(query).scalars().all()
-    return [LineRead.model_validate(ln) for ln in lines]
 
 
 @router.post("/{line_id}/merge/{target_line_id}", response_model=LineRead)
@@ -200,6 +139,35 @@ def merge_line(
     db.refresh(target)
 
     return LineRead.model_validate(target)
+
+
+@router.post("/{line_id}/route/import", response_model=RouteRead, status_code=201)
+async def import_route(
+    line_id: UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> RouteRead:
+    """Import a GeoJSON file as an inferred route with Valhalla edges."""
+    from geodata.import_route import import_route_from_geojson
+
+    content = await file.read()
+    try:
+        geojson_str = content.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be valid UTF-8 encoded GeoJSON")
+
+    try:
+        route = import_route_from_geojson(
+            db,
+            geojson_str,
+            line_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return RouteRead.model_validate(route)
 
 
 @router.post("/{line_id}/approve", response_model=LineRead)

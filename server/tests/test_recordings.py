@@ -1,16 +1,14 @@
 """Tests for the recordings API endpoints."""
 from datetime import datetime, timedelta
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from database.models.line import Line, LineStatus
+from database.models.line import Line
 from database.models.trip import (
     TripSessionPoint,
     TripSession,
     SessionStatus,
-    TripSensorReading,
 )
 
 

@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 
 /** Cached lines from the server (refreshed when online). */
@@ -68,3 +69,12 @@ export type LocationPoint = typeof locationPoints.$inferSelect;
 export type NewLocationPoint = typeof locationPoints.$inferInsert;
 export type SensorReading = typeof sensorReadings.$inferSelect;
 export type NewSensorReading = typeof sensorReadings.$inferInsert;
+
+/** Key-value preferences store. */
+export const preferences = sqliteTable('preferences', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at').default(sql`(datetime('now'))`),
+});
+
+export type Preference = typeof preferences.$inferSelect;
