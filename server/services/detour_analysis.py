@@ -74,35 +74,36 @@ def get_line_route_geometry(db: Session, line_id: UUID) -> LineString | None:
     return LineString(all_coords) if len(all_coords) >= 2 else None
 
 
-def compute_divergence_points(
+def compute_divergence_indices(
     detour_path: LineString,
     normal_route: LineString,
     threshold_m: float = DIVERGENCE_THRESHOLD_M,
-) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
-    """Find where the detour diverges from and rejoins the normal route.
+) -> tuple[int | None, int | None]:
+    """Find the indices where the detour diverges from and rejoins the normal route.
 
-    Returns (divergence_coord, convergence_coord) as (lon, lat) tuples.
+    Returns (diverge_index, converge_index) into the detour path coordinates.
     """
     detour_coords = list(detour_path.coords)
 
-    diverge_point = None
-    converge_point = None
+    diverge_idx = None
+    converge_idx = None
 
     # Walk forward to find divergence
-    for lon, lat in detour_coords:
+    for i, (lon, lat) in enumerate(detour_coords):
         dist = _point_distance_to_line(Point(lon, lat), normal_route)
         if dist > threshold_m:
-            diverge_point = (lon, lat)
+            diverge_idx = max(0, i - 1)  # include the last on-route point
             break
 
     # Walk backward to find convergence
-    for lon, lat in reversed(detour_coords):
+    for i in range(len(detour_coords) - 1, -1, -1):
+        lon, lat = detour_coords[i]
         dist = _point_distance_to_line(Point(lon, lat), normal_route)
         if dist > threshold_m:
-            converge_point = (lon, lat)
+            converge_idx = min(len(detour_coords) - 1, i + 1)  # include the first on-route point
             break
 
-    return diverge_point, converge_point
+    return diverge_idx, converge_idx
 
 
 def reverse_geocode_street(lon: float, lat: float) -> str | None:
@@ -137,24 +138,31 @@ def analyze_detour(
     else:
         detour_shape = detour_path_geom
 
-    detour_coords = [[c[0], c[1]] for c in detour_shape.coords]
+    all_coords = list(detour_shape.coords)
 
     # Get normal route
     normal_route = get_line_route_geometry(db, line_id)
 
     diverges_at = None
     rejoins_at = None
+    detour_segment = [[c[0], c[1]] for c in all_coords]  # fallback: full path
 
-    if normal_route and len(detour_shape.coords) >= 2:
-        diverge_point, converge_point = compute_divergence_points(detour_shape, normal_route)
+    if normal_route and len(all_coords) >= 2:
+        diverge_idx, converge_idx = compute_divergence_indices(detour_shape, normal_route)
 
-        if diverge_point:
-            diverges_at = reverse_geocode_street(diverge_point[0], diverge_point[1])
-        if converge_point:
-            rejoins_at = reverse_geocode_street(converge_point[0], converge_point[1])
+        if diverge_idx is not None and converge_idx is not None and diverge_idx < converge_idx:
+            # Trim to only the divergent segment
+            trimmed = all_coords[diverge_idx : converge_idx + 1]
+            if len(trimmed) >= 2:
+                detour_segment = [[c[0], c[1]] for c in trimmed]
+
+            diverge_coord = all_coords[diverge_idx]
+            converge_coord = all_coords[converge_idx]
+            diverges_at = reverse_geocode_street(diverge_coord[0], diverge_coord[1])
+            rejoins_at = reverse_geocode_street(converge_coord[0], converge_coord[1])
 
     return {
-        "detour_path": detour_coords,
+        "detour_path": detour_segment,
         "diverges_at": diverges_at,
         "rejoins_at": rejoins_at,
     }
