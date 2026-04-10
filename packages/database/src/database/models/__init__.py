@@ -1,3 +1,4 @@
+from .detour import Detour, DetourStatus
 from .line import Line, LineBase, LineStatus, LineVote
 from .route import (
     EdgeStatus,
@@ -26,6 +27,8 @@ from .trip import (
 )
 
 __all__ = [
+    "Detour",
+    "DetourStatus",
     "Line",
     "LineBase",
     "LineStatus",

@@ -1,6 +1,7 @@
 from typing import Optional, Sequence
 from uuid import UUID
 
+from database.models.detour import Detour, DetourStatus
 from database.models.line import Line, LineStatus
 from database.models.route import Route, RouteEdge, RouteStatus
 from database.models.trip import TripSession
@@ -11,6 +12,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
+from schemas.directions import DetourAlert
 from schemas.line import LineCreate, LineRead, LineUpdate, NearbyLineWithRouteRead
 from schemas.route import RouteRead
 
@@ -213,6 +215,21 @@ def find_lines_nearby(
         .all()
     )
 
+    # Batch-fetch active detours for all matching lines
+    active_detours = (
+        db.execute(
+            select(Detour).where(
+                Detour.line_id.in_(line_ids),
+                Detour.status == DetourStatus.ACTIVE,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    detour_by_line = {d.line_id: d for d in active_detours}
+    import logging
+    logging.getLogger(__name__).info("Nearby: line_ids=%s, active_detours=%d, detour_by_line_keys=%s", line_ids, len(active_detours), list(detour_by_line.keys()))
+
     results: list[NearbyLineWithRouteRead] = []
     for line_id in line_ids:
         line = db.get(Line, line_id)
@@ -254,16 +271,52 @@ def find_lines_nearby(
                     "coordinates": all_coords,
                 }
 
+        detour = detour_by_line.get(line.id)
+        detour_alert = None
+        if detour:
+            analysis = None
+            try:
+                from services.detour_analysis import analyze_detour
+                analysis = analyze_detour(db, detour.path, line.id)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+            detour_alert = DetourAlert.from_detour(detour, analysis).model_dump()
+
         results.append(
             NearbyLineWithRouteRead(
                 line_id=line.id,
                 line_name=line.name,
                 line_description=line.description,
                 route_geojson=route_geojson,
+                detour_alert=detour_alert,
             )
         )
 
     return results
+
+
+@router.get("/{line_id}/route")
+def get_line_route(line_id: UUID, db: Session = Depends(get_db)) -> dict:
+    """Get the active route geometry for a line as GeoJSON."""
+    line = db.get(Line, line_id)
+    if not line:
+        raise HTTPException(status_code=404, detail="Line not found")
+
+    from services.detour_analysis import get_line_route_geometry
+
+    route_geom = get_line_route_geometry(db, line_id)
+    if not route_geom:
+        raise HTTPException(status_code=404, detail="No active route for this line")
+
+    return {
+        "type": "Feature",
+        "properties": {"line_id": str(line.id), "line_name": line.name},
+        "geometry": {
+            "type": "LineString",
+            "coordinates": [list(c) for c in route_geom.coords],
+        },
+    }
 
 
 @router.post("/{line_id}/approve", response_model=LineRead)

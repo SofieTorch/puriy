@@ -45,6 +45,7 @@ class NearbyLineWithRouteRead(SQLModel):
     line_name: str
     line_description: Optional[str] = None
     route_geojson: Optional[dict] = None
+    detour_alert: Optional[dict] = None
 
 
 class LineUpdate(SQLModel):

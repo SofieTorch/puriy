@@ -1,4 +1,6 @@
 from .models import (
+    Detour,
+    DetourStatus,
     EdgeStatus,
     EdgeVote,
     Line,
@@ -26,6 +28,8 @@ __all__ = [
     "SessionLocal",
     "get_db",
     "init_db",
+    "Detour",
+    "DetourStatus",
     "Line",
     "LineStatus",
     "LineVote",

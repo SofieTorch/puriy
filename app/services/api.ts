@@ -27,7 +27,7 @@ export async function isServerReachable(): Promise<boolean> {
 }
 
 export interface Line {
-  id: number;
+  id: string;
   name: string;
   description: string | null;
   status: 'pending' | 'approved' | 'rejected' | 'merged';
@@ -111,6 +111,7 @@ export interface DirectionsLeg {
   geometry: [number, number][];
   distance_m: number;
   duration_s: number;
+  detour_alert?: DetourAlert | null;
 }
 
 export interface DirectionsResponse {
@@ -124,12 +125,35 @@ export interface NearbyLineWithRoute {
   line_name: string;
   line_description: string | null;
   route_geojson: { type: string; coordinates: [number, number][] } | null;
+  detour_alert?: DetourAlert | null;
 }
 
 export interface NearbyLine {
   line_id: string;
   line_name: string;
   line_description: string | null;
+}
+
+export interface DetourAlert {
+  active: boolean;
+  detour_id: string;
+  reason: string | null;
+  description: string | null;
+  days_since_confirmed: number;
+  confidence_pct: number;
+  detour_path?: [number, number][] | null;
+  diverges_at?: string | null;
+  rejoins_at?: string | null;
+}
+
+export interface DetourInfo {
+  id: string;
+  line_id: string;
+  line_name: string;
+  reason: string | null;
+  description: string | null;
+  days_since_confirmed: number;
+  confidence_pct: number;
 }
 
 class ApiClient {
@@ -192,14 +216,20 @@ class ApiClient {
 
   async endRecording(
     sessionId: number,
-    lineId: number | null,
-    lineName: string | null
+    lineId: string | null,
+    lineName: string | null,
+    isDetour: boolean = false,
+    detourReason: string | null = null,
+    detourDescription: string | null = null,
   ): Promise<RecordingSession> {
     return this.request<RecordingSession>(`/recordings/${sessionId}/end`, {
       method: 'POST',
       body: JSON.stringify({
         line_id: lineId,
         line_name: lineName,
+        is_detour: isDetour,
+        detour_reason: detourReason,
+        detour_description: detourDescription,
       }),
     });
   }
@@ -277,6 +307,18 @@ class ApiClient {
   }
 
   // ============================================================
+  // Line Route
+  // ============================================================
+
+  async getLineRoute(lineId: string): Promise<{ geometry: { coordinates: [number, number][] } } | null> {
+    try {
+      return await this.request(`/lines/${lineId}/route`);
+    } catch {
+      return null;
+    }
+  }
+
+  // ============================================================
   // Nearby Lines (by coordinate)
   // ============================================================
 
@@ -331,6 +373,22 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ device_id: deviceId, vote }),
     });
+  }
+
+  // ============================================================
+  // Detours
+  // ============================================================
+
+  async getActiveDetour(lineId: string): Promise<DetourInfo | null> {
+    try {
+      return await this.request<DetourInfo>(`/detours/active/${lineId}`);
+    } catch {
+      return null;
+    }
+  }
+
+  async confirmDetour(detourId: string): Promise<void> {
+    await this.request(`/detours/${detourId}/confirm`, { method: 'POST' });
   }
 }
 

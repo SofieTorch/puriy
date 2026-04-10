@@ -3,7 +3,7 @@ import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 
 /** Cached lines from the server (refreshed when online). */
 export const lines = sqliteTable('lines', {
-  id: integer('id').primaryKey(),
+  id: text('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description'),
   status: text('status', { enum: ['pending', 'approved', 'rejected', 'merged'] }).notNull(),
@@ -19,8 +19,11 @@ export const recordings = sqliteTable('recordings', {
   status: text('status', {
     enum: ['in_progress', 'pending_sync', 'synced', 'discarded', 'cancelled'],
   }).notNull(),
-  lineId: integer('line_id'), // Server line ID (if existing line selected)
+  lineId: text('line_id'), // Server line ID (UUID, if existing line selected)
   lineName: text('line_name'), // New line name (if creating)
+  isDetour: integer('is_detour', { mode: 'boolean' }).default(false),
+  detourReason: text('detour_reason'),
+  detourDescription: text('detour_description'),
   direction: text('direction'),
   deviceModel: text('device_model'),
   osVersion: text('os_version'),

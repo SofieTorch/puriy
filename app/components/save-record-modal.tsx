@@ -1,20 +1,37 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, Modal, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import Feather from '@expo/vector-icons/Feather';
 
-import type { Line } from '@/services/api';
+import type { DetourInfo, Line } from '@/services/api';
+import api from '@/services/api';
 import { getLines } from '@/services/line-cache';
+import RouteMap from '@/components/route-map';
+import { getDb } from '@/lib/db';
+import { locationPoints } from '@/db/schema';
+import { eq } from 'drizzle-orm';
+
+const DETOUR_REASONS = ['Construcción', 'Protesta', 'Accidente', 'Otro'] as const;
+type DetourReason = (typeof DETOUR_REASONS)[number];
 
 type SaveRecordModalProps = {
   visible: boolean;
+  recordingId: number | null;
   finalDuration: number;
   finalPoints: number;
   formatDuration: (seconds: number) => string;
   onDiscard: () => void;
-  onConfirm: (selection: { lineId: number | null; customLineName: string | null }) => Promise<void>;
+  onConfirm: (selection: {
+    lineId: string | null;
+    customLineName: string | null;
+    isDetour: boolean;
+    detourReason: string | null;
+    detourDescription: string | null;
+  }) => Promise<void>;
 };
 
 export default function SaveRecordModal({
   visible,
+  recordingId,
   finalDuration,
   finalPoints,
   formatDuration,
@@ -23,8 +40,18 @@ export default function SaveRecordModal({
 }: SaveRecordModalProps) {
   const [lines, setLines] = useState<Line[]>([]);
   const [selectedLine, setSelectedLine] = useState<Line | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [customLineName, setCustomLineName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  const [isDetour, setIsDetour] = useState(false);
+  const [detourReason, setDetourReason] = useState<DetourReason | null>(null);
+  const [detourDescription, setDetourDescription] = useState('');
+  const [activeDetour, setActiveDetour] = useState<DetourInfo | null>(null);
+  const [detourPromptDismissed, setDetourPromptDismissed] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [recordedPath, setRecordedPath] = useState<[number, number][]>([]);
+  const [lineRouteCoords, setLineRouteCoords] = useState<[number, number][]>([]);
 
   useEffect(() => {
     if (!visible) return;
@@ -34,23 +61,46 @@ export default function SaveRecordModal({
       try {
         const data = await getLines();
         if (mounted) setLines(data);
-      } catch (error) {
-        console.error('Failed to fetch lines:', error);
+      } catch {
         if (mounted) setLines([]);
       }
     };
 
     setSelectedLine(null);
+    setDropdownOpen(false);
     setCustomLineName('');
     setIsSaving(false);
+    setIsDetour(false);
+    setDetourReason(null);
+    setDetourDescription('');
+    setActiveDetour(null);
+    setDetourPromptDismissed(false);
+    setShowConfirmation(false);
+    setRecordedPath([]);
+    setLineRouteCoords([]);
     fetchLines();
 
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [visible]);
 
-  const canSave = useMemo(() => !!selectedLine || !!customLineName.trim(), [selectedLine, customLineName]);
+  useEffect(() => {
+    if (!selectedLine) {
+      setActiveDetour(null);
+      setDetourPromptDismissed(false);
+      return;
+    }
+    let mounted = true;
+    api.getActiveDetour(selectedLine.id.toString()).then((detour) => {
+      if (mounted) { setActiveDetour(detour); setDetourPromptDismissed(false); }
+    });
+    return () => { mounted = false; };
+  }, [selectedLine]);
+
+  const canSave = useMemo(() => {
+    const hasLine = !!selectedLine || !!customLineName.trim();
+    const detourValid = !isDetour || !!detourReason;
+    return hasLine && detourValid;
+  }, [selectedLine, customLineName, isDetour, detourReason]);
 
   const handleConfirm = async () => {
     if (!canSave || isSaving) return;
@@ -59,11 +109,118 @@ export default function SaveRecordModal({
       await onConfirm({
         lineId: selectedLine?.id ?? null,
         customLineName: selectedLine ? null : customLineName.trim() || null,
+        isDetour,
+        detourReason: isDetour ? detourReason : null,
+        detourDescription: isDetour && detourDescription.trim() ? detourDescription.trim() : null,
       });
     } finally {
       setIsSaving(false);
     }
   };
+
+  const prepareDetourConfirmation = async () => {
+    // Load recorded path from local DB
+    if (recordingId) {
+      const points = getDb()
+        .select()
+        .from(locationPoints)
+        .where(eq(locationPoints.recordingId, recordingId))
+        .all();
+      setRecordedPath(points.map((p) => [p.longitude, p.latitude] as [number, number]));
+    }
+
+    // Load line's normal route
+    const lineId = selectedLine?.id;
+    if (lineId) {
+      const routeData = await api.getLineRoute(lineId.toString());
+      if (routeData?.geometry?.coordinates) {
+        setLineRouteCoords(routeData.geometry.coordinates);
+      }
+    }
+
+    setShowConfirmation(true);
+  };
+
+  const handleSavePress = async () => {
+    if (!canSave || isSaving) return;
+    if (isDetour) {
+      await prepareDetourConfirmation();
+    } else {
+      await handleConfirm();
+    }
+  };
+
+  const showDetourPrompt = activeDetour && !detourPromptDismissed;
+
+  // Detour confirmation screen
+  if (showConfirmation && isDetour) {
+    return (
+      <Modal visible={visible} animationType="slide" transparent onRequestClose={() => setShowConfirmation(false)}>
+        <View className="flex-1 justify-end bg-black/45">
+          <View className="h-4/5 rounded-t-3xl bg-white pt-3">
+            <View className="mb-4 h-1 w-10 self-center rounded bg-gray-300" />
+
+            <ScrollView className="flex-1 px-6">
+              <View className="mb-3 flex-row items-center">
+                <Feather name="alert-triangle" size={22} color="#F97316" />
+                <Text className="ml-2 text-[20px] font-bold text-orange-600">Confirmar desvío</Text>
+              </View>
+
+              <View className="mb-4 rounded-xl bg-orange-50 p-3">
+                <Text className="text-sm text-orange-700">
+                  Este desvío se publicará inmediatamente para todos los usuarios de Línea{' '}
+                  <Text className="font-bold">{selectedLine?.name ?? customLineName}</Text>.
+                </Text>
+              </View>
+
+              {/* Map showing normal route (blue) + recorded trip (orange dashed) */}
+              <View className="mb-4 overflow-hidden rounded-xl">
+                <RouteMap
+                  lineRoute={lineRouteCoords.length >= 2 ? { coordinates: lineRouteCoords, name: selectedLine?.name ?? '' } : null}
+                  detourPath={recordedPath.length >= 2 ? recordedPath : null}
+                  style={{ height: 250 }}
+                />
+              </View>
+
+              <View className="mb-2 flex-row items-center gap-3">
+                <View className="h-1 w-6 rounded bg-[#09A6F3]" />
+                <Text className="text-xs text-gray-500">Ruta normal</Text>
+                <View className="h-1 w-6 rounded bg-orange-400" style={{ borderStyle: 'dashed' }} />
+                <Text className="text-xs text-gray-500">Tu recorrido (desvío)</Text>
+              </View>
+
+              <View className="mb-4 mt-3 rounded-xl bg-gray-50 p-3">
+                <Text className="text-sm text-gray-700">
+                  <Text className="font-semibold">Razón:</Text> {detourReason ?? 'No especificada'}
+                </Text>
+                {detourDescription ? (
+                  <Text className="mt-1 text-sm text-gray-700">
+                    <Text className="font-semibold">Descripción:</Text> {detourDescription}
+                  </Text>
+                ) : null}
+              </View>
+            </ScrollView>
+
+            <View className="flex-row gap-3 border-t border-gray-100 px-6 py-4">
+              <TouchableOpacity
+                className="flex-1 items-center rounded-xl bg-gray-100 py-3.5"
+                onPress={() => setShowConfirmation(false)}
+              >
+                <Text className="text-base font-semibold text-gray-700">Volver</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="flex-1 items-center rounded-xl bg-orange-500 py-3.5"
+                onPress={handleConfirm}
+                disabled={isSaving}
+              >
+                <Text className="text-base font-semibold text-white">{isSaving ? 'Publicando...' : 'Publicar desvío'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onDiscard}>
@@ -71,80 +228,169 @@ export default function SaveRecordModal({
         <View className="h-4/5 rounded-t-3xl bg-white pt-3">
           <View className="mb-4 h-1 w-10 self-center rounded bg-gray-300" />
 
-          <View className="mb-2 px-6">
-            <Text className="text-[20px] font-bold text-gray-900">Select line</Text>
-            <Text className="mt-1 text-sm text-gray-500">Which line did you ride?</Text>
-          </View>
+          <ScrollView className="flex-1 px-6" keyboardShouldPersistTaps="handled">
+            {/* Header */}
+            <Text className="text-[20px] font-bold text-gray-900">Guardar recorrido</Text>
+            <Text className="mt-1 mb-4 text-sm text-gray-500">¿En qué línea viajaste?</Text>
 
-          <View className="mx-6 mb-4 flex-row items-center justify-center rounded-xl bg-green-50 py-4">
-            <View className="items-center px-5">
-              <Text className="text-[20px] font-bold text-green-800">{formatDuration(finalDuration)}</Text>
-              <Text className="mt-0.5 text-xs text-green-700">Duration</Text>
-            </View>
-            <View className="h-7 w-px bg-green-200" />
-            <View className="items-center px-5">
-              <Text className="text-[20px] font-bold text-green-800">{finalPoints}</Text>
-              <Text className="mt-0.5 text-xs text-green-700">Points</Text>
-            </View>
-          </View>
-
-          <FlatList
-            data={lines}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={({ item }) => {
-              const isSelected = selectedLine?.id === item.id;
-              return (
-                <TouchableOpacity
-                  className={`mb-2.5 rounded-xl border-2 p-4 ${
-                    isSelected ? 'border-[#09A6F3] bg-sky-100' : 'border-transparent bg-gray-100'
-                  }`}
-                  onPress={() => {
-                    setSelectedLine(item);
-                    setCustomLineName('');
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text className={`text-base font-semibold ${isSelected ? 'text-[#09A6F3]' : 'text-gray-700'}`}>
-                    {item.name}
-                  </Text>
-                  {item.description && (
-                    <Text className="mt-1 text-[13px] text-gray-500" numberOfLines={2}>
-                      {item.description}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              );
-            }}
-            className="px-6"
-            contentContainerClassName="pb-6"
-            ListEmptyComponent={<Text className="mt-6 text-center italic text-gray-500/60">No lines available.</Text>}
-            ListFooterComponent={
-              <View className="mt-4 border-t border-gray-200 pt-4">
-                <Text className="mb-2 text-[13px] font-medium text-gray-500">Or add new line</Text>
-                <TextInput
-                  className="rounded-xl bg-gray-100 px-4 py-3.5 text-base text-gray-900"
-                  placeholder="Enter line name"
-                  placeholderTextColor="#9CA3AF"
-                  value={customLineName}
-                  onChangeText={(text) => {
-                    setCustomLineName(text);
-                    if (text.trim()) setSelectedLine(null);
-                  }}
-                />
+            {/* Stats */}
+            <View className="mb-5 flex-row items-center justify-center rounded-xl bg-green-50 py-4">
+              <View className="items-center px-5">
+                <Text className="text-[20px] font-bold text-green-800">{formatDuration(finalDuration)}</Text>
+                <Text className="mt-0.5 text-xs text-green-700">Duración</Text>
               </View>
-            }
-          />
+              <View className="h-7 w-px bg-green-200" />
+              <View className="items-center px-5">
+                <Text className="text-[20px] font-bold text-green-800">{finalPoints}</Text>
+                <Text className="mt-0.5 text-xs text-green-700">Puntos</Text>
+              </View>
+            </View>
 
+            {/* Line dropdown selector */}
+            <Text className="mb-2 text-[13px] font-medium text-gray-500">Línea</Text>
+            <Pressable
+              className="mb-1 flex-row items-center justify-between rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3.5"
+              onPress={() => setDropdownOpen(!dropdownOpen)}
+            >
+              <Text className={`text-base ${selectedLine ? 'font-semibold text-gray-900' : 'text-gray-400'}`}>
+                {selectedLine ? selectedLine.name : 'Seleccionar línea'}
+              </Text>
+              <Feather name={dropdownOpen ? 'chevron-up' : 'chevron-down'} size={20} color="#9CA3AF" />
+            </Pressable>
+
+            {dropdownOpen && (
+              <View className="mb-3 max-h-48 rounded-xl border border-gray-200 bg-white">
+                <ScrollView nestedScrollEnabled>
+                  {lines.length === 0 ? (
+                    <Text className="py-4 text-center text-sm italic text-gray-400">No hay líneas disponibles</Text>
+                  ) : (
+                    lines.map((item) => {
+                      const isSelected = selectedLine?.id === item.id;
+                      return (
+                        <Pressable
+                          key={item.id.toString()}
+                          className={`flex-row items-center border-b border-gray-100 px-4 py-3 ${isSelected ? 'bg-sky-50' : ''}`}
+                          onPress={() => { setSelectedLine(item); setCustomLineName(''); setDropdownOpen(false); }}
+                        >
+                          <Text className={`flex-1 text-sm ${isSelected ? 'font-semibold text-[#09A6F3]' : 'text-gray-700'}`}>
+                            {item.name}
+                          </Text>
+                          {item.status === 'pending' && (
+                            <View className="ml-2 rounded-md bg-amber-50 px-1.5 py-0.5">
+                              <Text className="text-[10px] font-medium text-amber-600">Pendiente</Text>
+                            </View>
+                          )}
+                          {isSelected && <Feather name="check" size={16} color="#09A6F3" className="ml-2" />}
+                        </Pressable>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Or create new line */}
+            <Text className="mb-2 mt-2 text-[13px] font-medium text-gray-500">O crear nueva línea</Text>
+            <TextInput
+              className="mb-4 rounded-xl bg-gray-100 px-4 py-3.5 text-base text-gray-900"
+              placeholder="Nombre de la línea"
+              placeholderTextColor="#9CA3AF"
+              value={customLineName}
+              onChangeText={(text) => { setCustomLineName(text); if (text.trim()) setSelectedLine(null); }}
+            />
+
+            {/* Detour confirmation prompt */}
+            {showDetourPrompt && (
+              <View className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+                <View className="flex-row items-center">
+                  <Feather name="alert-triangle" size={18} color="#D97706" />
+                  <Text className="ml-2 flex-1 text-sm font-semibold text-amber-800">
+                    Línea {activeDetour.line_name} tiene un desvío activo
+                  </Text>
+                </View>
+                <Text className="mt-1 text-[13px] text-amber-700">¿Sigue habiendo desvío?</Text>
+                <View className="mt-3 flex-row gap-2">
+                  <TouchableOpacity
+                    className="flex-1 items-center rounded-lg bg-amber-600 py-2.5"
+                    onPress={async () => {
+                      if (activeDetour) {
+                        try { await api.confirmDetour(activeDetour.id); } catch {}
+                      }
+                      setDetourPromptDismissed(true);
+                    }}
+                  >
+                    <Text className="text-sm font-semibold text-white">Sí, sigue</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    className="flex-1 items-center rounded-lg bg-gray-200 py-2.5"
+                    onPress={() => setDetourPromptDismissed(true)}
+                  >
+                    <Text className="text-sm font-semibold text-gray-700">No, ya no</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Detour toggle */}
+            {(selectedLine || customLineName.trim()) && (
+              <View className="mb-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center">
+                    <Feather name="alert-triangle" size={16} color="#F97316" />
+                    <Text className="ml-2 text-base font-medium text-gray-700">Es un desvío</Text>
+                  </View>
+                  <Switch
+                    value={isDetour}
+                    onValueChange={setIsDetour}
+                    trackColor={{ false: '#D1D5DB', true: '#09A6F3' }}
+                    thumbColor="#FFFFFF"
+                  />
+                </View>
+
+                {isDetour && (
+                  <View className="mt-3">
+                    <Text className="mb-2 text-[13px] font-medium text-gray-500">Razón del desvío</Text>
+                    <View className="flex-row flex-wrap gap-2">
+                      {DETOUR_REASONS.map((reason) => {
+                        const active = detourReason === reason;
+                        return (
+                          <Pressable
+                            key={reason}
+                            className={`rounded-full border px-4 py-2 ${active ? 'border-[#09A6F3] bg-sky-100' : 'border-gray-300 bg-white'}`}
+                            onPress={() => setDetourReason(reason)}
+                          >
+                            <Text className={`text-sm font-medium ${active ? 'text-[#09A6F3]' : 'text-gray-600'}`}>
+                              {reason}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    <TextInput
+                      className="mt-3 rounded-xl bg-white px-4 py-3 text-base text-gray-900"
+                      placeholder="Descripción (opcional)"
+                      placeholderTextColor="#9CA3AF"
+                      value={detourDescription}
+                      onChangeText={setDetourDescription}
+                      multiline
+                    />
+                  </View>
+                )}
+              </View>
+            )}
+          </ScrollView>
+
+          {/* Action buttons */}
           <View className="flex-row gap-3 border-t border-gray-100 px-6 py-4">
             <TouchableOpacity className="flex-1 items-center rounded-xl bg-gray-100 py-3.5" onPress={onDiscard}>
-              <Text className="text-base font-semibold text-gray-700">Discard</Text>
+              <Text className="text-base font-semibold text-gray-700">Descartar</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className={`flex-1 items-center rounded-xl py-3.5 ${!canSave ? 'bg-[#09A6F3]/40' : 'bg-[#09A6F3]'}`}
-              onPress={handleConfirm}
+              className={`flex-1 items-center rounded-xl py-3.5 ${!canSave ? 'bg-[#09A6F3]/40' : isDetour ? 'bg-orange-500' : 'bg-[#09A6F3]'}`}
+              onPress={handleSavePress}
               disabled={!canSave || isSaving}
             >
-              <Text className="text-base font-semibold text-white">{isSaving ? 'Saving...' : 'Save'}</Text>
+              <Text className="text-base font-semibold text-white">{isSaving ? 'Guardando...' : isDetour ? 'Revisar desvío' : 'Guardar'}</Text>
             </TouchableOpacity>
           </View>
         </View>

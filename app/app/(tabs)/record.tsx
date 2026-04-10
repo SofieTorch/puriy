@@ -250,9 +250,15 @@ export default function RecordScreen() {
   const handleConfirmLine = async ({
     lineId,
     customLineName,
+    isDetour,
+    detourReason,
+    detourDescription,
   }: {
-    lineId: number | null;
+    lineId: string | null;
     customLineName: string | null;
+    isDetour: boolean;
+    detourReason: string | null;
+    detourDescription: string | null;
   }) => {
     if (!currentSessionId) return;
     try {
@@ -260,7 +266,10 @@ export default function RecordScreen() {
         currentSessionId,
         lineId,
         customLineName,
-        'pending_sync'
+        'pending_sync',
+        isDetour,
+        detourReason,
+        detourDescription,
       );
 
       const synced = await syncPendingRecordings();
@@ -374,6 +383,7 @@ export default function RecordScreen() {
 
         <SaveRecordModal
           visible={showLineModal}
+          recordingId={currentSessionId}
           finalDuration={finalDuration.current}
           finalPoints={finalPoints.current}
           formatDuration={formatDuration}

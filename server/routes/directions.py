@@ -1,6 +1,9 @@
 import logging
+from uuid import UUID
 
+from database.models.detour import Detour, DetourStatus
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
@@ -12,6 +15,7 @@ from geodata.transit_graph import (
 )
 from geodata.walk_route import walk_route
 from schemas.directions import (
+    DetourAlert,
     DirectionsLeg,
     DirectionsRequest,
     DirectionsResponse,
@@ -63,16 +67,31 @@ def get_directions(
                 # Fall back to graph geometry (straight line)
                 geometry = [list(c) for c in geometry]
 
-        legs.append(
-            DirectionsLeg(
-                mode=leg["mode"],
-                line_name=leg["line_name"],
-                line_id=str(leg["line_id"]) if leg["line_id"] else None,
-                geometry=geometry,
-                distance_m=leg["distance_m"],
-                duration_s=leg["duration_s"],
-            )
+        directions_leg = DirectionsLeg(
+            mode=leg["mode"],
+            line_name=leg["line_name"],
+            line_id=str(leg["line_id"]) if leg["line_id"] else None,
+            geometry=geometry,
+            distance_m=leg["distance_m"],
+            duration_s=leg["duration_s"],
         )
+
+        if leg["mode"] == "bus" and leg["line_id"]:
+            detour = db.execute(
+                select(Detour).where(
+                    Detour.line_id == UUID(str(leg["line_id"])),
+                    Detour.status == DetourStatus.ACTIVE,
+                )
+            ).scalars().first()
+            if detour:
+                try:
+                    from services.detour_analysis import analyze_detour
+                    analysis = analyze_detour(db, detour.path, UUID(str(leg["line_id"])))
+                except Exception:
+                    analysis = None
+                directions_leg.detour_alert = DetourAlert.from_detour(detour, analysis)
+
+        legs.append(directions_leg)
 
     total_distance_m = sum(leg.distance_m for leg in legs)
     total_duration_s = sum(leg.duration_s for leg in legs)

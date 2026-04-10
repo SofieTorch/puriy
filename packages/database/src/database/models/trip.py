@@ -11,6 +11,7 @@ from sqlalchemy import Column, Text
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
+    from .detour import Detour
     from .line import Line
     from .route import Trip
 
@@ -70,6 +71,7 @@ class TripSession(TripSessionBase, table=True):
     points: list["TripSessionPoint"] = Relationship(back_populates="session")
     sensor_readings: list["TripSensorReading"] = Relationship(back_populates="session")
     trips: list["Trip"] = Relationship(back_populates="session")
+    detour: Optional["Detour"] = Relationship(back_populates="session")
 
 
 class TripSessionPointBase(SQLModel):

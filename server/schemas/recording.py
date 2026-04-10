@@ -31,6 +31,9 @@ class EndSessionRequest(SQLModel):
 
     line_id: Optional[UUID] = None
     line_name: Optional[str] = None
+    is_detour: bool = False
+    detour_reason: Optional[str] = None  # "construction", "protest", "accident", "other"
+    detour_description: Optional[str] = None
 
 
 class TripSessionRead(TripSessionBase):

@@ -16,14 +16,15 @@ export interface LineRoute {
 interface RouteMapProps {
   legs?: Leg[];
   lineRoute?: LineRoute | null;
+  detourPath?: [number, number][] | null;
   currentLocation?: { lon: number; lat: number } | null;
   style?: StyleProp<ViewStyle>;
 }
 
-export default function RouteMap({ legs = [], lineRoute, currentLocation, style }: RouteMapProps) {
+export default function RouteMap({ legs = [], lineRoute, detourPath, currentLocation, style }: RouteMapProps) {
   const html = useMemo(
-    () => buildMapHtml(legs, currentLocation ?? null, lineRoute ?? null),
-    [JSON.stringify(legs), JSON.stringify(currentLocation), JSON.stringify(lineRoute)]
+    () => buildMapHtml(legs, currentLocation ?? null, lineRoute ?? null, detourPath ?? null),
+    [JSON.stringify(legs), JSON.stringify(currentLocation), JSON.stringify(lineRoute), JSON.stringify(detourPath)]
   );
 
   return (
@@ -40,7 +41,8 @@ export default function RouteMap({ legs = [], lineRoute, currentLocation, style 
 function buildMapHtml(
   legs: Leg[],
   currentLocation: { lon: number; lat: number } | null,
-  lineRoute: LineRoute | null
+  lineRoute: LineRoute | null,
+  detourPath: [number, number][] | null,
 ): string {
   let minLat = Infinity, maxLat = -Infinity;
   let minLng = Infinity, maxLng = -Infinity;
@@ -80,6 +82,14 @@ function buildMapHtml(
   if (lineRoute && lineRoute.coordinates.length >= 2) {
     const coords = lineRoute.coordinates.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
     lineRouteJs = `L.polyline([${coords}], {color:'#09A6F3', weight:5}).addTo(map);`;
+  }
+
+  // Detour path polyline (orange dashed, overlaid on normal route)
+  let detourPathJs = '';
+  if (detourPath && detourPath.length >= 2) {
+    const coords = detourPath.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
+    detourPathJs = `L.polyline([${coords}], {color:'#F97316', weight:4, dashArray:'8 6'}).addTo(map);`;
+    for (const [lng, lat] of detourPath) addToBounds(lng, lat);
   }
 
   // Markers
@@ -157,6 +167,7 @@ function buildMapHtml(
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19}).addTo(map);
   ${polylines}
   ${lineRouteJs}
+  ${detourPathJs}
   ${markers.join('\n  ')}
   ${currentLocJs}
   if (bounds) map.fitBounds(bounds, {padding: [30,30]});

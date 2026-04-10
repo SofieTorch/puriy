@@ -10,6 +10,7 @@ from sqlmodel import Field, Relationship, SQLModel
 from .route import VoteChoice
 
 if TYPE_CHECKING:
+    from .detour import Detour
     from .route import Route, Trip
     from .trip import TripSession
 
@@ -48,6 +49,7 @@ class Line(LineBase, table=True):
     trips: list["Trip"] = Relationship(back_populates="line")
     routes: list["Route"] = Relationship(back_populates="line")
     line_votes: list["LineVote"] = Relationship(back_populates="line")
+    detours: list["Detour"] = Relationship(back_populates="line")
 
 
 class LineVote(SQLModel, table=True):

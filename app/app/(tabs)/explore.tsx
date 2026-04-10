@@ -277,7 +277,12 @@ export default function ExploreScreen() {
       : null;
     return (
       <View className="flex-1">
-        <RouteMap lineRoute={lr} currentLocation={userLoc} style={{ flex: 1 }} />
+        <RouteMap
+          lineRoute={lr}
+          detourPath={selectedLine.detour_alert?.detour_path ?? null}
+          currentLocation={userLoc}
+          style={{ flex: 1 }}
+        />
         <Pressable className="absolute left-4 rounded-full bg-white p-3 shadow-lg" style={{ top: insets.top + 8 }} onPress={() => { setSelectedLine(null); setView('search'); }}>
           <Feather name="arrow-left" size={22} color="#333" />
         </Pressable>
@@ -285,6 +290,21 @@ export default function ExploreScreen() {
           <Text className="text-base font-bold text-[#09A6F3]">Línea {selectedLine.line_name}</Text>
           {selectedLine.line_description && <Text className="text-xs text-gray-400">{selectedLine.line_description}</Text>}
         </View>
+        {selectedLine.detour_alert && (
+          <View className="absolute left-4 right-4 flex-row items-center rounded-2xl bg-orange-50 px-4 py-3 shadow-lg" style={{ top: insets.top + 115 }}>
+            <Feather name="alert-triangle" size={16} color="#F97316" />
+            <View className="ml-3 flex-1">
+              <Text className="text-sm font-semibold text-orange-600">
+                Desvío {selectedLine.detour_alert.reason ? `por ${selectedLine.detour_alert.reason}` : 'activo'}
+              </Text>
+              {selectedLine.detour_alert.diverges_at && selectedLine.detour_alert.rejoins_at && (
+                <Text className="text-xs text-orange-500">
+                  Desde {selectedLine.detour_alert.diverges_at} hasta {selectedLine.detour_alert.rejoins_at}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
       </View>
     );
   }
@@ -391,6 +411,14 @@ export default function ExploreScreen() {
               const s = routeSummary(route.legs);
               return (
                 <Pressable key={idx} className="mb-3 rounded-2xl border border-gray-200 bg-white p-4 active:bg-gray-50" onPress={() => selectRoute(route)}>
+                  {route.legs.some(l => l.detour_alert) && (
+                    <View className="mb-2 flex-row items-center rounded-lg bg-orange-50 px-3 py-2">
+                      <Feather name="alert-triangle" size={14} color="#F97316" />
+                      <Text className="ml-2 text-xs font-semibold text-orange-500">
+                        Desvío activo en {route.legs.filter(l => l.detour_alert).map(l => `Línea ${l.line_name}`).join(', ')}
+                      </Text>
+                    </View>
+                  )}
                   <View className="mb-2 flex-row items-center justify-between">
                     <Text className="text-xl font-bold text-gray-800">{formatDuration(route.total_duration_s)}</Text>
                     <Text className="text-sm text-gray-400">{formatDistance(route.total_distance_m)}</Text>
@@ -535,8 +563,23 @@ export default function ExploreScreen() {
                     <Feather name="truck" size={18} color={BLUE} />
                   </View>
                   <View className="flex-1">
-                    <Text className="text-base font-semibold text-gray-800">Línea {line.line_name}</Text>
+                    <View className="flex-row items-center">
+                      <Text className="text-base font-semibold text-gray-800">Línea {line.line_name}</Text>
+                      {line.detour_alert && (
+                        <View className="ml-2 flex-row items-center rounded-md bg-orange-50 px-2 py-0.5">
+                          <Feather name="alert-triangle" size={10} color="#F97316" />
+                          <Text className="ml-1 text-[10px] font-semibold text-orange-500">Desvío</Text>
+                        </View>
+                      )}
+                    </View>
                     {line.line_description && <Text className="text-sm text-gray-500" numberOfLines={1}>{line.line_description}</Text>}
+                    {line.detour_alert && (
+                      <Text className="mt-0.5 text-xs text-orange-500">
+                        {line.detour_alert.diverges_at && line.detour_alert.rejoins_at
+                          ? `Desde ${line.detour_alert.diverges_at} hasta ${line.detour_alert.rejoins_at}`
+                          : `Por ${line.detour_alert.reason ?? 'causa desconocida'}`}
+                      </Text>
+                    )}
                   </View>
                   <Feather name="chevron-right" size={18} color="#D1D5DB" />
                 </Pressable>

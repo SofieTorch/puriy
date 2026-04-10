@@ -85,9 +85,12 @@ export function addSensorReadings(
 /** Finalize recording with line selection (pending_sync or discarded). */
 export function finalizeRecording(
   recordingId: number,
-  lineId: number | null,
+  lineId: string | null,
   lineName: string | null,
-  status: 'pending_sync' | 'discarded'
+  status: 'pending_sync' | 'discarded',
+  isDetour: boolean = false,
+  detourReason: string | null = null,
+  detourDescription: string | null = null,
 ): void {
   const now = new Date().toISOString();
   getDb().update(recordingsTable)
@@ -95,6 +98,9 @@ export function finalizeRecording(
       status,
       lineId,
       lineName,
+      isDetour,
+      detourReason,
+      detourDescription,
       endedAt: now,
       lastActivityAt: now,
     })

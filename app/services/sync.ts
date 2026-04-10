@@ -57,7 +57,14 @@ async function syncOneRecording(recordingId: number): Promise<boolean> {
     }
 
     // 4. End recording with line
-    await api.endRecording(serverId, rec.lineId, rec.lineName);
+    await api.endRecording(
+      serverId,
+      rec.lineId,
+      rec.lineName,
+      rec.isDetour ?? false,
+      rec.detourReason ?? null,
+      rec.detourDescription ?? null,
+    );
 
     // 5. Remove from local DB (data now on server)
     deleteRecording(recordingId);
