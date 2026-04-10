@@ -2,13 +2,16 @@ from typing import Optional, Sequence
 from uuid import UUID
 
 from database.models.line import Line, LineStatus
+from database.models.route import Route, RouteEdge, RouteStatus
 from database.models.trip import TripSession
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from sqlalchemy import select, update
+from geoalchemy2 import Geography, WKBElement
+from shapely import wkb
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
-from schemas.line import LineCreate, LineRead, LineUpdate
+from schemas.line import LineCreate, LineRead, LineUpdate, NearbyLineWithRouteRead
 from schemas.route import RouteRead
 
 router = APIRouter(prefix="/lines", tags=["lines"])
@@ -168,6 +171,99 @@ async def import_route(
         raise HTTPException(status_code=502, detail=str(e))
 
     return RouteRead.model_validate(route)
+
+
+@router.get("/nearby/", response_model=list[NearbyLineWithRouteRead])
+def find_lines_nearby(
+    longitude: float = Query(..., description="Longitude of the point"),
+    latitude: float = Query(..., description="Latitude of the point"),
+    radius_meters: float = Query(default=500, ge=10, le=5000, description="Search radius in meters"),
+    include_pending: bool = Query(default=False, description="Include pending (unapproved) lines and unconfirmed routes"),
+    db: Session = Depends(get_db),
+) -> list[NearbyLineWithRouteRead]:
+    """Find lines whose routes pass within radius of a point, with route geometry."""
+    point = func.ST_GeomFromEWKT(f"SRID=4326;POINT({longitude} {latitude})")
+
+    allowed_line_statuses = [LineStatus.APPROVED]
+    if include_pending:
+        allowed_line_statuses.append(LineStatus.PENDING)
+
+    allowed_route_statuses = [RouteStatus.CONFIRMED]
+    if include_pending:
+        allowed_route_statuses.append(RouteStatus.PENDING)
+
+    # Find distinct lines with edges near the point
+    line_ids = (
+        db.execute(
+            select(Line.id)
+            .distinct()
+            .join(Route, Route.line_id == Line.id)
+            .join(RouteEdge, RouteEdge.route_id == Route.id)
+            .where(
+                Line.status.in_(allowed_line_statuses),
+                Route.status.in_(allowed_route_statuses),
+                func.ST_DWithin(
+                    func.cast(RouteEdge.path, Geography),
+                    func.cast(point, Geography),
+                    radius_meters,
+                ),
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    results: list[NearbyLineWithRouteRead] = []
+    for line_id in line_ids:
+        line = db.get(Line, line_id)
+        if not line:
+            continue
+
+        # Get the active route's edges in order
+        route = db.execute(
+            select(Route)
+            .where(Route.line_id == line_id, Route.status != RouteStatus.SUPERSEDED)
+            .order_by(Route.version.desc())
+        ).scalars().first()
+
+        route_geojson = None
+        if route:
+            edges = (
+                db.execute(
+                    select(RouteEdge)
+                    .where(RouteEdge.route_id == route.id)
+                    .order_by(RouteEdge.sequence)
+                )
+                .scalars()
+                .all()
+            )
+            all_coords: list[list[float]] = []
+            for edge in edges:
+                if edge.path is not None:
+                    if isinstance(edge.path, WKBElement):
+                        shape = wkb.loads(bytes(edge.path.data))
+                        coords = [list(c) for c in shape.coords]
+                        if all_coords and coords:
+                            all_coords.extend(coords[1:])
+                        else:
+                            all_coords.extend(coords)
+
+            if len(all_coords) >= 2:
+                route_geojson = {
+                    "type": "LineString",
+                    "coordinates": all_coords,
+                }
+
+        results.append(
+            NearbyLineWithRouteRead(
+                line_id=line.id,
+                line_name=line.name,
+                line_description=line.description,
+                route_geojson=route_geojson,
+            )
+        )
+
+    return results
 
 
 @router.post("/{line_id}/approve", response_model=LineRead)

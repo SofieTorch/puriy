@@ -8,13 +8,23 @@ export interface Leg {
   line_name?: string;
 }
 
+export interface LineRoute {
+  coordinates: [number, number][];
+  name: string;
+}
+
 interface RouteMapProps {
-  legs: Leg[];
+  legs?: Leg[];
+  lineRoute?: LineRoute | null;
+  currentLocation?: { lon: number; lat: number } | null;
   style?: StyleProp<ViewStyle>;
 }
 
-export default function RouteMap({ legs, style }: RouteMapProps) {
-  const html = useMemo(() => buildMapHtml(legs), [JSON.stringify(legs)]);
+export default function RouteMap({ legs = [], lineRoute, currentLocation, style }: RouteMapProps) {
+  const html = useMemo(
+    () => buildMapHtml(legs, currentLocation ?? null, lineRoute ?? null),
+    [JSON.stringify(legs), JSON.stringify(currentLocation), JSON.stringify(lineRoute)]
+  );
 
   return (
     <WebView
@@ -27,30 +37,37 @@ export default function RouteMap({ legs, style }: RouteMapProps) {
   );
 }
 
-function buildMapHtml(legs: Leg[]): string {
-  // Compute bounds
+function buildMapHtml(
+  legs: Leg[],
+  currentLocation: { lon: number; lat: number } | null,
+  lineRoute: LineRoute | null
+): string {
   let minLat = Infinity, maxLat = -Infinity;
   let minLng = Infinity, maxLng = -Infinity;
 
+  const addToBounds = (lon: number, lat: number) => {
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lon < minLng) minLng = lon;
+    if (lon > maxLng) maxLng = lon;
+  };
+
   for (const leg of legs) {
-    for (const [lng, lat] of leg.geometry) {
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
-      if (lng < minLng) minLng = lng;
-      if (lng > maxLng) maxLng = lng;
-    }
+    for (const [lng, lat] of leg.geometry) addToBounds(lng, lat);
+  }
+  if (lineRoute) {
+    for (const [lng, lat] of lineRoute.coordinates) addToBounds(lng, lat);
+  }
+  if (currentLocation) {
+    addToBounds(currentLocation.lon, currentLocation.lat);
   }
 
   const hasCoords = isFinite(minLat);
   const centerLat = hasCoords ? (minLat + maxLat) / 2 : -17.39;
   const centerLng = hasCoords ? (minLng + maxLng) / 2 : -66.16;
 
-  const boundsJs = hasCoords
-    ? `map.fitBounds([[${minLat},${minLng}],[${maxLat},${maxLng}]], {padding: [30,30]});`
-    : '';
-
-  // Build polyline and marker JS
-  const polylines = legs.map((leg, i) => {
+  // Polylines for route legs
+  const polylines = legs.map((leg) => {
     const coords = leg.geometry.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
     const color = leg.mode === 'bus' ? '#09A6F3' : '#9CA3AF';
     const weight = leg.mode === 'bus' ? 5 : 3;
@@ -58,6 +75,14 @@ function buildMapHtml(legs: Leg[]): string {
     return `L.polyline([${coords}], {color:'${color}', weight:${weight}${dash}}).addTo(map);`;
   }).join('\n');
 
+  // Line route polyline (for nearby line view)
+  let lineRouteJs = '';
+  if (lineRoute && lineRoute.coordinates.length >= 2) {
+    const coords = lineRoute.coordinates.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
+    lineRouteJs = `L.polyline([${coords}], {color:'#09A6F3', weight:5}).addTo(map);`;
+  }
+
+  // Markers
   const markers: string[] = [];
   if (legs.length > 0) {
     const first = legs[0].geometry[0];
@@ -69,13 +94,25 @@ function buildMapHtml(legs: Leg[]): string {
     if (last) {
       markers.push(`L.circleMarker([${last[1]},${last[0]}], {radius:8, color:'#fff', fillColor:'#EF4444', fillOpacity:1, weight:2}).addTo(map);`);
     }
-    // Transfer points
     for (let i = 0; i < legs.length - 1; i++) {
       const end = legs[i].geometry[legs[i].geometry.length - 1];
       if (end) {
         markers.push(`L.circleMarker([${end[1]},${end[0]}], {radius:6, color:'#fff', fillColor:'#F97316', fillOpacity:1, weight:2}).addTo(map);`);
       }
     }
+  }
+
+  // Current location blue dot with pulse animation
+  let currentLocJs = '';
+  if (currentLocation) {
+    currentLocJs = `
+      L.circleMarker([${currentLocation.lat},${currentLocation.lon}], {
+        radius: 8, color: '#fff', fillColor: '#4285F4', fillOpacity: 1, weight: 3
+      }).addTo(map);
+      L.circle([${currentLocation.lat},${currentLocation.lon}], {
+        radius: 30, color: '#4285F4', fillColor: '#4285F4', fillOpacity: 0.15, weight: 1
+      }).addTo(map);
+    `;
   }
 
   return `<!DOCTYPE html>
@@ -119,7 +156,9 @@ function buildMapHtml(legs: Leg[]): string {
   var map = L.map('map', {zoomControl: false, attributionControl: false}).setView([${centerLat}, ${centerLng}], 13);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19}).addTo(map);
   ${polylines}
+  ${lineRouteJs}
   ${markers.join('\n  ')}
+  ${currentLocJs}
   if (bounds) map.fitBounds(bounds, {padding: [30,30]});
   function recenter() { if (bounds) map.fitBounds(bounds, {padding: [30,30]}); }
 </script>

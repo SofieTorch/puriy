@@ -119,6 +119,13 @@ export interface DirectionsResponse {
   total_duration_s: number;
 }
 
+export interface NearbyLineWithRoute {
+  line_id: string;
+  line_name: string;
+  line_description: string | null;
+  route_geojson: { type: string; coordinates: [number, number][] } | null;
+}
+
 export interface NearbyLine {
   line_id: string;
   line_name: string;
@@ -267,6 +274,21 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ device_id: deviceId, vote }),
     });
+  }
+
+  // ============================================================
+  // Nearby Lines (by coordinate)
+  // ============================================================
+
+  async getNearbyLinesByLocation(
+    lon: number,
+    lat: number,
+    radiusMeters: number = 500,
+    includePending: boolean = false
+  ): Promise<NearbyLineWithRoute[]> {
+    return this.request<NearbyLineWithRoute[]>(
+      `/lines/nearby/?longitude=${lon}&latitude=${lat}&radius_meters=${radiusMeters}&include_pending=${includePending}`
+    );
   }
 
   // ============================================================

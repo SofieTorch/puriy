@@ -38,6 +38,15 @@ class LineRead(LineBase):
         return data
 
 
+class NearbyLineWithRouteRead(SQLModel):
+    """A line near a coordinate, with its route geometry."""
+
+    line_id: UUID
+    line_name: str
+    line_description: Optional[str] = None
+    route_geojson: Optional[dict] = None
+
+
 class LineUpdate(SQLModel):
     """Schema for updating a line (all fields optional)."""
 
