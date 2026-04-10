@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Keyboard,
   Pressable,
   ScrollView,
@@ -18,7 +17,10 @@ import Header from '@/components/header';
 import PreferencesSheet from '@/components/preferences-sheet';
 import RouteMap, { Leg } from '@/components/route-map';
 import api, { DirectionsLeg, DirectionsResponse } from '@/services/api';
+import { saveTrip, TripType } from '@/services/saved-trips';
 import { GeocodingResult, reverseGeocode, searchAddress } from '@/services/geocoding';
+import { addToHistory, filterHistory } from '@/services/search-history';
+import { SearchHistoryEntry } from '@/db/schema';
 import { includePendingLines, includePendingRoutes } from '@/services/preferences';
 
 const BLUE = '#09A6F3';
@@ -73,22 +75,38 @@ export default function ExploreScreen() {
   const stepsRef = useRef<BottomSheet>(null);
   const stepsSnapPoints = useMemo(() => ['30%', '70%'], []);
 
+  const [historyItems, setHistoryItems] = useState<SearchHistoryEntry[]>([]);
+
   const canSearch = originCoords !== null && destCoords !== null;
 
-  // Debounced address search
+  // Debounced address search + history (merged list)
   const queryText =
     activeField === 'origin' ? originText : activeField === 'destination' ? destText : '';
 
   useEffect(() => {
-    if (!activeField || queryText.length < 3) {
+    if (!activeField) {
+      setSuggestions([]);
+      setHistoryItems([]);
+      setSearching(false);
+      return;
+    }
+
+    // Always filter history immediately
+    setHistoryItems(filterHistory(queryText));
+
+    if (queryText.length < 3) {
       setSuggestions([]);
       setSearching(false);
       return;
     }
+
     setSearching(true);
     const timeout = setTimeout(async () => {
       try {
-        setSuggestions(await searchAddress(queryText));
+        const results = await searchAddress(queryText);
+        // Exclude results that match a history entry name (avoid duplicates)
+        const historyNames = new Set(filterHistory(queryText).map((h) => h.name.toLowerCase()));
+        setSuggestions(results.filter((r) => !historyNames.has(r.shortName.toLowerCase())));
       } catch {
         setSuggestions([]);
       }
@@ -99,6 +117,7 @@ export default function ExploreScreen() {
 
   const pickSuggestion = useCallback(
     (result: GeocodingResult) => {
+      addToHistory(result.shortName, result.lon, result.lat);
       if (activeField === 'origin') {
         setOriginText(result.shortName);
         setOriginCoords([result.lon, result.lat]);
@@ -107,6 +126,24 @@ export default function ExploreScreen() {
         setDestCoords([result.lon, result.lat]);
       }
       setSuggestions([]);
+      setHistoryItems([]);
+      setActiveField(null);
+      Keyboard.dismiss();
+    },
+    [activeField]
+  );
+
+  const pickHistoryItem = useCallback(
+    (entry: SearchHistoryEntry) => {
+      if (activeField === 'origin') {
+        setOriginText(entry.name);
+        setOriginCoords([entry.lon, entry.lat]);
+      } else {
+        setDestText(entry.name);
+        setDestCoords([entry.lon, entry.lat]);
+      }
+      setSuggestions([]);
+      setHistoryItems([]);
       setActiveField(null);
       Keyboard.dismiss();
     },
@@ -180,6 +217,41 @@ export default function ExploreScreen() {
     }
   }, []);
 
+  const handleSaveTrip = useCallback(
+    (type: TripType) => {
+      if (!selectedRoute || !originCoords || !destCoords) return;
+      saveTrip({
+        originName: originText,
+        destName: destText,
+        originCoords,
+        destCoords,
+        type,
+        route: selectedRoute,
+      });
+      Alert.alert(
+        'Ruta guardada',
+        type === 'commute'
+          ? 'Se mostrará en tus favoritos todos los días.'
+          : 'Se mostrará en tus favoritos solo por hoy.'
+      );
+    },
+    [selectedRoute, originCoords, destCoords, originText, destText]
+  );
+
+  const promptSaveTrip = useCallback(() => {
+    Alert.alert('Guardar ruta', '¿Cómo quieres guardar esta ruta?', [
+      {
+        text: 'Solo por hoy',
+        onPress: () => handleSaveTrip('one_time'),
+      },
+      {
+        text: 'Viaje recurrente',
+        onPress: () => handleSaveTrip('commute'),
+      },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }, [handleSaveTrip]);
+
   const mapLegs: Leg[] = selectedRoute
     ? selectedRoute.legs.map((leg) => ({
         mode: leg.mode,
@@ -202,6 +274,15 @@ export default function ExploreScreen() {
           onPress={() => setView('results')}
         >
           <Feather name="arrow-left" size={22} color="#333" />
+        </Pressable>
+
+        <Pressable
+          className="absolute right-4 flex-row items-center rounded-full bg-white px-4 py-3 shadow-lg"
+          style={{ top: insets.top + 8 }}
+          onPress={promptSaveTrip}
+        >
+          <Feather name="bookmark" size={18} color={BLUE} />
+          <Text className="ml-2 text-sm font-semibold text-[#09A6F3]">Guardar</Text>
         </Pressable>
 
         <View
@@ -383,33 +464,39 @@ export default function ExploreScreen() {
               </Pressable>
             </View>
 
-            {activeField && suggestions.length > 0 && (
+            {activeField && (historyItems.length > 0 || suggestions.length > 0) && (
               <View className="mb-2 rounded-xl border border-gray-200 bg-white">
-                <FlatList
-                  data={suggestions}
-                  keyExtractor={(_, i) => String(i)}
-                  keyboardShouldPersistTaps="handled"
-                  scrollEnabled={false}
-                  renderItem={({ item }) => (
-                    <Pressable
-                      className="border-b border-gray-100 px-4 py-3"
-                      onPress={() => pickSuggestion(item)}
-                    >
-                      <Text className="text-sm font-medium text-gray-800" numberOfLines={1}>
-                        {item.shortName}
-                      </Text>
-                      <Text className="text-xs text-gray-400" numberOfLines={1}>
-                        {item.displayName}
-                      </Text>
-                    </Pressable>
-                  )}
-                />
-              </View>
-            )}
-
-            {activeField && searching && (
-              <View className="mb-2 items-center py-1">
-                <ActivityIndicator size="small" color={BLUE} />
+                {historyItems.map((entry) => (
+                  <Pressable
+                    key={`h-${entry.id}`}
+                    className="flex-row items-center border-b border-gray-100 px-4 py-3"
+                    onPress={() => pickHistoryItem(entry)}
+                  >
+                    <Feather name="clock" size={14} color="#9CA3AF" />
+                    <Text className="ml-2 flex-1 text-sm text-gray-700" numberOfLines={1}>
+                      {entry.name}
+                    </Text>
+                  </Pressable>
+                ))}
+                {suggestions.map((item, i) => (
+                  <Pressable
+                    key={`s-${i}`}
+                    className="border-b border-gray-100 px-4 py-3"
+                    onPress={() => pickSuggestion(item)}
+                  >
+                    <Text className="text-sm font-medium text-gray-800" numberOfLines={1}>
+                      {item.shortName}
+                    </Text>
+                    <Text className="text-xs text-gray-400" numberOfLines={1}>
+                      {item.displayName}
+                    </Text>
+                  </Pressable>
+                ))}
+                {searching && (
+                  <View className="items-center py-3">
+                    <ActivityIndicator size="small" color={BLUE} />
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -542,33 +629,39 @@ export default function ExploreScreen() {
             </View>
           </View>
 
-          {activeField && suggestions.length > 0 && (
+          {activeField && (historyItems.length > 0 || suggestions.length > 0) && (
             <View className="mb-3 rounded-xl border border-gray-200 bg-white">
-              <FlatList
-                data={suggestions}
-                keyExtractor={(_, i) => String(i)}
-                keyboardShouldPersistTaps="handled"
-                scrollEnabled={false}
-                renderItem={({ item }) => (
-                  <Pressable
-                    className="border-b border-gray-100 px-4 py-3"
-                    onPress={() => pickSuggestion(item)}
-                  >
-                    <Text className="text-sm font-medium text-gray-800" numberOfLines={1}>
-                      {item.shortName}
-                    </Text>
-                    <Text className="text-xs text-gray-400" numberOfLines={1}>
-                      {item.displayName}
-                    </Text>
-                  </Pressable>
-                )}
-              />
-            </View>
-          )}
-
-          {activeField && searching && (
-            <View className="mb-3 items-center py-2">
-              <ActivityIndicator size="small" color={BLUE} />
+              {historyItems.map((entry) => (
+                <Pressable
+                  key={`h-${entry.id}`}
+                  className="flex-row items-center border-b border-gray-100 px-4 py-3"
+                  onPress={() => pickHistoryItem(entry)}
+                >
+                  <Feather name="clock" size={14} color="#9CA3AF" />
+                  <Text className="ml-2 flex-1 text-sm text-gray-700" numberOfLines={1}>
+                    {entry.name}
+                  </Text>
+                </Pressable>
+              ))}
+              {suggestions.map((item, i) => (
+                <Pressable
+                  key={`s-${i}`}
+                  className="border-b border-gray-100 px-4 py-3"
+                  onPress={() => pickSuggestion(item)}
+                >
+                  <Text className="text-sm font-medium text-gray-800" numberOfLines={1}>
+                    {item.shortName}
+                  </Text>
+                  <Text className="text-xs text-gray-400" numberOfLines={1}>
+                    {item.displayName}
+                  </Text>
+                </Pressable>
+              ))}
+              {searching && (
+                <View className="items-center py-3">
+                  <ActivityIndicator size="small" color={BLUE} />
+                </View>
+              )}
             </View>
           )}
 

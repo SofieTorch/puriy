@@ -15,6 +15,20 @@
       "when": 1775609065818,
       "tag": "0001_loose_thunderbird",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1775820466163,
+      "tag": "0002_magenta_thunderbolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1775820803552,
+      "tag": "0003_majestic_sway",
+      "breakpoints": true
     }
   ]
 }

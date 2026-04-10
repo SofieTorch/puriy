@@ -78,3 +78,31 @@ export const preferences = sqliteTable('preferences', {
 });
 
 export type Preference = typeof preferences.$inferSelect;
+
+/** Saved trips (favorites). */
+export const savedTrips = sqliteTable('saved_trips', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  originName: text('origin_name').notNull(),
+  destName: text('dest_name').notNull(),
+  originLon: real('origin_lon').notNull(),
+  originLat: real('origin_lat').notNull(),
+  destLon: real('dest_lon').notNull(),
+  destLat: real('dest_lat').notNull(),
+  type: text('type', { enum: ['one_time', 'commute'] }).notNull(),
+  routeJson: text('route_json').notNull(), // serialized DirectionsResponse
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export type SavedTrip = typeof savedTrips.$inferSelect;
+export type NewSavedTrip = typeof savedTrips.$inferInsert;
+
+/** Recent search locations for autocomplete history. */
+export const searchHistory = sqliteTable('search_history', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  lon: real('lon').notNull(),
+  lat: real('lat').notNull(),
+  usedAt: text('used_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export type SearchHistoryEntry = typeof searchHistory.$inferSelect;
