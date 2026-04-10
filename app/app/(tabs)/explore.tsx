@@ -18,7 +18,7 @@ import Header from '@/components/header';
 import PreferencesSheet from '@/components/preferences-sheet';
 import RouteMap, { Leg } from '@/components/route-map';
 import api, { DirectionsResponse } from '@/services/api';
-import { GeocodingResult, searchAddress } from '@/services/geocoding';
+import { GeocodingResult, reverseGeocode, searchAddress } from '@/services/geocoding';
 import { includePendingLines, includePendingRoutes } from '@/services/preferences';
 
 const BLUE = '#09A6F3';
@@ -48,6 +48,9 @@ export default function ExploreScreen() {
 
   const [loading, setLoading] = useState(false);
   const [directions, setDirections] = useState<DirectionsResponse | null>(null);
+
+  // Street names for bus leg board/alight points: legIndex → {board, alight}
+  const [legNames, setLegNames] = useState<Record<number, { board: string; alight: string }>>({});
 
   const prefsRef = useRef<BottomSheet>(null);
   const stepsRef = useRef<BottomSheet>(null);
@@ -130,6 +133,23 @@ export default function ExploreScreen() {
       }
       setDirections(result);
       stepsRef.current?.snapToIndex(0);
+
+      // Resolve street names for bus legs in background
+      const names: Record<number, { board: string; alight: string }> = {};
+      setLegNames({});
+      for (let i = 0; i < result.legs.length; i++) {
+        const leg = result.legs[i];
+        if (leg.mode === 'bus' && leg.geometry.length >= 2) {
+          const start = leg.geometry[0];
+          const end = leg.geometry[leg.geometry.length - 1];
+          const [board, alight] = await Promise.all([
+            reverseGeocode(start[0], start[1]),
+            reverseGeocode(end[0], end[1]),
+          ]);
+          names[i] = { board, alight };
+          setLegNames({ ...names });
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Error desconocido';
       Alert.alert('Error', `No se pudo obtener direcciones: ${message}`);
@@ -187,37 +207,100 @@ export default function ExploreScreen() {
           backgroundStyle={{ borderRadius: 24 }}
           handleIndicatorStyle={{ backgroundColor: '#D1D5DB', width: 40 }}
         >
-          <BottomSheetScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
-            {directions.legs.map((leg, index) => (
-              <View
-                key={index}
-                className="flex-row items-center rounded-2xl bg-[#F3F4F6] px-4 py-4"
-              >
-                <View
-                  className={`mr-3 h-10 w-10 items-center justify-center rounded-full ${leg.mode === 'bus' ? 'bg-[#DDF6FF]' : 'bg-gray-200'}`}
-                >
-                  <Text className="text-lg">
-                    {leg.mode === 'walk' ? '\u{1F6B6}' : '\u{1F68C}'}
-                  </Text>
+          <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32 }}>
+            {directions.legs.map((leg, index) => {
+              const isLast = index === directions.legs.length - 1;
+
+              if (leg.mode === 'walk') {
+                return (
+                  <View key={`w-${index}`} className="flex-row">
+                    {/* Timeline */}
+                    <View className="mr-4 w-8 items-center">
+                      <View className="h-8 w-8 items-center justify-center rounded-full bg-gray-200">
+                        <Feather name="navigation" size={14} color="#6B7280" />
+                      </View>
+                      {!isLast && <View className="w-0.5 flex-1 bg-gray-200" />}
+                    </View>
+                    {/* Content */}
+                    <View className="flex-1 pb-5">
+                      <Text className="text-base font-semibold text-gray-800">
+                        Caminar
+                      </Text>
+                      <Text className="text-sm text-gray-400">
+                        {formatDistance(leg.distance_m)} · {formatDuration(leg.duration_s)}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              }
+
+              // Bus leg → two steps: board + ride/alight
+              const names = legNames[index];
+              return (
+                <View key={`b-${index}`}>
+                  {/* Board step */}
+                  <View className="flex-row">
+                    <View className="mr-4 w-8 items-center">
+                      <View className="h-8 w-8 items-center justify-center rounded-full bg-[#DDF6FF]">
+                        <Feather name="log-in" size={14} color={BLUE} />
+                      </View>
+                      <View className="w-0.5 flex-1 bg-[#09A6F3]" />
+                    </View>
+                    <View className="flex-1 pb-2">
+                      <Text className="text-base font-semibold text-[#09A6F3]">
+                        Tomar Línea {leg.line_name ?? '?'}
+                      </Text>
+                      <Text className="text-sm text-gray-500">
+                        {names ? `en ${names.board}` : 'Cargando ubicación...'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Ride info (between board and alight) */}
+                  <View className="flex-row">
+                    <View className="mr-4 w-8 items-center">
+                      <View className="w-0.5 flex-1 bg-[#09A6F3]" />
+                    </View>
+                    <View className="flex-1 py-1 pb-2">
+                      <Text className="text-xs text-gray-400">
+                        {formatDistance(leg.distance_m)} · {formatDuration(leg.duration_s)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Alight step */}
+                  <View className="flex-row">
+                    <View className="mr-4 w-8 items-center">
+                      <View className="h-8 w-8 items-center justify-center rounded-full bg-[#DDF6FF]">
+                        <Feather name="log-out" size={14} color={BLUE} />
+                      </View>
+                      {!isLast && <View className="w-0.5 flex-1 bg-gray-200" />}
+                    </View>
+                    <View className="flex-1 pb-5">
+                      <Text className="text-base font-semibold text-gray-800">
+                        Bajar
+                      </Text>
+                      <Text className="text-sm text-gray-500">
+                        {names ? `en ${names.alight}` : 'Cargando ubicación...'}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-                <View className="flex-1">
-                  <Text className="text-base font-semibold text-gray-800">
-                    {leg.mode === 'walk'
-                      ? `Caminar ${formatDistance(leg.distance_m)}`
-                      : `Línea ${leg.line_name ?? 'Desconocida'}`}
-                  </Text>
-                  <Text className="text-sm text-gray-500">
-                    {leg.mode === 'bus' ? `${formatDistance(leg.distance_m)} · ` : ''}
-                    {formatDuration(leg.duration_s)}
-                  </Text>
+              );
+            })}
+
+            {/* Arrival */}
+            <View className="flex-row">
+              <View className="mr-4 w-8 items-center">
+                <View className="h-8 w-8 items-center justify-center rounded-full bg-red-100">
+                  <Feather name="map-pin" size={14} color="#EF4444" />
                 </View>
-                <Feather
-                  name={leg.mode === 'walk' ? 'navigation' : 'truck'}
-                  size={16}
-                  color="#9CA3AF"
-                />
               </View>
-            ))}
+              <View className="flex-1">
+                <Text className="text-base font-semibold text-gray-800">Llegaste</Text>
+                <Text className="text-sm text-gray-400">{destText}</Text>
+              </View>
+            </View>
           </BottomSheetScrollView>
         </BottomSheet>
       </View>
@@ -240,19 +323,33 @@ export default function ExploreScreen() {
             </Pressable>
           </View>
 
-          <View className="mb-3">
-            <View className="h-14 flex-row items-center rounded-xl border-2 border-[#09A6F3] bg-white px-3">
-              <Feather name="crosshair" size={22} color={BLUE} />
-              <TextInput
-                className="ml-2 flex-1 text-base"
-                placeholder="Punto de partida"
-                placeholderTextColor={BLUE}
-                value={originText}
-                onChangeText={handleOriginChange}
-                onFocus={() => setActiveField('origin')}
-              />
-              {originCoords && <Feather name="check-circle" size={18} color="#22C55E" />}
+          <View className="mb-3 flex-row items-center gap-2">
+            <View className="flex-1">
+              <View className="h-14 flex-row items-center rounded-xl border-2 border-[#09A6F3] bg-white px-3">
+                <Feather name="crosshair" size={22} color={BLUE} />
+                <TextInput
+                  className="ml-2 flex-1 text-base"
+                  placeholder="Punto de partida"
+                  placeholderTextColor={BLUE}
+                  value={originText}
+                  onChangeText={handleOriginChange}
+                  onFocus={() => setActiveField('origin')}
+                />
+                {originCoords && <Feather name="check-circle" size={18} color="#22C55E" />}
+              </View>
             </View>
+            <Pressable
+              className="h-14 w-10 items-center justify-center"
+              onPress={() => {
+                setOriginText(destText);
+                setDestText(originText);
+                setOriginCoords(destCoords);
+                setDestCoords(originCoords);
+                setDirections(null);
+              }}
+            >
+              <Feather name="repeat" size={18} color={BLUE} />
+            </Pressable>
           </View>
 
           <View className="mb-3">

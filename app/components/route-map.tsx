@@ -87,16 +87,41 @@ function buildMapHtml(legs: Leg[]): string {
 <style>
   body { margin: 0; padding: 0; }
   #map { width: 100%; height: 100vh; }
+  #recenter {
+    position: fixed;
+    bottom: 40%;
+    right: 16px;
+    z-index: 9999;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: white;
+    border: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  #recenter:active { background: #f3f4f6; }
+  #recenter svg { width: 20px; height: 20px; }
 </style>
 </head>
 <body>
 <div id="map"></div>
+<button id="recenter" onclick="recenter()">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#09A6F3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+  </svg>
+</button>
 <script>
+  var bounds = ${hasCoords ? `[[${minLat},${minLng}],[${maxLat},${maxLng}]]` : 'null'};
   var map = L.map('map', {zoomControl: false, attributionControl: false}).setView([${centerLat}, ${centerLng}], 13);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19}).addTo(map);
   ${polylines}
   ${markers.join('\n  ')}
-  ${boundsJs}
+  if (bounds) map.fitBounds(bounds, {padding: [30,30]});
+  function recenter() { if (bounds) map.fitBounds(bounds, {padding: [30,30]}); }
 </script>
 </body>
 </html>`;

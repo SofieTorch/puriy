@@ -69,6 +69,61 @@ function buildDisplayName(p: PhotonProperties): string {
   return parts.length > 0 ? parts.join(', ') : 'Ubicación';
 }
 
+/**
+ * Reverse geocode a coordinate to get a street/intersection name.
+ * Tries to find two nearby streets to form "Calle X y Calle Y".
+ */
+export async function reverseGeocode(
+  lon: number,
+  lat: number
+): Promise<string> {
+  try {
+    const resp = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=18&addressdetails=1`,
+      { headers: { 'User-Agent': 'CbbaMobility/1.0 (transit-app)' } }
+    );
+    if (!resp.ok) return coordsLabel(lon, lat);
+
+    const data: NominatimReverseResult = await resp.json();
+    const road = data.address?.road;
+    if (!road) return data.display_name?.split(',')[0] ?? coordsLabel(lon, lat);
+
+    // Try to find a second street nearby for the intersection
+    const offset = 0.0003; // ~30m
+    const resp2 = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat + offset}&lon=${lon + offset}&format=json&zoom=18&addressdetails=1`,
+      { headers: { 'User-Agent': 'CbbaMobility/1.0 (transit-app)' } }
+    );
+
+    if (resp2.ok) {
+      const data2: NominatimReverseResult = await resp2.json();
+      const road2 = data2.address?.road;
+      if (road2 && road2 !== road) {
+        return `${road} y ${road2}`;
+      }
+    }
+
+    const neighbourhood = data.address?.neighbourhood ?? data.address?.suburb;
+    return neighbourhood ? `${road}, ${neighbourhood}` : road;
+  } catch {
+    return coordsLabel(lon, lat);
+  }
+}
+
+function coordsLabel(lon: number, lat: number): string {
+  return `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+}
+
+interface NominatimReverseResult {
+  display_name?: string;
+  address?: {
+    road?: string;
+    neighbourhood?: string;
+    suburb?: string;
+    [key: string]: string | undefined;
+  };
+}
+
 interface PhotonProperties {
   name?: string;
   street?: string;
