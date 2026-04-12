@@ -1,6 +1,8 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from '@expo/vector-icons/Feather';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigation } from '@react-navigation/native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,9 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import Header from '@/components/header';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PreferencesSheet from '@/components/preferences-sheet';
 import RouteMap, { Leg, LineRoute } from '@/components/route-map';
 import api, { DirectionsLeg, DirectionsResponse, NearbyLineWithRoute } from '@/services/api';
@@ -49,7 +49,9 @@ type ActiveField = 'origin' | 'destination' | null;
 type ViewState = 'search' | 'results' | 'detail' | 'line_detail';
 
 export default function ExploreScreen() {
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
 
   // Location
   const [userLoc, setUserLoc] = useState<{ lon: number; lat: number } | null>(null);
@@ -82,6 +84,11 @@ export default function ExploreScreen() {
   // View state
   const [view, setView] = useState<ViewState>('search');
 
+  const showHeader = view === 'search' || view === 'results';
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: showHeader });
+  }, [navigation, showHeader]);
+
   const prefsRef = useRef<BottomSheet>(null);
   const stepsRef = useRef<BottomSheet>(null);
   const stepsSnapPoints = useMemo(() => ['30%', '70%'], []);
@@ -92,29 +99,44 @@ export default function ExploreScreen() {
   const [userLon, setUserLon] = useState<number | null>(null);
   const [userLat, setUserLat] = useState<number | null>(null);
 
+  const [locationFailed, setLocationFailed] = useState(false);
+  const [locationLoading, setLocationLoading] = useState(true);
+
+  const fetchLocation = useCallback(async () => {
+    setLocationLoading(true);
+    setLocationFailed(false);
+    const loc = await getCurrentLocation();
+    if (loc) {
+      setUserLoc(loc);
+      setUserLon(loc.lon);
+      setUserLat(loc.lat);
+      if (usingCurrentLoc) setOriginCoords([loc.lon, loc.lat]);
+      setLocationFailed(false);
+    } else {
+      setLocationFailed(true);
+    }
+    setLocationLoading(false);
+  }, [usingCurrentLoc]);
+
   // Watch location for real-time updates
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
 
     (async () => {
-      const loc = await getCurrentLocation();
-      if (loc) {
-        setUserLoc(loc);
-        setUserLon(loc.lon);
-        setUserLat(loc.lat);
-        if (usingCurrentLoc) setOriginCoords([loc.lon, loc.lat]);
-      }
+      await fetchLocation();
 
       unsubscribe = await watchLocation((newLoc) => {
         setUserLoc(newLoc);
         setUserLon(newLoc.lon);
         setUserLat(newLoc.lat);
+        setLocationFailed(false);
+        setLocationLoading(false);
         if (usingCurrentLoc) setOriginCoords([newLoc.lon, newLoc.lat]);
       });
     })();
 
     return () => { unsubscribe?.(); };
-  }, [usingCurrentLoc]);
+  }, [usingCurrentLoc, fetchLocation]);
 
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
@@ -276,7 +298,7 @@ export default function ExploreScreen() {
       ? { coordinates: selectedLine.route_geojson.coordinates, name: selectedLine.line_name }
       : null;
     return (
-      <View className="flex-1">
+      <View accessible={false} className="flex-1">
         <RouteMap
           lineRoute={lr}
           detourPath={selectedLine.detour_alert?.detour_path ?? null}
@@ -314,12 +336,12 @@ export default function ExploreScreen() {
   // ================================================================
   if (view === 'detail' && selectedRoute) {
     return (
-      <View className="flex-1">
+      <View accessible={false} className="flex-1">
         <RouteMap legs={mapLegs} currentLocation={userLoc} style={{ flex: 1 }} />
         <Pressable className="absolute left-4 rounded-full bg-white p-3 shadow-lg" style={{ top: insets.top + 8 }} onPress={() => setView('results')}>
           <Feather name="arrow-left" size={22} color="#333" />
         </Pressable>
-        <Pressable className="absolute right-4 flex-row items-center rounded-full bg-white px-4 py-3 shadow-lg" style={{ top: insets.top + 8 }} onPress={promptSaveTrip}>
+        <Pressable className="absolute right-4 flex-row items-center rounded-full bg-white px-4 py-3 shadow-lg" style={{ top: insets.top + 8 }} testID="explore-save-btn" onPress={promptSaveTrip}>
           <Feather name="bookmark" size={18} color={BLUE} />
           <Text className="ml-2 text-sm font-semibold text-[#09A6F3]">Guardar</Text>
         </Pressable>
@@ -373,10 +395,8 @@ export default function ExploreScreen() {
   // ================================================================
   if (view === 'results' && routes.length > 0) {
     return (
-      <SafeAreaView className="flex-1 bg-[#09A6F3]">
         <View className="flex-1 bg-white">
-          <Header title="Explorar" />
-          <View className="px-5 pt-4">
+          <View accessible={false} className="px-5 pt-4">
             <View className="mb-2 flex-row items-center gap-2">
               <Pressable className="p-1" onPress={() => setView('search')}><Feather name="arrow-left" size={22} color="#333" /></Pressable>
               <View className="flex-1">
@@ -399,14 +419,14 @@ export default function ExploreScreen() {
                   {destCoords && <Feather name="check-circle" size={14} color="#22C55E" />}
                 </View>
               </View>
-              <Pressable className="rounded-lg bg-[#09A6F3] p-2" onPress={handleSearch} disabled={!canSearch || loading}>
+              <Pressable className="rounded-lg bg-[#09A6F3] p-2" testID="explore-search-btn" onPress={handleSearch} disabled={!canSearch || loading}>
                 {loading ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="search" size={16} color="#fff" />}
               </Pressable>
             </View>
             {autocompleteDropdown}
           </View>
-          <ScrollView className="flex-1 px-5">
-            <Text className="mb-3 text-lg font-semibold text-gray-800">Rutas disponibles</Text>
+          <ScrollView accessible={false} className="flex-1 px-5" contentContainerStyle={{ paddingBottom: tabBarHeight + 12 }}>
+            <Text className="mb-3 text-lg font-semibold text-gray-800" testID="explore-results-title">Rutas disponibles</Text>
             {routes.map((route, idx) => {
               const s = routeSummary(route.legs);
               return (
@@ -436,7 +456,6 @@ export default function ExploreScreen() {
             })}
           </ScrollView>
         </View>
-      </SafeAreaView>
     );
   }
 
@@ -444,16 +463,17 @@ export default function ExploreScreen() {
   // SEARCH VIEW
   // ================================================================
   return (
-    <SafeAreaView className="flex-1 bg-[#09A6F3]">
-      <Pressable className="flex-1 bg-white" onPress={() => { Keyboard.dismiss(); setActiveField(null); }}>
-        <Header title="Explorar" />
+      <View className="flex-1 bg-white">
         <ScrollView
+          accessible={false}
           className="flex-1 px-5 pt-6"
+          contentContainerStyle={{ paddingBottom: tabBarHeight + 12 }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
+         
         >
           <View className="mb-4 flex-row justify-end">
-            <Pressable className="h-11 w-11 items-center justify-center rounded-xl bg-[#DDF6FF]" onPress={() => prefsRef.current?.expand()}>
+            <Pressable className="h-11 w-11 items-center justify-center rounded-xl bg-[#DDF6FF]" testID="explore-prefs-gear" onPress={() => prefsRef.current?.expand()}>
               <Feather name="settings" size={20} color={BLUE} />
             </Pressable>
           </View>
@@ -464,6 +484,7 @@ export default function ExploreScreen() {
                 <Feather name={usingCurrentLoc ? 'navigation' : 'crosshair'} size={22} color={BLUE} />
                 <TextInput
                   className="ml-2 flex-1 text-base"
+                  testID="explore-origin-input"
                   placeholder="Punto de partida"
                   placeholderTextColor={BLUE}
                   value={originText}
@@ -473,7 +494,7 @@ export default function ExploreScreen() {
                 {originCoords && <Feather name={usingCurrentLoc ? 'navigation' : 'check-circle'} size={18} color="#22C55E" />}
               </View>
             </View>
-            <Pressable className="h-14 w-10 items-center justify-center" onPress={() => { setOriginText(destText); setDestText(originText); setOriginCoords(destCoords); setDestCoords(originCoords); setUsingCurrentLoc(false); setRoutes([]); }}>
+            <Pressable testID="swap-button" className="h-14 w-10 items-center justify-center" onPress={() => { setOriginText(destText); setDestText(originText); setOriginCoords(destCoords); setDestCoords(originCoords); setUsingCurrentLoc(false); setRoutes([]); }}>
               <Feather name="repeat" size={18} color={BLUE} />
             </Pressable>
           </View>
@@ -481,7 +502,7 @@ export default function ExploreScreen() {
           <View className="mb-3">
             <View className="h-14 flex-row items-center rounded-xl border-2 border-[#09A6F3] bg-white px-3">
               <Feather name="target" size={22} color={BLUE} />
-              <TextInput className="ml-2 flex-1 text-base" placeholder="Destino" placeholderTextColor={BLUE} value={destText} onChangeText={handleDestChange} onFocus={() => setActiveField('destination')} />
+              <TextInput testID="explore-dest-input" className="ml-2 flex-1 text-base" placeholder="Destino" placeholderTextColor={BLUE} value={destText} onChangeText={handleDestChange} onFocus={() => setActiveField('destination')} />
               {destCoords && <Feather name="check-circle" size={18} color="#22C55E" />}
             </View>
           </View>
@@ -490,15 +511,16 @@ export default function ExploreScreen() {
 
           <Pressable
             className={`mb-5 h-14 items-center justify-center rounded-xl ${canSearch ? 'bg-[#09A6F3]' : 'bg-[#B0E2FA]'}`}
-            onPress={handleSearch}
+            testID="explore-search-btn" onPress={handleSearch}
             disabled={!canSearch || loading}
           >
             {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-lg font-bold text-white">Buscar ruta</Text>}
           </Pressable>
 
           {/* Nearby lines */}
-          <View className="mb-6">
+          <View accessible={false} className="mb-6">
             <Pressable
+              testID="explore-nearby-title"
               className="mb-3 flex-row items-center justify-between"
               onPress={() => setRadiusExpanded(!radiusExpanded)}
             >
@@ -527,12 +549,23 @@ export default function ExploreScreen() {
                 </View>
               </View>
             )}
-            {!userLoc || nearbyLoading ? (
+            {locationLoading || nearbyLoading ? (
               <View className="items-center py-4">
                 <ActivityIndicator size="small" color={BLUE} />
                 <Text className="mt-2 text-sm text-gray-400">
-                  {!userLoc ? 'Obteniendo ubicación...' : 'Buscando líneas...'}
+                  {locationLoading ? 'Obteniendo ubicación...' : 'Buscando líneas...'}
                 </Text>
+              </View>
+            ) : locationFailed ? (
+              <View className="items-center py-4">
+                <Feather name="map-pin" size={24} color="#D1D5DB" />
+                <Text className="mt-2 text-sm text-gray-400">No se pudo obtener tu ubicación.</Text>
+                <Pressable
+                  className="mt-3 rounded-xl bg-[#09A6F3] px-6 py-2.5"
+                  onPress={fetchLocation}
+                >
+                  <Text className="text-sm font-semibold text-white">Reintentar</Text>
+                </Pressable>
               </View>
             ) : nearbyError ? (
               <View className="rounded-xl bg-red-50 px-4 py-3">
@@ -544,7 +577,7 @@ export default function ExploreScreen() {
                 {hasPendingNearby && (
                   <Pressable
                     className="mt-2 rounded-xl bg-amber-50 px-4 py-3"
-                    onPress={() => prefsRef.current?.expand()}
+                    testID="explore-prefs-gear" onPress={() => prefsRef.current?.expand()}
                   >
                     <Text className="text-sm text-amber-700">
                       Hay líneas pendientes cerca. Toca aquí para activar "Incluir líneas pendientes" en preferencias.
@@ -587,8 +620,6 @@ export default function ExploreScreen() {
             )}
           </View>
         </ScrollView>
-      </Pressable>
-      <PreferencesSheet ref={prefsRef} />
-    </SafeAreaView>
+      </View>
   );
 }

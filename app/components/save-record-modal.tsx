@@ -160,10 +160,10 @@ export default function SaveRecordModal({
           <View className="h-4/5 rounded-t-3xl bg-white pt-3">
             <View className="mb-4 h-1 w-10 self-center rounded bg-gray-300" />
 
-            <ScrollView className="flex-1 px-6">
+            <ScrollView accessible={false} className="flex-1 px-6">
               <View className="mb-3 flex-row items-center">
                 <Feather name="alert-triangle" size={22} color="#F97316" />
-                <Text className="ml-2 text-[20px] font-bold text-orange-600">Confirmar desvío</Text>
+                <Text className="ml-2 text-[20px] font-bold text-orange-600" testID="modal-detour-confirm-title">Confirmar desvío</Text>
               </View>
 
               <View className="mb-4 rounded-xl bg-orange-50 p-3">
@@ -228,9 +228,9 @@ export default function SaveRecordModal({
         <View className="h-4/5 rounded-t-3xl bg-white pt-3">
           <View className="mb-4 h-1 w-10 self-center rounded bg-gray-300" />
 
-          <ScrollView className="flex-1 px-6" keyboardShouldPersistTaps="handled">
+          <ScrollView accessible={false} className="flex-1 px-6" keyboardShouldPersistTaps="handled">
             {/* Header */}
-            <Text className="text-[20px] font-bold text-gray-900">Guardar recorrido</Text>
+            <Text className="text-[20px] font-bold text-gray-900" testID="modal-title">Guardar recorrido</Text>
             <Text className="mt-1 mb-4 text-sm text-gray-500">¿En qué línea viajaste?</Text>
 
             {/* Stats */}
@@ -249,6 +249,7 @@ export default function SaveRecordModal({
             {/* Line dropdown selector */}
             <Text className="mb-2 text-[13px] font-medium text-gray-500">Línea</Text>
             <Pressable
+              testID="modal-line-dropdown"
               className="mb-1 flex-row items-center justify-between rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3.5"
               onPress={() => setDropdownOpen(!dropdownOpen)}
             >
@@ -337,7 +338,7 @@ export default function SaveRecordModal({
                 <View className="flex-row items-center justify-between">
                   <View className="flex-row items-center">
                     <Feather name="alert-triangle" size={16} color="#F97316" />
-                    <Text className="ml-2 text-base font-medium text-gray-700">Es un desvío</Text>
+                    <Text className="ml-2 text-base font-medium text-gray-700" testID="modal-detour-label">Es un desvío</Text>
                   </View>
                   <Switch
                     value={isDetour}
@@ -383,9 +384,10 @@ export default function SaveRecordModal({
           {/* Action buttons */}
           <View className="flex-row gap-3 border-t border-gray-100 px-6 py-4">
             <TouchableOpacity className="flex-1 items-center rounded-xl bg-gray-100 py-3.5" onPress={onDiscard}>
-              <Text className="text-base font-semibold text-gray-700">Descartar</Text>
+              <Text className="text-base font-semibold text-gray-700" testID="modal-discard-btn">Descartar</Text>
             </TouchableOpacity>
             <TouchableOpacity
+              testID="modal-save-btn"
               className={`flex-1 items-center rounded-xl py-3.5 ${!canSave ? 'bg-[#09A6F3]/40' : isDetour ? 'bg-orange-500' : 'bg-[#09A6F3]'}`}
               onPress={handleSavePress}
               disabled={!canSave || isSaving}

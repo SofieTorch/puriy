@@ -1,4 +1,4 @@
-import Header from '@/components/header';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { api, NearbyLine, PendingLine, VoteableSegment } from '@/services/api';
 import { getDeviceId } from '@/services/device-id';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -12,10 +12,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function ContributeScreen() {
-  const insets = useSafeAreaInsets();
   const [pending, setPending] = useState<PendingLine[]>([]);
   const [nearbyLines, setNearbyLines] = useState<NearbyLine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +22,7 @@ export default function ContributeScreen() {
   const [segment, setSegment] = useState<VoteableSegment | null>(null);
 
   const deviceId = getDeviceId();
+  const tabBarHeight = useBottomTabBarHeight();
 
   const fetchPending = useCallback(async () => {
     try {
@@ -90,11 +89,11 @@ export default function ContributeScreen() {
   };
 
   return (
-    <View className="flex-1" style={{ paddingTop: insets.top }}>
-      <Header title="Contribuir" />
-
+    <View accessible={false} className="flex-1">
       <ScrollView
+        accessible={false}
         className="flex-1 px-4"
+        contentContainerStyle={{ paddingBottom: tabBarHeight + 12 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }

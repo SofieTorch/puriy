@@ -22,7 +22,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import LottieView from 'lottie-react-native';
 
 import { SwipeSwitch } from '@/components/swipe-switch';
@@ -41,7 +40,6 @@ import {
 import { syncPendingRecordings } from '@/services/sync';
 import { setRecordingStatus } from '@/services/recording-status';
 import { styles } from '@/styles/record';
-import Header from '@/components/header';
 import SaveRecordModal from '@/components/save-record-modal';
 
 const SENSOR_INTERVAL = 100;
@@ -304,10 +302,7 @@ export default function RecordScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: '#09A6F3' }]}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <Header title="Trayecto" />
-
         <View style={[styles.content, { paddingBottom: tabBarHeight + 12 }]}>
 
         {/* Recording Status */}
@@ -391,7 +386,6 @@ export default function RecordScreen() {
           onConfirm={handleConfirmLine}
         />
       </View>
-    </SafeAreaView>
   );
 }
 

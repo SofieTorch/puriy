@@ -39,16 +39,20 @@ const PreferencesSheet = forwardRef<BottomSheet>((_, ref) => {
       index={-1}
       snapPoints={snapPoints}
       enablePanDownToClose
+      enableContentPanningGesture={false}
       backgroundStyle={{ borderRadius: 24 }}
       handleIndicatorStyle={{ backgroundColor: '#D1D5DB', width: 40 }}
+      containerStyle={{ zIndex: 1000 }}
     >
-      <BottomSheetView className="flex-1 px-6 pt-2">
-        <Text className="mb-5 text-lg font-semibold text-gray-800">
-          Preferencias
-        </Text>
+      <BottomSheetView testID="prefs-sheet" className="flex-1 px-6 pt-2">
+        <View testID="prefs-title">
+          <Text className="mb-5 text-lg font-semibold text-gray-800">
+            Preferencias
+          </Text>
+        </View>
 
         <View className="mb-4 flex-row items-center justify-between">
-          <View className="flex-1 pr-4">
+          <View testID="prefs-pending-lines" className="flex-1 pr-4">
             <Text className="text-base text-gray-700">
               Incluir líneas pendientes
             </Text>
@@ -57,6 +61,7 @@ const PreferencesSheet = forwardRef<BottomSheet>((_, ref) => {
             </Text>
           </View>
           <Switch
+            testID="prefs-pending-lines-switch"
             value={pendingLines}
             onValueChange={togglePendingLines}
             trackColor={{ false: '#D1D5DB', true: BLUE }}
@@ -74,6 +79,7 @@ const PreferencesSheet = forwardRef<BottomSheet>((_, ref) => {
             </Text>
           </View>
           <Switch
+            testID="prefs-pending-routes-switch"
             value={pendingRoutes}
             onValueChange={togglePendingRoutes}
             trackColor={{ false: '#D1D5DB', true: BLUE }}

@@ -1,14 +1,13 @@
 /**
  * API client for the Open Transit backend.
+ * API_BASE_URL is configurable via environment variable (for E2E tests):
+ *   API_BASE_URL=http://localhost:8001 npx expo start
  */
 
-// Update this to your server URL
-// const API_BASE_URL = __DEV__ 
-//   ? 'http://localhost:8000'  // Development
-//   : 'https://api.yourdomain.com';  // Production
+import Constants from 'expo-constants';
 
-// const API_BASE_URL = 'https://movility-cbba-ndkpt.ondigitalocean.app';
-export const API_BASE_URL = 'http://10.248.7.135:8000';
+export const API_BASE_URL =
+  Constants.expoConfig?.extra?.apiBaseUrl ?? 'http://10.248.7.135:8000';
 const SERVER_CHECK_TIMEOUT_MS = 3000;
 
 /** True when the backend host responds (any HTTP status). */

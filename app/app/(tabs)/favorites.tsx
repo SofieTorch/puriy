@@ -1,11 +1,10 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from '@expo/vector-icons/Feather';
-import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import Header from '@/components/header';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import RouteMap, { Leg } from '@/components/route-map';
 import { SavedTrip } from '@/db/schema';
 import { DirectionsResponse } from '@/services/api';
@@ -33,7 +32,9 @@ function busLines(route: DirectionsResponse): string[] {
 }
 
 export default function FavoritesScreen() {
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const [trips, setTrips] = useState<SavedTrip[]>([]);
   const [selected, setSelected] = useState<SavedTrip | null>(null);
   const [userLoc, setUserLoc] = useState<{ lon: number; lat: number } | null>(null);
@@ -43,6 +44,10 @@ export default function FavoritesScreen() {
   const stepsSnapPoints = useMemo(() => ['30%', '70%'], []);
 
   useFocusEffect(useCallback(() => { setTrips(getTodayTrips()); }, []));
+
+  useLayoutEffect(() => {
+    navigation.setOptions({ headerShown: !selected });
+  }, [navigation, selected]);
 
   useEffect(() => { getCurrentLocation().then(setUserLoc); }, []);
 
@@ -137,27 +142,25 @@ export default function FavoritesScreen() {
   const oneTime = trips.filter(t => t.type === 'one_time');
 
   return (
-    <SafeAreaView className="flex-1 bg-[#09A6F3]">
       <View className="flex-1 bg-white">
-        <Header title="Favoritos" />
-        <ScrollView className="flex-1 px-5 pt-6">
+        <ScrollView accessible={false} className="flex-1 px-5 pt-6" contentContainerStyle={{ paddingBottom: tabBarHeight + 12 }}>
           {trips.length === 0 ? (
             <View className="items-center gap-3 py-20">
               <Feather name="bookmark" size={48} color="#D1D5DB" />
-              <Text className="text-center text-base text-gray-400">No tienes rutas guardadas.</Text>
+              <Text className="text-center text-base text-gray-400" testID="favorites-empty">No tienes rutas guardadas.</Text>
               <Text className="text-center text-sm text-gray-400">Busca una ruta y toca "Guardar" para verla aquí.</Text>
             </View>
           ) : (
             <>
               {commutes.length > 0 && (
                 <>
-                  <Text className="mb-3 text-lg font-semibold text-gray-800">Recurrentes</Text>
+                  <Text className="mb-3 text-lg font-semibold text-gray-800" testID="favorites-commute-title">Recurrentes</Text>
                   {commutes.map(trip => <TripCard key={trip.id} trip={trip} onPress={selectTrip} onDelete={handleDelete} />)}
                 </>
               )}
               {oneTime.length > 0 && (
                 <>
-                  <Text className="mb-3 mt-4 text-lg font-semibold text-gray-800">Para hoy</Text>
+                  <Text className="mb-3 mt-4 text-lg font-semibold text-gray-800" testID="favorites-today-title">Para hoy</Text>
                   {oneTime.map(trip => <TripCard key={trip.id} trip={trip} onPress={selectTrip} onDelete={handleDelete} />)}
                 </>
               )}
@@ -165,7 +168,6 @@ export default function FavoritesScreen() {
           )}
         </ScrollView>
       </View>
-    </SafeAreaView>
   );
 }
 

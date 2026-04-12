@@ -17,10 +17,15 @@ export async function getCurrentLocation(): Promise<{ lon: number; lat: number }
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return null;
 
-    const position = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Highest,
-      mayShowUserSettingsDialog: true,
-    });
+    // Timeout after 5 seconds — prevents hanging on simulators with no location set
+    const position = await Promise.race([
+      Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Location timeout')), 5000)
+      ),
+    ]);
     cachedLocation = { lon: position.coords.longitude, lat: position.coords.latitude };
     return cachedLocation;
   } catch {
