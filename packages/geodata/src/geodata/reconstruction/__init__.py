@@ -1,6 +1,7 @@
 """Notebook-facing route reconstruction package."""
 
 from .base import (
+    MatchedEdgeRef,
     ReconstructionPoint,
     ReconstructionResult,
     ReconstructionStrategy,
@@ -20,6 +21,7 @@ __all__ = [
     "DBSCANConsensusPreviewStrategy",
     "EdgeGraphConsensusPreviewStrategy",
     "KDEDensityRidgePreviewStrategy",
+    "MatchedEdgeRef",
     "OverlapJoinPreviewStrategy",
     "ReconstructionPoint",
     "ReconstructionResult",

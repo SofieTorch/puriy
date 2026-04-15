@@ -12,7 +12,7 @@ from database.models.detour import Detour  # noqa: F401
 from database.models.line import Line, LineVote  # noqa: F401
 from database.models.trip import TripSession, TripSessionPoint, TripSensorReading  # noqa: F401
 from database.models.route import (  # noqa: F401
-    Trip, TripPoint, Route, RouteEdge, EdgeVote, TravelTimeSample,
+    Trip, TripMatchedEdge, TripPoint, Route, RouteEdge, EdgeVote, TravelTimeSample,
     ResampledTrip, ResampledTripPoint,
 )
 
@@ -35,6 +35,7 @@ _APP_TABLES = {
     "trip_session_points",
     "trip_sensor_readings",
     "trips",
+    "trip_matched_edges",
     "trip_points",
     "routes",
     "route_edges",

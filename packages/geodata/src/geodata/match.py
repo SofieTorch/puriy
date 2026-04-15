@@ -21,6 +21,7 @@ from database.models import (
     ProcessingStatus,
     SessionStatus,
     Trip,
+    TripMatchedEdge,
     TripPoint,
     TripSession,
     TripSessionPoint,
@@ -517,6 +518,16 @@ def match_session(
         )
         db.add(trip)
         db.flush()
+
+        for sequence, edge in enumerate(result.edges):
+            db.add(
+                TripMatchedEdge(
+                    trip_id=trip.id,
+                    sequence=sequence,
+                    valhalla_edge_id=int(edge["id"]),
+                    forward=bool(edge.get("forward", True)),
+                )
+            )
 
         # TripPoints: one per GPS input, snapped to road, with exact timestamp
         points_saved = 0

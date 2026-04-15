@@ -15,6 +15,7 @@ from sqlalchemy import select
 from .geo_math import haversine_m, interpolate_route
 from .geojson import parse_route_from_geojson
 from .reconstruction import (
+    MatchedEdgeRef,
     ReconstructionPoint,
     ReconstructionStrategy,
     ReconstructionTrace,
@@ -389,7 +390,13 @@ def load_reconstruction_traces_from_db(
     """Load cleaned or resampled traces for a line from the database."""
 
     from database.connection import SessionLocal
-    from database.models import ResampledTrip, ResampledTripPoint, Trip, TripPoint
+    from database.models import (
+        ResampledTrip,
+        ResampledTripPoint,
+        Trip,
+        TripMatchedEdge,
+        TripPoint,
+    )
 
     if trace_source not in {"cleaned", "resampled"}:
         raise ValueError("trace_source must be 'cleaned' or 'resampled'")
@@ -417,11 +424,21 @@ def load_reconstruction_traces_from_db(
                     .scalars()
                     .all()
                 )
+                matched_edges = (
+                    db.execute(
+                        select(TripMatchedEdge)
+                        .where(TripMatchedEdge.trip_id == trip.id)
+                        .order_by(TripMatchedEdge.sequence)
+                    )
+                    .scalars()
+                    .all()
+                )
                 traces.append(
                     _rows_to_trace(
                         trace_id=str(trip.id),
                         points=points,
                         point_index_attr="point_index",
+                        matched_edges=matched_edges,
                     )
                 )
             return [trace for trace in traces if len(trace.points) >= 2]
@@ -476,6 +493,7 @@ def _rows_to_trace(
     trace_id: str,
     points: list[Any],
     point_index_attr: str,
+    matched_edges: list[Any] | None = None,
 ) -> ReconstructionTrace:
     return ReconstructionTrace(
         trace_id=trace_id,
@@ -488,6 +506,18 @@ def _rows_to_trace(
             )
             for point in points
         ],
+        matched_edges=(
+            [
+                MatchedEdgeRef(
+                    valhalla_edge_id=int(edge.valhalla_edge_id),
+                    forward=bool(edge.forward),
+                    sequence=int(edge.sequence),
+                )
+                for edge in matched_edges
+            ]
+            if matched_edges
+            else None
+        ),
     )
 
 
