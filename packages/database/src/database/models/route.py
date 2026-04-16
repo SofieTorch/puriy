@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID
 
 from geoalchemy2 import Geometry
-from sqlalchemy import BigInteger, Column, UniqueConstraint
+from sqlalchemy import BigInteger, Column, Index, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -53,6 +53,7 @@ class Trip(SQLModel, table=True):
     session: Optional["TripSession"] = Relationship(back_populates="trips")
     line: Optional["Line"] = Relationship(back_populates="trips")
     points: list["TripPoint"] = Relationship(back_populates="trip")
+    matched_edges: list["TripMatchedEdge"] = Relationship(back_populates="trip")
     travel_time_samples: list["TravelTimeSample"] = Relationship(back_populates="trip")
     resampled_trips: list["ResampledTrip"] = Relationship(back_populates="trip")
 
@@ -79,6 +80,27 @@ class TripPoint(SQLModel, table=True):
     )
 
     trip: Optional["Trip"] = Relationship(back_populates="points")
+
+
+class TripMatchedEdge(SQLModel, table=True):
+    """One ordered Valhalla edge traversal step for a cleaned trip."""
+
+    __tablename__ = "trip_matched_edges"
+    __table_args__ = (
+        UniqueConstraint("trip_id", "sequence", name="uq_trip_matched_edges_trip_sequence"),
+        Index("ix_trip_matched_edges_valhalla_edge_id_forward", "valhalla_edge_id", "forward"),
+    )
+
+    id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
+    trip_id: UUID = Field(foreign_key="trips.id", index=True)
+    sequence: int
+
+    valhalla_edge_id: int = Field(
+        sa_column=Column(BigInteger, nullable=False),
+    )
+    forward: bool = Field(default=True)
+
+    trip: Optional["Trip"] = Relationship(back_populates="matched_edges")
 
 
 # ---------------------------------------------------------------------------

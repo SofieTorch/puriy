@@ -17,11 +17,21 @@ class ReconstructionPoint:
 
 
 @dataclass(frozen=True)
+class MatchedEdgeRef:
+    """A persisted Valhalla traversal step for a cleaned trace."""
+
+    valhalla_edge_id: int
+    forward: bool
+    sequence: int
+
+
+@dataclass(frozen=True)
 class ReconstructionTrace:
     """A contiguous trace contributing to route reconstruction."""
 
     trace_id: str
     points: list[ReconstructionPoint]
+    matched_edges: list[MatchedEdgeRef] | None = None
 
 
 @dataclass(frozen=True)

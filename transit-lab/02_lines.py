@@ -25,25 +25,39 @@ def _():
     import pandas as pd
     import pydeck as pdk
     from geoalchemy2.shape import to_shape
-    from sqlalchemy import select
+    from sqlalchemy import delete, select, update
 
     from components.tracing import init_tracing
     from database.connection import SessionLocal
     from database.models.line import Line, LineStatus
-    from database.models.trip import TripSession
-    from database.models.route import Trip, ResampledTrip, ResampledTripPoint
+    from database.models.trip import ProcessingStatus, SessionStatus, TripSession
+    from database.models.route import (
+        ResampledTrip,
+        ResampledTripPoint,
+        TravelTimeSample,
+        Trip,
+        TripMatchedEdge,
+        TripPoint,
+    )
     from geodata.match import match_line
     from geodata.merge import merge_lines
     from geodata.resample import resample_line
 
     return (
+        ProcessingStatus,
         Line,
         LineStatus,
         ResampledTrip,
         ResampledTripPoint,
         SessionLocal,
+        SessionStatus,
+        TravelTimeSample,
         Trip,
+        TripMatchedEdge,
+        TripPoint,
         TripSession,
+        delete,
+        update,
         init_tracing,
         match_line,
         math,
@@ -197,23 +211,83 @@ def _(merge_btn, mo, selected_line_ids):
 def _(
     clean_btn,
     db,
+    ProcessingStatus,
+    ResampledTrip,
+    ResampledTripPoint,
+    SessionStatus,
+    TravelTimeSample,
+    Trip,
+    TripMatchedEdge,
+    TripPoint,
+    TripSession,
+    delete,
     match_line,
     mo,
     selected_line_ids,
+    select,
+    set_last_resampled_interval,
+    set_last_resampled_min_score,
     set_preserved_line_ids,
     set_refresh,
+    update,
 ):
     clean_result_output = None
     if (clean_btn.value or 0) > 0 and len(selected_line_ids) == 1:
         try:
-            _result = match_line(db, selected_line_ids[0])
-            _msg = f"Matched **{len(_result.matched)}** sessions"
+            _line_id = selected_line_ids[0]
+            _trip_ids = db.execute(
+                select(Trip.id).where(Trip.line_id == _line_id)
+            ).scalars().all()
+            _deleted_trips = len(_trip_ids)
+
+            if _trip_ids:
+                _resampled_trip_ids = db.execute(
+                    select(ResampledTrip.id).where(ResampledTrip.trip_id.in_(_trip_ids))
+                ).scalars().all()
+                if _resampled_trip_ids:
+                    db.execute(
+                        delete(ResampledTripPoint).where(
+                            ResampledTripPoint.resampled_trip_id.in_(_resampled_trip_ids)
+                        )
+                    )
+                    db.execute(
+                        delete(ResampledTrip).where(ResampledTrip.id.in_(_resampled_trip_ids))
+                    )
+
+                db.execute(
+                    delete(TravelTimeSample).where(TravelTimeSample.trip_id.in_(_trip_ids))
+                )
+                db.execute(
+                    delete(TripMatchedEdge).where(TripMatchedEdge.trip_id.in_(_trip_ids))
+                )
+                db.execute(delete(TripPoint).where(TripPoint.trip_id.in_(_trip_ids)))
+                db.execute(delete(Trip).where(Trip.id.in_(_trip_ids)))
+
+            _reset_result = db.execute(
+                update(TripSession)
+                .where(
+                    TripSession.line_id == _line_id,
+                    TripSession.status == SessionStatus.COMPLETED,
+                )
+                .values(processing_status=ProcessingStatus.RAW)
+            )
+            _reset_sessions = _reset_result.rowcount or 0
+
+            db.commit()
+
+            _result = match_line(db, _line_id)
+            _msg = (
+                f"Deleted **{_deleted_trips}** cleaned trips, reset **{_reset_sessions}** sessions, "
+                f"matched **{len(_result.matched)}** sessions"
+            )
             if _result.failed:
                 _msg += f", **{len(_result.failed)}** failed"
             if _result.skipped:
                 _msg += f", **{_result.skipped}** skipped"
             clean_result_output = mo.callout(mo.md(_msg), kind="success")
             set_preserved_line_ids(selected_line_ids)
+            set_last_resampled_interval(None)
+            set_last_resampled_min_score(None)
             set_refresh(lambda v: v + 1)
         except Exception as _e:
             db.rollback()

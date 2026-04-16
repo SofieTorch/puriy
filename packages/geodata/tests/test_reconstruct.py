@@ -7,8 +7,10 @@ from geodata.evaluate import discrete_frechet_distance_m
 import geodata.match as match_module
 from geodata.match import _TraceOutput
 from geodata.reconstruction import (
-    EdgeGraphConsensusPreviewStrategy,
     DBSCANGridSearchPreviewStrategy,
+    EdgeGraphConsensusPreviewStrategy,
+    EdgeSequenceOverlapAssemblyPreviewStrategy,
+    MatchedEdgeRef,
     OverlapJoinPreviewStrategy,
     ReconstructionPoint,
     ReconstructionTrace,
@@ -17,6 +19,7 @@ from geodata.reconstruction import (
 )
 from geodata.reconstruction.dbscan_grid_search_preview import strategy as dbscan_grid_search_strategy
 from geodata.reconstruction.edge_graph_consensus_preview import strategy as edge_graph_strategy
+from geodata.reconstruction.edge_sequence_overlap_assembly_preview import strategy as edge_sequence_strategy
 from geodata.reconstruction.segment_vote_consensus_preview import strategy as segment_vote_strategy
 
 
@@ -30,6 +33,42 @@ def _make_trace(trace_id: str, lon_offset: float = 0.0) -> ReconstructionTrace:
     return ReconstructionTrace(trace_id=trace_id, points=points)
 
 
+def _make_edge_trace(
+    trace_id: str,
+    edge_ids: list[int],
+    *,
+    lon_start: float = 0.0,
+    duplicate_first_edge: bool = False,
+) -> ReconstructionTrace:
+    point_count = max(2, len(edge_ids) + 1)
+    points = [
+        ReconstructionPoint(
+            longitude=lon_start + (point_index * 0.001),
+            latitude=0.0,
+            point_index=point_index,
+        )
+        for point_index in range(point_count)
+    ]
+
+    matched_edge_ids = list(edge_ids)
+    if duplicate_first_edge and matched_edge_ids:
+        matched_edge_ids.insert(0, matched_edge_ids[0])
+
+    matched_edges = [
+        MatchedEdgeRef(
+            valhalla_edge_id=edge_id,
+            forward=True,
+            sequence=sequence,
+        )
+        for sequence, edge_id in enumerate(matched_edge_ids)
+    ]
+    return ReconstructionTrace(
+        trace_id=trace_id,
+        points=points,
+        matched_edges=matched_edges,
+    )
+
+
 def test_reconstruction_registry_exposes_dbscan_preview():
     strategies = get_reconstruction_strategies()
 
@@ -38,6 +77,7 @@ def test_reconstruction_registry_exposes_dbscan_preview():
     assert "dbscan_consensus_preview" in strategies
     assert "dbscan_grid_search_preview" in strategies
     assert "edge_graph_consensus_preview" in strategies
+    assert "edge_sequence_overlap_assembly_preview" in strategies
     assert "segment_vote_consensus_preview" in strategies
     assert strategies["overlap_join_preview"].label == "Pairwise overlap join (preview)"
     assert strategies["dbscan_consensus_preview"].label == "DBSCAN consensus (preview)"
@@ -48,6 +88,10 @@ def test_reconstruction_registry_exposes_dbscan_preview():
     assert (
         strategies["edge_graph_consensus_preview"].label
         == "Valhalla edge-graph consensus (preview)"
+    )
+    assert (
+        strategies["edge_sequence_overlap_assembly_preview"].label
+        == "Edge-sequence overlap assembly (preview)"
     )
     assert (
         strategies["segment_vote_consensus_preview"].label
@@ -730,3 +774,177 @@ def test_segment_vote_consensus_preview_requires_supported_edges(monkeypatch):
 
     with pytest.raises(ValueError, match="did not return any matched edges"):
         strategy.reconstruct(uuid4(), [_make_trace("a")])
+
+
+def test_edge_sequence_overlap_assembly_preview_stitches_persisted_edge_sequences(monkeypatch):
+    strategy = EdgeSequenceOverlapAssemblyPreviewStrategy()
+    responses = {
+        "prefix": {
+            "shape_coords": [
+                (0.0, 0.0),
+                (0.0, 0.001),
+                (0.0, 0.002),
+                (0.0, 0.003),
+            ],
+            "edges": [
+                {"id": 101, "forward": True, "begin_shape_index": 0, "end_shape_index": 1},
+                {"id": 102, "forward": True, "begin_shape_index": 1, "end_shape_index": 2},
+                {"id": 103, "forward": True, "begin_shape_index": 2, "end_shape_index": 3},
+            ],
+        },
+        "suffix": {
+            "shape_coords": [
+                (0.0, 0.002),
+                (0.0, 0.003),
+                (0.0, 0.004),
+            ],
+            "edges": [
+                {"id": 103, "forward": True, "begin_shape_index": 0, "end_shape_index": 1},
+                {"id": 104, "forward": True, "begin_shape_index": 1, "end_shape_index": 2},
+            ],
+        },
+        "contained": {
+            "shape_coords": [
+                (0.0, 0.001),
+                (0.0, 0.002),
+                (0.0, 0.003),
+            ],
+            "edges": [
+                {"id": 102, "forward": True, "begin_shape_index": 0, "end_shape_index": 1},
+                {"id": 103, "forward": True, "begin_shape_index": 1, "end_shape_index": 2},
+            ],
+        },
+    }
+
+    def fake_trace_match(
+        points,
+        *,
+        trace_id=None,
+        costing="bus",
+        search_radius=60,
+        gps_accuracy=20,
+    ):
+        payload = responses[str(trace_id)]
+        return _TraceOutput(
+            shape_coords=payload["shape_coords"],
+            edges=payload["edges"],
+            matched_points=[],
+            match_score=1.0,
+            mean_snap_distance=0.0,
+        )
+
+    monkeypatch.setattr(edge_sequence_strategy, "trace_match", fake_trace_match)
+
+    traces = [
+        _make_edge_trace("prefix", [101, 102, 103], duplicate_first_edge=True),
+        _make_edge_trace("suffix", [103, 104], lon_start=0.002),
+        _make_edge_trace("contained", [102, 103], lon_start=0.001),
+    ]
+    result = strategy.reconstruct(uuid4(), traces)
+
+    assert result.strategy_name == "Edge-sequence overlap assembly (preview)"
+    assert result.geojson["features"][0]["geometry"]["coordinates"] == [
+        [0.0, 0.0],
+        [0.001, 0.0],
+        [0.002, 0.0],
+        [0.003, 0.0],
+        [0.004, 0.0],
+    ]
+    assert result.geojson["features"][0]["properties"]["consensus_edge_ids"] == [101, 102, 103, 104]
+    assert result.diagnostics["persisted_trace_count"] == 3
+    assert result.diagnostics["fallback_trace_match_count"] == 0
+    assert result.diagnostics["contained_trace_count"] == 1
+    assert result.diagnostics["consensus_method"] == "edge_sequence_overlap_assembly"
+
+
+def test_edge_sequence_overlap_assembly_preview_fails_on_gap():
+    strategy = EdgeSequenceOverlapAssemblyPreviewStrategy()
+    traces = [
+        _make_edge_trace("left", [101, 102]),
+        _make_edge_trace("right", [104, 105], lon_start=0.003),
+    ]
+
+    with pytest.raises(ValueError, match="gap with no supported overlap"):
+        strategy.reconstruct(
+            uuid4(),
+            traces,
+            params={"recover_geometry": False},
+        )
+
+
+def test_edge_sequence_overlap_assembly_preview_handles_inserted_edge_noise(monkeypatch):
+    strategy = EdgeSequenceOverlapAssemblyPreviewStrategy()
+    responses = {
+        "canonical": {
+            "shape_coords": [
+                (0.0, 0.0),
+                (0.0, 0.001),
+                (0.0, 0.002),
+                (0.0, 0.003),
+                (0.0, 0.004),
+            ],
+            "edges": [
+                {"id": 101, "forward": True, "begin_shape_index": 0, "end_shape_index": 1},
+                {"id": 102, "forward": True, "begin_shape_index": 1, "end_shape_index": 2},
+                {"id": 103, "forward": True, "begin_shape_index": 2, "end_shape_index": 3},
+                {"id": 104, "forward": True, "begin_shape_index": 3, "end_shape_index": 4},
+            ],
+        },
+        "noisy-full": {
+            "shape_coords": [
+                (0.0, 0.0),
+                (0.0, 0.001),
+                (0.0003, 0.0015),
+                (0.0, 0.002),
+                (0.0, 0.003),
+                (0.0, 0.004),
+            ],
+            "edges": [
+                {"id": 101, "forward": True, "begin_shape_index": 0, "end_shape_index": 1},
+                {"id": 102, "forward": True, "begin_shape_index": 1, "end_shape_index": 2},
+                {"id": 999, "forward": True, "begin_shape_index": 2, "end_shape_index": 3},
+                {"id": 103, "forward": True, "begin_shape_index": 3, "end_shape_index": 4},
+                {"id": 104, "forward": True, "begin_shape_index": 4, "end_shape_index": 5},
+            ],
+        },
+        "partial": {
+            "shape_coords": [
+                (0.0, 0.001),
+                (0.0, 0.002),
+                (0.0, 0.003),
+            ],
+            "edges": [
+                {"id": 102, "forward": True, "begin_shape_index": 0, "end_shape_index": 1},
+                {"id": 103, "forward": True, "begin_shape_index": 1, "end_shape_index": 2},
+            ],
+        },
+    }
+
+    def fake_trace_match(
+        points,
+        *,
+        trace_id=None,
+        costing="bus",
+        search_radius=60,
+        gps_accuracy=20,
+    ):
+        payload = responses[str(trace_id)]
+        return _TraceOutput(
+            shape_coords=payload["shape_coords"],
+            edges=payload["edges"],
+            matched_points=[],
+            match_score=1.0,
+            mean_snap_distance=0.0,
+        )
+
+    monkeypatch.setattr(edge_sequence_strategy, "trace_match", fake_trace_match)
+
+    traces = [
+        _make_edge_trace("canonical", [101, 102, 103, 104]),
+        _make_edge_trace("noisy-full", [101, 102, 999, 103, 104]),
+        _make_edge_trace("partial", [102, 103], lon_start=0.001),
+    ]
+    result = strategy.reconstruct(uuid4(), traces)
+
+    assert result.geojson["features"][0]["properties"]["consensus_edge_ids"] == [101, 102, 103, 104]
+    assert result.diagnostics["merge_steps"] >= 0

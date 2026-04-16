@@ -6,6 +6,7 @@ app = marimo.App(width="full")
 
 @app.cell
 def _():
+
     from components.navbar import navbar
 
     return (navbar,)
@@ -22,35 +23,59 @@ def _():
     import marimo as mo
     import pandas as pd
     import pydeck as pdk
+    from geoalchemy2.shape import from_shape, to_shape
     from pathlib import Path
+    from shapely.geometry import LineString
     from sqlalchemy import select
 
     from components.tracing import init_tracing
     from database.connection import SessionLocal
     from database.models.line import Line
-    from database.models.route import Trip, TripPoint
+    from database.models.route import (
+        Route,
+        RouteEdge,
+        RouteSource,
+        RouteStatus,
+        Trip,
+        TripMatchedEdge,
+        TripPoint,
+    )
     from database.models.trip import TripSession
+    from geodata.match import trace_match
     from geodata.reconstruction import (
+        MatchedEdgeRef,
         ReconstructionPoint,
+        ReconstructionResult,
         ReconstructionTrace,
         get_reconstruction_strategies,
     )
 
     return (
         Line,
+        LineString,
+        MatchedEdgeRef,
         Path,
         ReconstructionPoint,
+        ReconstructionResult,
         ReconstructionTrace,
+        Route,
+        RouteEdge,
+        RouteSource,
+        RouteStatus,
         SessionLocal,
         Trip,
+        TripMatchedEdge,
         TripPoint,
         TripSession,
+        from_shape,
         get_reconstruction_strategies,
         init_tracing,
         mo,
         pd,
         pdk,
         select,
+        to_shape,
+        trace_match,
     )
 
 
@@ -59,16 +84,22 @@ def _(SessionLocal, init_tracing, mo):
     db = SessionLocal()
     init_tracing()
     get_last_run_click, set_last_run_click = mo.state(0)
+    get_last_load_click, set_last_load_click = mo.state(0)
+    get_last_save_click, set_last_save_click = mo.state(0)
     get_reconstruction_result, set_reconstruction_result = mo.state(None)
     get_run_message, set_run_message = mo.state(
         "Select a line and run a reconstruction strategy."
     )
     return (
         db,
+        get_last_load_click,
         get_last_run_click,
+        get_last_save_click,
         get_reconstruction_result,
         get_run_message,
+        set_last_load_click,
         set_last_run_click,
+        set_last_save_click,
         set_reconstruction_result,
         set_run_message,
     )
@@ -333,20 +364,99 @@ def _(mo, route_file_selector, strategy_dropdown, strategy_registry):
             },
             label="Strategy parameters",
         )
+    elif selected_strategy_key == "edge_sequence_overlap_assembly_preview":
+        strategy_params = mo.ui.dictionary(
+            {
+                "costing": mo.ui.text(
+                    value=str(default_params.get("costing", "bus")),
+                    label="Valhalla costing",
+                ),
+                "search_radius": mo.ui.number(
+                    value=int(default_params.get("search_radius", 60)),
+                    start=1,
+                    step=1,
+                    label="Search radius (m)",
+                ),
+                "gps_accuracy": mo.ui.number(
+                    value=int(default_params.get("gps_accuracy", 20)),
+                    start=1,
+                    step=1,
+                    label="GPS accuracy (m)",
+                ),
+                "min_overlap_edges": mo.ui.number(
+                    value=int(default_params.get("min_overlap_edges", 1)),
+                    start=1,
+                    step=1,
+                    label="Min overlap edges",
+                ),
+                "min_edge_support": mo.ui.number(
+                    value=int(default_params.get("min_edge_support", 0)),
+                    start=0,
+                    step=1,
+                    label="Min edge support (0=auto)",
+                ),
+                "min_pair_support": mo.ui.number(
+                    value=int(default_params.get("min_pair_support", 0)),
+                    start=0,
+                    step=1,
+                    label="Min pair support (0=auto)",
+                ),
+                "edge_support_fraction": mo.ui.number(
+                    value=float(default_params.get("edge_support_fraction", 0.34)),
+                    start=0.0,
+                    step=0.05,
+                    label="Auto edge support fraction",
+                ),
+                "pair_support_fraction": mo.ui.number(
+                    value=float(default_params.get("pair_support_fraction", 0.34)),
+                    start=0.0,
+                    step=0.05,
+                    label="Auto pair support fraction",
+                ),
+                "max_singleton_noise_support": mo.ui.number(
+                    value=int(default_params.get("max_singleton_noise_support", 1)),
+                    start=1,
+                    step=1,
+                    label="Max singleton noise support",
+                ),
+            },
+            label="Strategy parameters",
+        )
     else:
         strategy_params = mo.ui.dictionary({}, label="Strategy parameters")
 
+    load_cached_button = mo.ui.button(
+        label="Load latest cached route",
+        value=0,
+        on_click=lambda v: (v or 0) + 1,
+        kind="neutral",
+    )
     run_button = mo.ui.button(
         label="Run reconstruction",
         value=0,
         on_click=lambda v: (v or 0) + 1,
         kind="success",
     )
-    return run_button, strategy_params
+    save_cached_button = mo.ui.button(
+        label="Save route to DB",
+        value=0,
+        on_click=lambda v: (v or 0) + 1,
+        kind="warn",
+    )
+    return load_cached_button, run_button, save_cached_button, strategy_params
 
 
 @app.cell
-def _(Line, Trip, TripPoint, TripSession, db, line_dropdown, select):
+def _(
+    Line,
+    Trip,
+    TripMatchedEdge,
+    TripPoint,
+    TripSession,
+    db,
+    line_dropdown,
+    select,
+):
     db.rollback()
     selected_line_id = line_dropdown.value
     selected_line = db.get(Line, selected_line_id) if selected_line_id else None
@@ -354,6 +464,7 @@ def _(Line, Trip, TripPoint, TripSession, db, line_dropdown, select):
     session_lookup = {}
     trips = []
     points_by_trip = {}
+    matched_edges_by_trip = {}
     all_points = []
 
     if selected_line is not None:
@@ -375,6 +486,7 @@ def _(Line, Trip, TripPoint, TripSession, db, line_dropdown, select):
             )
             session_lookup = {session.id: session for session in sessions}
         points_by_trip = {trip.id: [] for trip in trips}
+        matched_edges_by_trip = {trip.id: [] for trip in trips}
         trip_ids = [trip.id for trip in trips]
         if trip_ids:
             all_points = (
@@ -388,11 +500,36 @@ def _(Line, Trip, TripPoint, TripSession, db, line_dropdown, select):
             )
             for point in all_points:
                 points_by_trip.setdefault(point.trip_id, []).append(point)
-    return all_points, points_by_trip, selected_line, session_lookup, trips
+            matched_edges = (
+                db.execute(
+                    select(TripMatchedEdge)
+                    .where(TripMatchedEdge.trip_id.in_(trip_ids))
+                    .order_by(TripMatchedEdge.trip_id, TripMatchedEdge.sequence)
+                )
+                .scalars()
+                .all()
+            )
+            for matched_edge in matched_edges:
+                matched_edges_by_trip.setdefault(matched_edge.trip_id, []).append(matched_edge)
+    return (
+        all_points,
+        matched_edges_by_trip,
+        points_by_trip,
+        selected_line,
+        session_lookup,
+        trips,
+    )
 
 
 @app.cell
-def _(ReconstructionPoint, ReconstructionTrace, points_by_trip, trips):
+def _(
+    MatchedEdgeRef,
+    ReconstructionPoint,
+    ReconstructionTrace,
+    matched_edges_by_trip,
+    points_by_trip,
+    trips,
+):
     traces = []
     for _trip in trips:
         _trip_points = points_by_trip.get(_trip.id, [])
@@ -410,6 +547,14 @@ def _(ReconstructionPoint, ReconstructionTrace, points_by_trip, trips):
                     )
                     for idx, point in enumerate(_trip_points)
                 ],
+                matched_edges=[
+                    MatchedEdgeRef(
+                        valhalla_edge_id=edge.valhalla_edge_id,
+                        forward=edge.forward,
+                        sequence=edge.sequence,
+                    )
+                    for edge in matched_edges_by_trip.get(_trip.id, [])
+                ],
             )
         )
     return (traces,)
@@ -417,34 +562,234 @@ def _(ReconstructionPoint, ReconstructionTrace, points_by_trip, trips):
 
 @app.cell
 def _(
-    get_last_run_click,
-    run_button,
-    set_last_run_click,
-    set_reconstruction_result,
-    set_run_message,
+    LineString,
+    ReconstructionResult,
+    Route,
+    RouteEdge,
+    RouteSource,
+    RouteStatus,
+    from_shape,
+    select,
+    to_shape,
+    trace_match,
 ):
-    run_click = run_button.value or 0
-    should_run = run_click > get_last_run_click()
-    if should_run:
-        set_last_run_click(run_click)
-        set_reconstruction_result(None)
-        set_run_message("Running reconstruction...")
-    return (should_run,)
+    def stitch_route_edge_coordinates(route_edges):
+        stitched = []
+        for route_edge in route_edges:
+            if route_edge.path is None:
+                continue
+            try:
+                geom = to_shape(route_edge.path)
+            except Exception:
+                continue
+            coords = list(geom.coords)
+            if not coords:
+                continue
+            if not stitched:
+                stitched.extend([[lon, lat] for lon, lat in coords])
+                continue
+            if stitched[-1] == [coords[0][0], coords[0][1]]:
+                stitched.extend([[lon, lat] for lon, lat in coords[1:]])
+            else:
+                stitched.extend([[lon, lat] for lon, lat in coords])
+        return stitched
+
+    def load_latest_cached_reconstruction(db, line_id):
+        route = (
+            db.execute(
+                select(Route)
+                .where(
+                    Route.line_id == line_id,
+                    Route.source == RouteSource.COMPUTED,
+                )
+                .order_by(Route.created_at.desc(), Route.version.desc())
+            )
+            .scalars()
+            .first()
+        )
+        if route is None:
+            return None
+
+        route_edges = (
+            db.execute(
+                select(RouteEdge)
+                .where(RouteEdge.route_id == route.id)
+                .order_by(RouteEdge.sequence)
+            )
+            .scalars()
+            .all()
+        )
+        coordinates = stitch_route_edge_coordinates(route_edges)
+        if len(coordinates) < 2:
+            raise ValueError("Cached route has insufficient geometry to display")
+
+        consensus_edge_ids = [
+            int(edge.valhalla_edge_id)
+            for edge in route_edges
+            if edge.valhalla_edge_id is not None
+        ]
+        return ReconstructionResult(
+            strategy_name="Cached route from DB",
+            geojson={
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "strategy": "Cached route from DB",
+                            "line_id": str(line_id),
+                            "route_id": str(route.id),
+                            "route_version": route.version,
+                            "consensus_edge_ids": consensus_edge_ids,
+                        },
+                        "geometry": {
+                            "type": "LineString",
+                            "coordinates": coordinates,
+                        },
+                    }
+                ],
+            },
+            diagnostics={
+                "route_id": str(route.id),
+                "route_version": route.version,
+                "route_status": route.status.value,
+                "route_source": route.source.value,
+                "trip_count": route.trip_count,
+                "edge_count": len(route_edges),
+                "cached": 1,
+            },
+        )
+
+    def persist_reconstruction_to_db(db, *, line_id, reconstruction_result, trip_count):
+        features = reconstruction_result.geojson.get("features", [])
+        if not features:
+            raise ValueError("Reconstruction result has no features to persist")
+        coordinates = features[0].get("geometry", {}).get("coordinates", [])
+        if len(coordinates) < 2:
+            raise ValueError("Reconstruction result has insufficient coordinates to persist")
+
+        shape = [{"lat": lat, "lon": lon} for lon, lat in coordinates]
+        matched = trace_match(shape, costing="bus", search_radius=60, gps_accuracy=20)
+        if not matched.edges:
+            raise ValueError("Valhalla returned no edges for the reconstructed route")
+
+        max_version = (
+            db.execute(
+                select(Route.version)
+                .where(Route.line_id == line_id)
+                .order_by(Route.version.desc())
+            )
+            .scalars()
+            .first()
+        )
+        route = Route(
+            line_id=line_id,
+            version=(max_version or 0) + 1,
+            source=RouteSource.COMPUTED,
+            status=RouteStatus.PENDING,
+            trip_count=trip_count,
+        )
+        db.add(route)
+        db.flush()
+
+        for sequence, edge in enumerate(matched.edges):
+            begin_idx = edge.get("begin_shape_index", 0)
+            end_idx = edge.get("end_shape_index", begin_idx)
+            edge_coords = matched.shape_coords[begin_idx : end_idx + 1]
+            if len(edge_coords) < 2:
+                continue
+            edge_linestring = LineString([(lon, lat) for lat, lon in edge_coords])
+            db.add(
+                RouteEdge(
+                    route_id=route.id,
+                    sequence=sequence,
+                    valhalla_edge_id=edge.get("id"),
+                    forward=edge.get("forward", True),
+                    path=from_shape(edge_linestring, srid=4326),
+                    confidence=1.0,
+                )
+            )
+
+        db.commit()
+        db.refresh(route)
+        return route
+
+    return load_latest_cached_reconstruction, persist_reconstruction_to_db
 
 
 @app.cell
 def _(
-    get_reconstruction_result,
+    get_last_load_click,
+    get_last_run_click,
+    get_last_save_click,
+    load_cached_button,
     run_button,
+    save_cached_button,
+    set_last_load_click,
+    set_last_run_click,
+    set_last_save_click,
+    set_reconstruction_result,
+    set_run_message,
+):
+    load_click = load_cached_button.value or 0
+    run_click = run_button.value or 0
+    save_click = save_cached_button.value or 0
+    should_load_cached = load_click > get_last_load_click()
+    should_run = run_click > get_last_run_click()
+    should_save_cached = save_click > get_last_save_click()
+    if should_load_cached:
+        set_last_load_click(load_click)
+        set_run_message("Loading cached route from DB...")
+    if should_run:
+        set_last_run_click(run_click)
+        set_reconstruction_result(None)
+        set_run_message("Running reconstruction...")
+    if should_save_cached:
+        set_last_save_click(save_click)
+        set_run_message("Saving reconstructed route to DB...")
+    return should_load_cached, should_run, should_save_cached
+
+
+@app.cell
+def _(
+    db,
+    get_reconstruction_result,
+    load_latest_cached_reconstruction,
+    persist_reconstruction_to_db,
     selected_line,
     set_reconstruction_result,
     set_run_message,
+    should_load_cached,
     should_run,
+    should_save_cached,
     strategy_dropdown,
     strategy_params,
     strategy_registry,
     traces,
 ):
+    reconstruction_result = get_reconstruction_result()
+    if should_load_cached:
+        if selected_line is None:
+            set_reconstruction_result(None)
+            set_run_message("Select a line first.")
+        else:
+            try:
+                cached_result = load_latest_cached_reconstruction(db, selected_line.id)
+                if cached_result is None:
+                    set_reconstruction_result(None)
+                    set_run_message("No cached computed route found for this line.")
+                else:
+                    set_reconstruction_result(cached_result)
+                    reconstruction_result = cached_result
+                    set_run_message(
+                        "Loaded cached route from DB: "
+                        f"version {cached_result.diagnostics.get('route_version', '?')} "
+                        f"with {cached_result.diagnostics.get('edge_count', 0)} edge(s)."
+                    )
+            except Exception as exc:
+                set_reconstruction_result(None)
+                reconstruction_result = None
+                set_run_message(f"Loading cached route failed: {exc}")
     if should_run:
         if selected_line is None:
             set_run_message("Select a line first.")
@@ -471,11 +816,30 @@ def _(
                         f"Reconstruction complete: {result.strategy_name} "
                         f"produced {route_points} route point(s)."
                     )
+                    reconstruction_result = result
                 except Exception as exc:
                     set_reconstruction_result(None)
+                    reconstruction_result = None
                     set_run_message(f"Reconstruction failed: {exc}")
+    if should_save_cached:
+        if selected_line is None:
+            set_run_message("Select a line first.")
+        elif reconstruction_result is None:
+            set_run_message("Run or load a reconstruction before saving it to DB.")
+        else:
+            try:
+                route = persist_reconstruction_to_db(
+                    db,
+                    line_id=selected_line.id,
+                    reconstruction_result=reconstruction_result,
+                    trip_count=len(traces),
+                )
+                set_run_message(
+                    f"Saved computed route to DB as version {route.version}."
+                )
+            except Exception as exc:
+                set_run_message(f"Saving reconstructed route failed: {exc}")
     reconstruction_result = get_reconstruction_result()
-    run_trigger = run_button.value
     return (reconstruction_result,)
 
 
@@ -538,6 +902,18 @@ def _(mo, pd, points_by_trip, session_lookup, trips):
 
 @app.cell
 def _(all_points, pdk, points_by_trip, reconstruction_result):
+    def _interpolate_color(start: list[int], end: list[int], fraction: float) -> list[int]:
+        return [
+            round(start[idx] + ((end[idx] - start[idx]) * fraction))
+            for idx in range(3)
+        ]
+
+    def _adjust_color(color: list[int], delta: int) -> list[int]:
+        return [
+            max(0, min(255, channel + delta))
+            for channel in color
+        ]
+
     path_palette = [
         [59, 130, 246],
         [34, 197, 94],
@@ -572,12 +948,29 @@ def _(all_points, pdk, points_by_trip, reconstruction_result):
         if features:
             coords = features[0].get("geometry", {}).get("coordinates", [])
             if len(coords) >= 2:
-                reconstruction_path_data.append(
-                    {
-                        "path": [[coord[0], coord[1], 0] for coord in coords],
-                        "color": [239, 68, 68],
-                    }
-                )
+                gradient_start = [249, 115, 22]
+                gradient_end = [220, 38, 38]
+                segment_count = len(coords) - 1
+                for idx in range(segment_count):
+                    start_coord = coords[idx]
+                    end_coord = coords[idx + 1]
+                    fraction = idx / max(1, segment_count - 1)
+                    stepped_fraction = round(fraction * 10) / 10
+                    base_color = _interpolate_color(
+                        gradient_start,
+                        gradient_end,
+                        stepped_fraction,
+                    )
+                    pulse = 42 if idx % 2 == 0 else -42
+                    reconstruction_path_data.append(
+                        {
+                            "path": [
+                                [start_coord[0], start_coord[1], 0],
+                                [end_coord[0], end_coord[1], 0],
+                            ],
+                            "color": _adjust_color(base_color, pulse),
+                        }
+                    )
 
     layers = []
     if session_path_data:
@@ -673,15 +1066,24 @@ def _(
     deck,
     line_dropdown,
     line_info,
+    load_cached_button,
     mo,
     result_panel,
     run_button,
+    save_cached_button,
     sessions_table,
     strategy_dropdown,
     strategy_params,
 ):
     controls = mo.hstack(
-        [line_dropdown, strategy_dropdown, strategy_params, run_button],
+        [
+            line_dropdown,
+            strategy_dropdown,
+            strategy_params,
+            load_cached_button,
+            run_button,
+            save_cached_button,
+        ],
         gap=1,
         align="end",
     )
