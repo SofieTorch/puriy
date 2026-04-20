@@ -109,7 +109,7 @@ export default function ContributeScreen() {
               size={48}
               color="#9CA3AF"
             />
-            <Text className="text-center text-base text-gray-400">
+            <Text testID="contribute-empty" className="text-center text-base text-gray-400">
               No hay rutas pendientes para votar.
             </Text>
             <Text className="text-center text-sm text-gray-400">
@@ -121,10 +121,10 @@ export default function ContributeScreen() {
             {/* Line familiarity voting */}
             {nearbyLines.length > 0 && (
               <>
-                <Text className="text-lg font-semibold text-gray-800">
+                <Text testID="contribute-lines-title" className="text-lg font-semibold text-gray-800">
                   ¿Conoces estas líneas?
                 </Text>
-                {nearbyLines.map((line) => (
+                {nearbyLines.map((line, idx) => (
                   <View
                     key={line.line_id}
                     className="flex-row items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3"
@@ -144,6 +144,7 @@ export default function ContributeScreen() {
                     </View>
                     <View className="flex-row gap-2">
                       <Pressable
+                        testID={`contribute-line-approve-${idx}`}
                         className="h-9 w-9 items-center justify-center rounded-full bg-green-50"
                         onPress={() => submitLineVote(line.line_id, 'approve')}
                       >
@@ -154,6 +155,7 @@ export default function ContributeScreen() {
                         />
                       </Pressable>
                       <Pressable
+                        testID={`contribute-line-reject-${idx}`}
                         className="h-9 w-9 items-center justify-center rounded-full bg-red-50"
                         onPress={() => submitLineVote(line.line_id, 'reject')}
                       >
@@ -171,12 +173,12 @@ export default function ContributeScreen() {
 
             {/* Route edge voting */}
             {pending.length > 0 && (
-              <Text className="text-lg font-semibold text-gray-800">
+              <Text testID="contribute-routes-title" className="text-lg font-semibold text-gray-800">
                 ¿Estas rutas son correctas?
               </Text>
             )}
 
-            {pending.map((line) => (
+            {pending.map((line, idx) => (
               <View
                 key={line.line_id}
                 className="overflow-hidden rounded-2xl border border-gray-200 bg-white"
@@ -223,6 +225,7 @@ export default function ContributeScreen() {
                   ) : (
                     <>
                       <Pressable
+                        testID={`contribute-route-approve-${idx}`}
                         className="flex-1 flex-row items-center justify-center gap-1.5 border-r border-gray-100 py-3"
                         onPress={() =>
                           submitVote(line.line_id, 'approve')
@@ -238,6 +241,7 @@ export default function ContributeScreen() {
                         </Text>
                       </Pressable>
                       <Pressable
+                        testID={`contribute-route-reject-${idx}`}
                         className="flex-1 flex-row items-center justify-center gap-1.5 py-3"
                         onPress={() =>
                           submitVote(line.line_id, 'reject')

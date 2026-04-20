@@ -5,8 +5,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { LogBox } from 'react-native';
 import 'react-native-reanimated';
 
-// Suppress warning banners that interfere with E2E tests
-// LogBox.ignoreAllLogs(true);
+if (process.env.EXPO_PUBLIC_E2E === 'true') {
+  LogBox.ignoreAllLogs(true);
+}
 
 import { DatabaseProvider } from '@/components/DatabaseProvider';
 import { GluestackUIProvider } from '@/components/ui/gluestack-ui-provider';

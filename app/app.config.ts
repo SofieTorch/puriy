@@ -65,5 +65,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   extra: {
     apiBaseUrl: process.env.API_BASE_URL || 'http://10.165.187.148:8000',
+    e2eDeviceId: process.env.EXPO_PUBLIC_E2E_DEVICE_ID || null,
   },
 });

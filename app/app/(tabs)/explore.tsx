@@ -620,6 +620,7 @@ export default function ExploreScreen() {
             )}
           </View>
         </ScrollView>
+        <PreferencesSheet ref={prefsRef} />
       </View>
   );
 }

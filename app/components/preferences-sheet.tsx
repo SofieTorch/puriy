@@ -1,4 +1,5 @@
-import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import React, { forwardRef, useCallback, useMemo, useState } from 'react';
 import { Switch, Text, View } from 'react-native';
 
@@ -12,7 +13,14 @@ import {
 const BLUE = '#09A6F3';
 
 const PreferencesSheet = forwardRef<BottomSheet>((_, ref) => {
-  const snapPoints = useMemo(() => ['35%'], []);
+  const tabBarHeight = useBottomTabBarHeight();
+
+  const renderBackdrop = useCallback(
+    (props: any) => (
+      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} pressBehavior="close" />
+    ),
+    []
+  );
 
   const [pendingLines, setPendingLines] = useState(() => includePendingLines());
   const [pendingRoutes, setPendingRoutes] = useState(() => includePendingRoutes());
@@ -37,14 +45,15 @@ const PreferencesSheet = forwardRef<BottomSheet>((_, ref) => {
     <BottomSheet
       ref={ref}
       index={-1}
-      snapPoints={snapPoints}
+      enableDynamicSizing
       enablePanDownToClose
       enableContentPanningGesture={false}
+      backdropComponent={renderBackdrop}
       backgroundStyle={{ borderRadius: 24 }}
       handleIndicatorStyle={{ backgroundColor: '#D1D5DB', width: 40 }}
       containerStyle={{ zIndex: 1000 }}
     >
-      <BottomSheetView testID="prefs-sheet" className="flex-1 px-6 pt-2">
+      <BottomSheetView testID="prefs-sheet" className="flex-1 px-6 pt-2" style={{ paddingBottom: tabBarHeight + 12 }}>
         <View testID="prefs-title">
           <Text className="mb-5 text-lg font-semibold text-gray-800">
             Preferencias

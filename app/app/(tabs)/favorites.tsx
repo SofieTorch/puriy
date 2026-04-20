@@ -155,13 +155,13 @@ export default function FavoritesScreen() {
               {commutes.length > 0 && (
                 <>
                   <Text className="mb-3 text-lg font-semibold text-gray-800" testID="favorites-commute-title">Recurrentes</Text>
-                  {commutes.map(trip => <TripCard key={trip.id} trip={trip} onPress={selectTrip} onDelete={handleDelete} />)}
+                  {commutes.map((trip, idx) => <TripCard key={trip.id} trip={trip} index={idx} onPress={selectTrip} onDelete={handleDelete} />)}
                 </>
               )}
               {oneTime.length > 0 && (
                 <>
                   <Text className="mb-3 mt-4 text-lg font-semibold text-gray-800" testID="favorites-today-title">Para hoy</Text>
-                  {oneTime.map(trip => <TripCard key={trip.id} trip={trip} onPress={selectTrip} onDelete={handleDelete} />)}
+                  {oneTime.map((trip, idx) => <TripCard key={trip.id} trip={trip} index={idx} onPress={selectTrip} onDelete={handleDelete} />)}
                 </>
               )}
             </>
@@ -171,18 +171,18 @@ export default function FavoritesScreen() {
   );
 }
 
-function TripCard({ trip, onPress, onDelete }: { trip: SavedTrip; onPress: (t: SavedTrip) => void; onDelete: (t: SavedTrip) => void }) {
+function TripCard({ trip, index, onPress, onDelete }: { trip: SavedTrip; index: number; onPress: (t: SavedTrip) => void; onDelete: (t: SavedTrip) => void }) {
   const route = parseRouteJson(trip);
   const lines = busLines(route);
 
   return (
-    <Pressable className="mb-3 rounded-2xl border border-gray-200 bg-white p-4 active:bg-gray-50" onPress={() => onPress(trip)}>
+    <Pressable testID={`favorites-trip-card-${index}`} className="mb-3 rounded-2xl border border-gray-200 bg-white p-4 active:bg-gray-50" onPress={() => onPress(trip)}>
       <View className="mb-2 flex-row items-start justify-between">
         <View className="flex-1">
           <Text className="text-base font-semibold text-gray-800" numberOfLines={1}>{trip.originName}</Text>
           <Text className="text-sm text-gray-500" numberOfLines={1}>→ {trip.destName}</Text>
         </View>
-        <Pressable className="ml-2 p-1" onPress={() => onDelete(trip)}>
+        <Pressable testID={`favorites-delete-${index}`} className="ml-2 p-1" onPress={() => onDelete(trip)}>
           <Feather name="trash-2" size={16} color="#9CA3AF" />
         </Pressable>
       </View>

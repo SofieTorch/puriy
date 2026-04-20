@@ -1,5 +1,6 @@
 """Detour analysis — compute divergence/convergence points between a detour and a line's normal route."""
 
+import os
 from uuid import UUID
 
 import httpx
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from database.models.route import Route, RouteEdge, RouteStatus
 
-NOMINATIM_URL = "https://nominatim.openstreetmap.org"
+NOMINATIM_URL = os.environ.get("NOMINATIM_URL", "http://localhost:8004")
 DIVERGENCE_THRESHOLD_M = 50.0  # meters — beyond this, points are "off route"
 
 

@@ -310,12 +310,12 @@ export default function RecordScreen() {
           <ThemedView style={styles.statusSection}>
             <View style={styles.statusRow}>
               <View style={styles.statusItem}>
-                <Text style={styles.statusValue}>{formatDuration(recordingDuration)}</Text>
+                <Text testID="record-duration" style={styles.statusValue}>{formatDuration(recordingDuration)}</Text>
                 <Text style={styles.statusLabel}>Duration</Text>
               </View>
               <View style={styles.statusDivider} />
               <View style={styles.statusItem}>
-                <Text style={styles.statusValue}>{pointsCollected}</Text>
+                <Text testID="record-points" style={styles.statusValue}>{pointsCollected}</Text>
                 <Text style={styles.statusLabel}>Points</Text>
               </View>
             </View>
@@ -338,6 +338,7 @@ export default function RecordScreen() {
         {/* Swipe Switch */}
         <View style={styles.switchContainer}>
           <SwipeSwitch
+            testID="record-swipe-switch"
             value={isRecording}
             onValueChange={handleRecordingToggle}
             onLabel="Grabando..."

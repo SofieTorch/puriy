@@ -183,7 +183,7 @@ def _select_unambiguous_candidate(candidates: list[_MergeCandidate]) -> _MergeCa
     conflicting = [
         candidate
         for candidate in ranked[1:]
-        if candidate.score == best.score and candidate.edge_ids != best.edge_ids
+        if candidate.score == best.score and candidate.merged_edge_ids != best.merged_edge_ids
     ]
     if conflicting:
         raise ValueError("Ambiguous overlap candidates prevent a unique route assembly")
