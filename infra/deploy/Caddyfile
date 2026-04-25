@@ -1,4 +1,9 @@
 puriy.sofietorch.dev {
+	# Redirect bare prefixes to trailing-slash so relative URLs resolve
+	redir /grafana /grafana/ permanent
+	redir /marimo /marimo/ permanent
+	redir /valhalla /valhalla/ permanent
+
 	# API
 	handle /api/* {
 		uri strip_prefix /api
