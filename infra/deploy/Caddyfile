@@ -1,12 +1,14 @@
 puriy.sofietorch.dev {
-	# Redirect bare prefixes to trailing-slash so relative URLs resolve.
-	# Use exact-match (=) so we don't redirect /marimo/foo → /marimo/foo/.
-	@bare_grafana path =/grafana
-	redir @bare_grafana /grafana/ permanent
-	@bare_marimo path =/marimo
-	redir @bare_marimo /marimo/ permanent
-	@bare_valhalla path =/valhalla
-	redir @bare_valhalla /valhalla/ permanent
+	# Bare-prefix redirects (handle exact-matches /marimo only, not /marimo/foo)
+	handle /grafana {
+		redir * /grafana/ permanent
+	}
+	handle /marimo {
+		redir * /marimo/ permanent
+	}
+	handle /valhalla {
+		redir * /valhalla/ permanent
+	}
 
 	# API
 	handle /api/* {
