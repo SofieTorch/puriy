@@ -21,9 +21,8 @@ puriy.sofietorch.dev {
 		reverse_proxy grafana:3000
 	}
 
-	# Marimo notebooks
+	# Marimo notebooks (no strip — marimo serves under /marimo via MARIMO_PATH_PREFIX)
 	handle /marimo/* {
-		uri strip_prefix /marimo
 		reverse_proxy marimo:2727
 	}
 
