@@ -9,8 +9,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 WORKDIR /app
 
 # Install packages/database
-COPY packages/database/pyproject.toml packages/database/uv.lock packages/database/
+COPY packages/database/pyproject.toml packages/database/uv.lock packages/database/alembic.ini packages/database/
 COPY packages/database/src packages/database/src
+COPY packages/database/alembic packages/database/alembic
 RUN cd packages/database && uv sync --frozen --no-dev
 
 # Install packages/geodata (depends on database)
