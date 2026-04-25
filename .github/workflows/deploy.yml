@@ -24,8 +24,11 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            # Rebuild and restart only changed services. On failure, dump logs.
-            if ! docker compose -f infra/deploy/docker-compose.yml up -d --build --remove-orphans; then
+            # Rebuild from scratch (no cache) so source changes always land in the image.
+            docker compose -f infra/deploy/docker-compose.yml build --no-cache
+
+            # Restart services. On failure, dump logs.
+            if ! docker compose -f infra/deploy/docker-compose.yml up -d --remove-orphans; then
               echo "=== compose up failed, dumping logs ==="
               docker compose -f infra/deploy/docker-compose.yml logs --no-log-prefix --tail=200 migrate || true
               docker compose -f infra/deploy/docker-compose.yml ps
