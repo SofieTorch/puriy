@@ -237,6 +237,112 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_rebuild_graph(args: argparse.Namespace) -> int:
+    from .transit_graph import build_transit_graph
+
+    db = SessionLocal()
+    try:
+        graph = build_transit_graph(db)
+        print("Transit graph built:")
+        print(f"  Nodes: {len(graph.nodes)}")
+        print(f"  Bus edges: {sum(1 for edges in graph.adjacency.values() for e in edges if e.mode == 'bus')}")
+        print(f"  Transfer edges: {sum(1 for edges in graph.adjacency.values() for e in edges if e.mode == 'walk')}")
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        db.close()
+
+
+def _cmd_import_route(args: argparse.Namespace) -> int:
+    from .import_route import import_route_from_geojson, import_routes_from_directory
+
+    db = SessionLocal()
+    try:
+        if args.directory:
+            results = import_routes_from_directory(
+                db,
+                args.directory,
+                costing=args.costing,
+                search_radius=args.search_radius,
+                gps_accuracy=args.gps_accuracy,
+            )
+            for filename, route in results:
+                print(
+                    f"  ✓ {filename} → line={route.line_id} "
+                    f"route={route.id} ({len(route.edges)} edges)"
+                )
+            print(f"\nImported {len(results)} route(s).")
+            return 0
+
+        # Single file mode
+        if not args.route:
+            print("Error: --route or --directory is required", file=sys.stderr)
+            return 1
+        if not args.line_id:
+            print("Error: --line-id is required in single-file mode", file=sys.stderr)
+            return 1
+
+        with open(args.route, encoding="utf-8") as f:
+            raw = f.read()
+
+        route = import_route_from_geojson(
+            db,
+            raw,
+            UUID(args.line_id),
+            costing=args.costing,
+            search_radius=args.search_radius,
+            gps_accuracy=args.gps_accuracy,
+        )
+        print(
+            f"Imported route: route={route.id} "
+            f"({len(route.edges)} edges) for line={args.line_id}"
+        )
+        return 0
+    except (ValueError, RuntimeError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        db.close()
+
+
+def _cmd_evaluate_reconstruction(args: argparse.Namespace) -> int:
+    from .evaluate import (
+        evaluate_reconstruction_suite,
+        load_strategy_params,
+        suite_to_dict,
+    )
+
+    strategy_params = (
+        load_strategy_params(args.strategy_params)
+        if args.strategy_params
+        else None
+    )
+    suite = evaluate_reconstruction_suite(
+        args.route,
+        line_id=args.line_id,
+        trace_source=args.trace_source,
+        interval_meters=args.interval_meters,
+        min_match_score=args.min_match_score,
+        strategy_keys=args.strategy or None,
+        strategy_params=strategy_params,
+        runs_per_strategy=args.runs,
+        coverage_step_meters=args.coverage_step_meters,
+        coverage_tolerance_meters=args.coverage_tolerance_meters,
+    )
+    payload = suite_to_dict(suite)
+
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        print(f"Written to {args.output}")
+        return 0
+
+    print(json.dumps(payload, indent=2))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="geodata")
     subparsers = parser.add_subparsers(
@@ -303,6 +409,92 @@ def main() -> int:
     gen_parser.add_argument("--line-id", help="Line UUID (required with --save-db)")
     gen_parser.add_argument("--notes", default="simulated", help="Notes for trip sessions")
     gen_parser.set_defaults(handler=_cmd_generate)
+
+    import_parser = subparsers.add_parser(
+        "import-route",
+        help="Import a GeoJSON route as an inferred route estimation with Valhalla edges",
+    )
+    import_parser.add_argument("--route", help="Path to .geojson route file (single-file mode)")
+    import_parser.add_argument("--line-id", help="Line UUID (required in single-file mode)")
+    import_parser.add_argument(
+        "--directory", help="Path to directory of .geojson files (bulk import mode)"
+    )
+    import_parser.add_argument(
+        "--costing", default="bus", help="Valhalla costing model (default: bus)"
+    )
+    import_parser.add_argument(
+        "--search-radius", type=int, default=60, help="Search radius in meters (default: 60)"
+    )
+    import_parser.add_argument(
+        "--gps-accuracy", type=int, default=20, help="GPS accuracy in meters (default: 20)"
+    )
+    import_parser.set_defaults(handler=_cmd_import_route)
+
+    rebuild_parser = subparsers.add_parser(
+        "rebuild-graph",
+        help="Build the transit graph from all active routes and print statistics",
+    )
+    rebuild_parser.set_defaults(handler=_cmd_rebuild_graph)
+
+    evaluate_parser = subparsers.add_parser(
+        "evaluate-reconstruction",
+        help="Evaluate reconstruction strategies against a ground-truth route GeoJSON",
+    )
+    evaluate_parser.add_argument("--route", required=True, help="Path to .geojson route file")
+    evaluate_parser.add_argument(
+        "--line-id",
+        required=True,
+        help="Line UUID whose cleaned traces should be loaded from the database",
+    )
+    evaluate_parser.add_argument(
+        "--trace-source",
+        choices=["cleaned", "resampled"],
+        default="cleaned",
+        help="Which DB-backed trace representation to evaluate (default: cleaned)",
+    )
+    evaluate_parser.add_argument(
+        "--interval-meters",
+        type=float,
+        help="Resampling interval in meters; required when --trace-source=resampled",
+    )
+    evaluate_parser.add_argument(
+        "--min-match-score",
+        type=float,
+        help="Exact resampled trip match_score batch filter; only used with --trace-source=resampled",
+    )
+    evaluate_parser.add_argument(
+        "--strategy",
+        action="append",
+        help="Strategy key to evaluate; repeat to select multiple strategies",
+    )
+    evaluate_parser.add_argument(
+        "--strategy-params",
+        help="JSON file mapping strategy keys to parameter override objects",
+    )
+    evaluate_parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="Number of repeated runs per strategy over the same DB-backed traces (default: 1)",
+    )
+    evaluate_parser.add_argument(
+        "--coverage-step-meters",
+        type=float,
+        default=10.0,
+        help="Resampling step for coverage scoring in meters (default: 10)",
+    )
+    evaluate_parser.add_argument(
+        "--coverage-tolerance-meters",
+        type=float,
+        default=25.0,
+        help="Coverage tolerance in meters (default: 25)",
+    )
+    evaluate_parser.add_argument(
+        "--output",
+        "-o",
+        help="Write the evaluation suite JSON to a file instead of stdout",
+    )
+    evaluate_parser.set_defaults(handler=_cmd_evaluate_reconstruction)
 
     args = parser.parse_args()
     return args.handler(args)

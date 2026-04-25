@@ -22,7 +22,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import LottieView from 'lottie-react-native';
 
 import { SwipeSwitch } from '@/components/swipe-switch';
@@ -41,7 +40,6 @@ import {
 import { syncPendingRecordings } from '@/services/sync';
 import { setRecordingStatus } from '@/services/recording-status';
 import { styles } from '@/styles/record';
-import Header from '@/components/header';
 import SaveRecordModal from '@/components/save-record-modal';
 
 const SENSOR_INTERVAL = 100;
@@ -250,9 +248,15 @@ export default function RecordScreen() {
   const handleConfirmLine = async ({
     lineId,
     customLineName,
+    isDetour,
+    detourReason,
+    detourDescription,
   }: {
-    lineId: number | null;
+    lineId: string | null;
     customLineName: string | null;
+    isDetour: boolean;
+    detourReason: string | null;
+    detourDescription: string | null;
   }) => {
     if (!currentSessionId) return;
     try {
@@ -260,7 +264,10 @@ export default function RecordScreen() {
         currentSessionId,
         lineId,
         customLineName,
-        'pending_sync'
+        'pending_sync',
+        isDetour,
+        detourReason,
+        detourDescription,
       );
 
       const synced = await syncPendingRecordings();
@@ -295,10 +302,7 @@ export default function RecordScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: '#09A6F3' }]}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        <Header title="Trayecto" />
-
         <View style={[styles.content, { paddingBottom: tabBarHeight + 12 }]}>
 
         {/* Recording Status */}
@@ -306,12 +310,12 @@ export default function RecordScreen() {
           <ThemedView style={styles.statusSection}>
             <View style={styles.statusRow}>
               <View style={styles.statusItem}>
-                <Text style={styles.statusValue}>{formatDuration(recordingDuration)}</Text>
+                <Text testID="record-duration" style={styles.statusValue}>{formatDuration(recordingDuration)}</Text>
                 <Text style={styles.statusLabel}>Duration</Text>
               </View>
               <View style={styles.statusDivider} />
               <View style={styles.statusItem}>
-                <Text style={styles.statusValue}>{pointsCollected}</Text>
+                <Text testID="record-points" style={styles.statusValue}>{pointsCollected}</Text>
                 <Text style={styles.statusLabel}>Points</Text>
               </View>
             </View>
@@ -334,6 +338,7 @@ export default function RecordScreen() {
         {/* Swipe Switch */}
         <View style={styles.switchContainer}>
           <SwipeSwitch
+            testID="record-swipe-switch"
             value={isRecording}
             onValueChange={handleRecordingToggle}
             onLabel="Grabando..."
@@ -374,6 +379,7 @@ export default function RecordScreen() {
 
         <SaveRecordModal
           visible={showLineModal}
+          recordingId={currentSessionId}
           finalDuration={finalDuration.current}
           finalPoints={finalPoints.current}
           formatDuration={formatDuration}
@@ -381,7 +387,6 @@ export default function RecordScreen() {
           onConfirm={handleConfirmLine}
         />
       </View>
-    </SafeAreaView>
   );
 }
 

@@ -1,4 +1,4 @@
-"""Landing page for transit-lab with navigation to Tracks and Lines."""
+"""Landing page for transit-lab with navigation to notebook pages."""
 
 import marimo
 
@@ -27,7 +27,7 @@ def _():
         """
         **transit-lab**
 
-        Select **Tracks** or **Lines** from the menu above to get started.
+        Select **Tracks**, **Lines**, or **Reconstruction** from the menu above to get started.
         """
     )
     return (mo,)

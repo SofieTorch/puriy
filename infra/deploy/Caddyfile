@@ -1,0 +1,29 @@
+puriy.sofietorch.dev {
+	# API
+	handle /api/* {
+		uri strip_prefix /api
+		reverse_proxy server:8000
+	}
+
+	# Valhalla routing engine
+	handle /valhalla/* {
+		uri strip_prefix /valhalla
+		reverse_proxy valhalla:8002
+	}
+
+	# Grafana dashboards
+	handle /grafana/* {
+		reverse_proxy grafana:3000
+	}
+
+	# Marimo notebooks
+	handle /marimo/* {
+		uri strip_prefix /marimo
+		reverse_proxy marimo:2727
+	}
+
+	# Project landing page (replace with a static site later)
+	handle {
+		respond "Puriy - Crowdsourced transit route reconstruction for Cochabamba" 200
+	}
+}

@@ -1,0 +1,31 @@
+appId: com.cbba.mobility
+---
+- launchApp:
+    permissions:
+      location: always
+- setLocation:
+    latitude: -17.394
+    longitude: -66.182
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Verify nearby lines section loaded
+- assertVisible:
+    id: "explore-nearby-title"
+- assertVisible: "250 Ecologica"
+
+# Tap into line detail
+- tapOn: "250 Ecologica"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- assertVisible: "Línea 250 Ecologica"
+
+# Go back to search view
+- tapOn:
+    point: "10%,7%"
+- waitForAnimationToEnd
+- assertVisible:
+    id: "explore-nearby-title"
+
+- takeScreenshot: "explore-nearby-lines"

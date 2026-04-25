@@ -154,6 +154,35 @@ def end_recording(
 
     session.ended_at = datetime.utcnow()
 
+    if body.is_detour and session.line_id and session.computed_path is not None:
+        from database.models.detour import Detour
+
+        # Map-match the detour path via Valhalla for a clean road-snapped geometry
+        snapped_path = session.computed_path
+        try:
+            from geodata.match import trace_match
+            from geoalchemy2.shape import from_shape, to_shape
+            from shapely.geometry import LineString as ShapelyLineString
+
+            raw_shape = to_shape(session.computed_path)
+            raw_points = [{"lat": c[1], "lon": c[0]} for c in raw_shape.coords]
+            if len(raw_points) >= 2:
+                result = trace_match(raw_points, costing="bus")
+                matched_coords = [(lon, lat) for lat, lon in result.shape_coords]
+                if len(matched_coords) >= 2:
+                    snapped_path = from_shape(ShapelyLineString(matched_coords), srid=4326)
+        except Exception:
+            pass  # Fall back to raw path if Valhalla unavailable
+
+        detour = Detour(
+            line_id=session.line_id,
+            session_id=session.id,
+            reason=body.detour_reason,
+            description=body.detour_description,
+            path=snapped_path,
+        )
+        db.add(detour)
+
     db.commit()
     db.refresh(session)
     return TripSessionRead.model_validate(session)

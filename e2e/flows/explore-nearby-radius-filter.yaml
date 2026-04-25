@@ -1,0 +1,39 @@
+appId: com.cbba.mobility
+---
+- launchApp:
+    permissions:
+      location: always
+- setLocation:
+    latitude: -17.394
+    longitude: -66.182
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Default radius (2km) — Line 250 visible, Line 120 not
+- assertVisible:
+    id: "explore-nearby-title"
+- assertVisible: "250 Ecologica"
+- assertNotVisible: "120 UMSS"
+
+# Expand radius picker
+- tapOn:
+    id: "explore-nearby-title"
+- waitForAnimationToEnd
+- assertVisible: "500m"
+
+# Select 5km — Line 120 should appear
+- tapOn: "5km"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- assertVisible: "120 UMSS"
+
+# Select 500m — Line 120 should disappear
+- tapOn: "500m"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- assertNotVisible: "120 UMSS"
+
+- takeScreenshot: "explore-radius-filter"

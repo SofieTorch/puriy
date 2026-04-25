@@ -26,3 +26,6 @@ dependencies = [
 [tool.uv.sources]
 database = {path = "../packages/database", editable = true}
 geodata = {path = "../packages/geodata", editable = true}
+
+[tool.marimo.runtime]
+output_max_bytes = 1000_000_000

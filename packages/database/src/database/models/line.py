@@ -4,12 +4,14 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID
 
-from geoalchemy2 import Geometry
-from sqlalchemy import Column
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
+from .route import VoteChoice
+
 if TYPE_CHECKING:
-    from .route import RouteEstimation, Trip
+    from .detour import Detour
+    from .route import Route, Trip
     from .trip import TripSession
 
 
@@ -29,11 +31,9 @@ class LineBase(SQLModel):
 
 
 class Line(LineBase, table=True):
-    """
-    A transit line (e.g., "Line 42", "Red Line").
+    """A transit line (e.g., "Line 42", "Red Line").
 
-    The path is stored as a PostGIS LINESTRING geometry in WGS84 (SRID 4326).
-    Auto-updated when all segments of a route estimation are confirmed.
+    The route geometry lives in the associated Route records (versioned).
     """
 
     __tablename__ = "lines"
@@ -42,16 +42,29 @@ class Line(LineBase, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    path: Any = Field(
-        sa_column=Column(
-            Geometry(geometry_type="LINESTRING", srid=4326),
-            nullable=True,
-        )
-    )
-
     status: LineStatus = Field(default=LineStatus.PENDING)
     merged_into_id: Optional[UUID] = Field(default=None, foreign_key="lines.id")
 
     trip_sessions: list["TripSession"] = Relationship(back_populates="line")
     trips: list["Trip"] = Relationship(back_populates="line")
-    route_estimations: list["RouteEstimation"] = Relationship(back_populates="line")
+    routes: list["Route"] = Relationship(back_populates="line")
+    line_votes: list["LineVote"] = Relationship(back_populates="line")
+    detours: list["Detour"] = Relationship(back_populates="line")
+
+
+class LineVote(SQLModel, table=True):
+    """A familiarity vote on a transit line — 'I know this line exists in my area'."""
+
+    __tablename__ = "line_votes"
+    __table_args__ = (
+        UniqueConstraint("line_id", "device_id", name="uq_line_vote_device"),
+    )
+
+    id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
+    line_id: UUID = Field(foreign_key="lines.id", index=True)
+    device_id: str = Field(max_length=255, index=True)
+
+    vote: VoteChoice = Field()
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    line: Optional["Line"] = Relationship(back_populates="line_votes")

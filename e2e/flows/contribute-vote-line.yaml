@@ -1,0 +1,27 @@
+appId: com.cbba.mobility
+---
+- launchApp:
+    permissions:
+      location: always
+- setLocation:
+    latitude: -17.394
+    longitude: -66.182
+- waitForAnimationToEnd
+
+# Navigate to Contribute tab
+- tapOn: "Contribuir, tab.*"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Verify line familiarity section is visible
+- assertVisible:
+    id: "contribute-lines-title"
+
+# Approve the first line
+- tapOn:
+    id: "contribute-line-approve-0"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+- takeScreenshot: "contribute-line-voted"

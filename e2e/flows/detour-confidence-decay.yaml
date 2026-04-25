@@ -1,0 +1,27 @@
+appId: com.cbba.mobility
+---
+- launchApp:
+    permissions:
+      location: always
+- setLocation:
+    latitude: -17.394
+    longitude: -66.182
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Verify nearby lines loaded
+- assertVisible:
+    id: "explore-nearby-title"
+- assertVisible: "250 Ecologica"
+
+# Verify detour badge is present (indicates active detour)
+- assertVisible: "Desvío"
+
+# Tap into line detail to see detour info
+- tapOn: "250 Ecologica"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- assertVisible: "Desvío"
+
+- takeScreenshot: "detour-confidence-visible"

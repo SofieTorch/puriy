@@ -7,35 +7,53 @@ import { subscribeSyncStatus } from '@/services/sync';
 
 const POLL_MS = 15000;
 
-export default function Header({ title }: { title: string }) {
+function useHeaderStatus() {
   const [isOnline, setIsOnline] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
 
   useEffect(() => {
     let mounted = true;
-
     const poll = async () => {
       const reachable = await isServerReachable();
       if (mounted) setIsOnline(reachable);
     };
-
     poll();
     const interval = setInterval(poll, POLL_MS);
-
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-    };
+    return () => { mounted = false; clearInterval(interval); };
   }, []);
 
-  useEffect(() => {
-    return subscribeSyncStatus(setIsSyncing);
-  }, []);
+  useEffect(() => subscribeSyncStatus(setIsSyncing), []);
+  useEffect(() => subscribeRecordingStatus(setIsRecording), []);
 
-  useEffect(() => {
-    return subscribeRecordingStatus(setIsRecording);
-  }, []);
+  return { isOnline, isSyncing, isRecording };
+}
+
+export function HeaderStatusBadge() {
+  const { isOnline, isSyncing, isRecording } = useHeaderStatus();
+
+  return (
+    <View className="flex-row items-center gap-1.5 rounded-xl bg-white/20 px-2.5 py-1 ml-3">
+      <View
+        className={`h-2 w-2 rounded-xl ${isRecording ? 'bg-red-500' : isSyncing ? 'bg-orange-500' : isOnline ? 'bg-green-500' : 'bg-gray-400'}`}
+      />
+      <Text className="text-xs font-semibold text-white">
+        {isRecording ? 'grabando...' : isSyncing ? 'sincronizando...' : isOnline ? 'online' : 'offline'}
+      </Text>
+    </View>
+  );
+}
+
+export function HeaderIcon() {
+  return (
+    <View className="mr-3">
+      <Image source={require('@/assets/travel.png')} className="h-8 w-8" />
+    </View>
+  );
+}
+
+export default function Header({ title }: { title: string }) {
+  const { isOnline, isSyncing, isRecording } = useHeaderStatus();
 
   return (
     <View className="relative justify-center bg-[#09A6F3] p-4">
@@ -54,7 +72,7 @@ export default function Header({ title }: { title: string }) {
           <Image source={require('@/assets/travel.png')} className="h-8 w-8" />
         </View>
       </View>
-      <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
+      <View testID="header-title" pointerEvents="none" className="absolute inset-0 items-center justify-center">
         <Text className="text-xl font-medium text-white">{title}</Text>
       </View>
     </View>

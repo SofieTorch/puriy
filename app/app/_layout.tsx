@@ -2,7 +2,12 @@ import { DefaultTheme, ThemeProvider, type Theme } from '@react-navigation/nativ
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { LogBox } from 'react-native';
 import 'react-native-reanimated';
+
+if (process.env.EXPO_PUBLIC_E2E === 'true') {
+  LogBox.ignoreAllLogs(true);
+}
 
 import { DatabaseProvider } from '@/components/DatabaseProvider';
 import { GluestackUIProvider } from '@/components/ui/gluestack-ui-provider';
@@ -26,16 +31,16 @@ export default function RootLayout() {
     
     <GluestackUIProvider mode="light">
       <GestureHandlerRootView style={{ flex: 1 }}>
-      <DatabaseProvider>
-        <ThemeProvider value={LightTheme}>
-          <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-          </Stack>
-          <StatusBar style="light" backgroundColor="#09A6F3" /> 
-        </ThemeProvider>
-      </DatabaseProvider>
-    </GestureHandlerRootView>
+        <DatabaseProvider>
+          <ThemeProvider value={LightTheme}>
+            <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+            </Stack>
+            <StatusBar style="light" backgroundColor="#09A6F3" /> 
+          </ThemeProvider>
+        </DatabaseProvider>
+      </GestureHandlerRootView>
     </GluestackUIProvider>
   
   );

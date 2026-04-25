@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "marimo-notebook": {
+      "source": "marimo-team/skills",
+      "sourceType": "github",
+      "computedHash": "17f16170d948dd845121a49263493b534588db66457c9c47b40ad3868923cba7"
+    }
+  }
+}

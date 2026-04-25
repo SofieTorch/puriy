@@ -7,18 +7,22 @@ import { lines as linesTable } from '@/db/schema';
 import api, { type Line } from '@/services/api';
 import NetInfo from '@react-native-community/netinfo';
 
-const CACHE_STATUS = 'approved';
-
-/** Get lines: from API when online (and refresh cache), from cache when offline. */
+/** Get lines: from API when online (and refresh cache), from cache when offline.
+ *  Includes both approved and pending lines so contributors can assign recordings to pending lines.
+ */
 export async function getLines(): Promise<Line[]> {
   const netInfo = await NetInfo.fetch();
   const isOnline = netInfo.isConnected ?? false;
 
   if (isOnline) {
     try {
-      const data = await api.getLines(CACHE_STATUS);
-      await refreshLineCache(data);
-      return data;
+      const [approved, pending] = await Promise.all([
+        api.getLines('approved'),
+        api.getLines('pending'),
+      ]);
+      const all = [...approved, ...pending];
+      await refreshLineCache(all);
+      return all;
     } catch (err) {
       console.warn('Failed to fetch lines, using cache:', err);
       return getLinesFromCache();

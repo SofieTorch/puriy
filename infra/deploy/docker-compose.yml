@@ -1,0 +1,143 @@
+name: cbba_mobility_deploy
+
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-cbba_mobility}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Run migrations before server starts
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/deploy/Dockerfile.server
+    command: >
+      packages/database/.venv/bin/alembic
+      -c packages/database/alembic.ini upgrade head
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  server:
+    build:
+      context: ../..
+      dockerfile: infra/deploy/Dockerfile.server
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      VALHALLA_URL: http://valhalla:8002
+      OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+
+  valhalla:
+    image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
+    restart: unless-stopped
+    volumes:
+      - valhalla_data:/custom_files
+    environment:
+      tile_urls: https://download.geofabrik.de/south-america/bolivia-latest.osm.pbf
+      serve_tiles: "True"
+      build_elevation: "False"
+      build_admins: "False"
+      build_time_zones: "False"
+
+  marimo:
+    build:
+      context: ../..
+      dockerfile: infra/deploy/Dockerfile.marimo
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      VALHALLA_URL: http://valhalla:8002
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # --- Observability stack ---
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    restart: unless-stopped
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml
+    depends_on:
+      - tempo
+      - loki
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+      - tempo_data:/var/tempo
+
+  loki:
+    image: grafana/loki:latest
+    restart: unless-stopped
+    volumes:
+      - loki_data:/loki
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    depends_on:
+      - otel-collector
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      GF_SERVER_ROOT_URL: https://puriy.sofietorch.dev/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+    depends_on:
+      - tempo
+      - loki
+      - prometheus
+
+  # --- Reverse proxy ---
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+      - marimo
+      - grafana
+
+volumes:
+  db_data:
+  valhalla_data:
+  tempo_data:
+  loki_data:
+  prometheus_data:
+  grafana_data:
+  caddy_data:
+  caddy_config:

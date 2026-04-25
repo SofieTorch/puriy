@@ -8,6 +8,48 @@
       "when": 1771767763790,
       "tag": "0000_exotic_scarlet_witch",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1775609065818,
+      "tag": "0001_loose_thunderbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1775820466163,
+      "tag": "0002_magenta_thunderbolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1775820803552,
+      "tag": "0003_majestic_sway",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1775829200360,
+      "tag": "0004_kind_thundra",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1775829883806,
+      "tag": "0005_hot_doctor_spectrum",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1775830995903,
+      "tag": "0006_lumpy_hellion",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,41 @@
+appId: com.cbba.mobility
+---
+- launchApp:
+    permissions:
+      location: always
+- setLocation:
+    latitude: -17.394
+    longitude: -66.182
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Pending line should NOT be visible by default
+- assertNotVisible: "Test Pending"
+
+# Open preferences sheet
+- tapOn:
+    id: "explore-prefs-gear"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Verify preferences sheet
+- assertVisible:
+    id: "prefs-title"
+
+# Toggle pending lines on by tapping the label text
+- tapOn: "Incluir líneas pendientes"
+- waitForAnimationToEnd
+
+# Close sheet by swiping down
+- swipe:
+    start: "50%, 40%"
+    end: "50%, 90%"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Pending line should now be visible
+- assertVisible: "Test Pending"
+
+- takeScreenshot: "explore-preferences-pending"

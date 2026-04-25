@@ -1,0 +1,25 @@
+appId: com.cbba.mobility
+---
+- launchApp:
+    permissions:
+      location: always
+- setLocation:
+    latitude: -17.394
+    longitude: -66.182
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Open preferences sheet
+- tapOn:
+    id: "explore-prefs-gear"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Verify all preferences sheet contents
+- assertVisible:
+    id: "prefs-title"
+- assertVisible:
+    id: "prefs-pending-lines"
+- assertVisible: "Incluir rutas pendientes"
+
+- takeScreenshot: "explore-preferences-sheet"

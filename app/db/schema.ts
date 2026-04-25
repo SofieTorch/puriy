@@ -1,8 +1,9 @@
+import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 
 /** Cached lines from the server (refreshed when online). */
 export const lines = sqliteTable('lines', {
-  id: integer('id').primaryKey(),
+  id: text('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description'),
   status: text('status', { enum: ['pending', 'approved', 'rejected', 'merged'] }).notNull(),
@@ -18,8 +19,11 @@ export const recordings = sqliteTable('recordings', {
   status: text('status', {
     enum: ['in_progress', 'pending_sync', 'synced', 'discarded', 'cancelled'],
   }).notNull(),
-  lineId: integer('line_id'), // Server line ID (if existing line selected)
+  lineId: text('line_id'), // Server line ID (UUID, if existing line selected)
   lineName: text('line_name'), // New line name (if creating)
+  isDetour: integer('is_detour', { mode: 'boolean' }).default(false),
+  detourReason: text('detour_reason'),
+  detourDescription: text('detour_description'),
   direction: text('direction'),
   deviceModel: text('device_model'),
   osVersion: text('os_version'),
@@ -68,3 +72,40 @@ export type LocationPoint = typeof locationPoints.$inferSelect;
 export type NewLocationPoint = typeof locationPoints.$inferInsert;
 export type SensorReading = typeof sensorReadings.$inferSelect;
 export type NewSensorReading = typeof sensorReadings.$inferInsert;
+
+/** Key-value preferences store. */
+export const preferences = sqliteTable('preferences', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at').default(sql`(datetime('now'))`),
+});
+
+export type Preference = typeof preferences.$inferSelect;
+
+/** Saved trips (favorites). */
+export const savedTrips = sqliteTable('saved_trips', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  originName: text('origin_name').notNull(),
+  destName: text('dest_name').notNull(),
+  originLon: real('origin_lon').notNull(),
+  originLat: real('origin_lat').notNull(),
+  destLon: real('dest_lon').notNull(),
+  destLat: real('dest_lat').notNull(),
+  type: text('type', { enum: ['one_time', 'commute'] }).notNull(),
+  routeJson: text('route_json').notNull(), // serialized DirectionsResponse
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export type SavedTrip = typeof savedTrips.$inferSelect;
+export type NewSavedTrip = typeof savedTrips.$inferInsert;
+
+/** Recent search locations for autocomplete history. */
+export const searchHistory = sqliteTable('search_history', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  lon: real('lon').notNull(),
+  lat: real('lat').notNull(),
+  usedAt: text('used_at').notNull().default(sql`(datetime('now'))`),
+});
+
+export type SearchHistoryEntry = typeof searchHistory.$inferSelect;

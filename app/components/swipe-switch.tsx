@@ -23,6 +23,7 @@ interface SwipeSwitchProps {
   disabled?: boolean;
   onLabel?: string;
   offLabel?: string;
+  testID?: string;
 }
 
 const BRAND_BLUE = '#009DFF';
@@ -38,6 +39,7 @@ export function SwipeSwitch({
   disabled = false,
   onLabel = 'Recording',
   offLabel = 'Swipe to Record',
+  testID,
 }: SwipeSwitchProps) {
   const translateX = useSharedValue(value ? MAX_TRANSLATE : 0);
   const startX = useSharedValue(0);
@@ -123,7 +125,7 @@ export function SwipeSwitch({
   }, [value]);
 
   return (
-    <View style={[styles.container, disabled && styles.disabled]}>
+    <View testID={testID} style={[styles.container, disabled && styles.disabled]}>
       <GestureDetector gesture={panGesture}>
         <Animated.View style={[styles.track, trackAnimatedStyle]}>
           <Animated.View style={[styles.labelContainer, labelAnimatedStyle]}>

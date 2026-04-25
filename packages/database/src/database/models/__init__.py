@@ -1,16 +1,19 @@
-from .line import Line, LineBase, LineStatus
+from .detour import Detour, DetourStatus
+from .line import Line, LineBase, LineStatus, LineVote
 from .route import (
-    EstimationStatus,
+    EdgeStatus,
+    EdgeVote,
     ResampledTrip,
     ResampledTripPoint,
-    RouteEstimation,
-    RouteSegment,
-    SegmentStatus,
-    SegmentVote,
+    Route,
+    RouteEdge,
+    RouteSource,
+    RouteStatus,
+    TravelTimeSample,
     Trip,
+    TripMatchedEdge,
     TripPoint,
     TripStatus,
-    TravelTimeSample,
     VoteChoice,
 )
 from .trip import (
@@ -25,9 +28,12 @@ from .trip import (
 )
 
 __all__ = [
+    "Detour",
+    "DetourStatus",
     "Line",
     "LineBase",
     "LineStatus",
+    "LineVote",
     "TripSession",
     "TripSessionBase",
     "SessionStatus",
@@ -37,13 +43,15 @@ __all__ = [
     "TripSensorReading",
     "TripSensorReadingBase",
     "Trip",
+    "TripMatchedEdge",
     "TripPoint",
     "TripStatus",
-    "RouteEstimation",
-    "EstimationStatus",
-    "RouteSegment",
-    "SegmentStatus",
-    "SegmentVote",
+    "Route",
+    "RouteSource",
+    "RouteStatus",
+    "RouteEdge",
+    "EdgeStatus",
+    "EdgeVote",
     "VoteChoice",
     "TravelTimeSample",
     "ResampledTrip",

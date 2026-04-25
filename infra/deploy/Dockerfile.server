@@ -1,0 +1,30 @@
+FROM python:3.14-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgeos-dev libproj-dev gcc g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+WORKDIR /app
+
+# Install packages/database
+COPY packages/database/pyproject.toml packages/database/uv.lock packages/database/
+COPY packages/database/src packages/database/src
+RUN cd packages/database && uv sync --frozen --no-dev
+
+# Install packages/geodata (depends on database)
+COPY packages/geodata/pyproject.toml packages/geodata/uv.lock packages/geodata/
+COPY packages/geodata/src packages/geodata/src
+RUN cd packages/geodata && uv sync --frozen --no-dev
+
+# Install server (depends on geodata, database)
+COPY server/pyproject.toml server/uv.lock server/
+COPY server/*.py server/
+COPY server/routes server/routes
+COPY server/schemas server/schemas
+RUN cd server && uv sync --frozen --no-dev
+
+EXPOSE 8000
+
+CMD ["server/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "server"]

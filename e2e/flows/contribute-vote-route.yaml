@@ -1,0 +1,32 @@
+appId: com.cbba.mobility
+---
+- launchApp:
+    permissions:
+      location: always
+- setLocation:
+    latitude: -17.394
+    longitude: -66.182
+- waitForAnimationToEnd
+
+# Navigate to Contribute tab
+- tapOn: "Contribuir, tab.*"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Verify route voting section is visible
+- assertVisible:
+    id: "contribute-routes-title"
+
+# Expand first route to see segments
+- tapOn: "Ver ruta"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Approve the route
+- tapOn:
+    id: "contribute-route-approve-0"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+- takeScreenshot: "contribute-route-voted"

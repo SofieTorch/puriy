@@ -3,6 +3,7 @@ import React from 'react';
 import { View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
+import { HeaderStatusBadge, HeaderIcon } from '@/components/header';
 import Feather from '@expo/vector-icons/Feather';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -19,18 +20,17 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: activeBlue,
         tabBarInactiveTintColor: inactiveBlue,
-        headerShown: false,
+        headerShown: true,
+        headerStyle: { backgroundColor: '#09A6F3' },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: '500', fontSize: 20 },
+        headerLeft: () => <HeaderStatusBadge />,
+        headerRight: () => <HeaderIcon />,
         tabBarButton: HapticTab,
         tabBarShowLabel: true,
         tabBarLabelPosition: 'below-icon',
         tabBarItemStyle: {
-          height: 84,
           justifyContent: 'center',
-          paddingTop: 0,
-          paddingBottom: 0,
-        },
-        tabBarIconStyle: {
-          marginTop: 6,
         },
         tabBarStyle: {
           height: 120,
@@ -41,7 +41,6 @@ export default function TabLayout() {
           borderTopRightRadius: 28,
           backgroundColor: '#FFFFFF',
           position: 'absolute',
-          overflow: 'visible',
           shadowColor: '#000',
           shadowOpacity: 0.08,
           shadowRadius: 14,
@@ -59,6 +58,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="explore"
         options={{
+          title: 'Explorar',
           tabBarIcon: ({ color }: { color: string }) =>
             renderTabIcon(<Feather size={28} name="map-pin" color={color} />),
           tabBarLabel: 'Explorar',
@@ -67,6 +67,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="record"
         options={{
+          title: 'Trayecto',
           tabBarLabel: 'Trazar',
           tabBarIcon: ({ color }: { color: string }) =>
             renderTabIcon(<Feather size={28} name="navigation" color={color} />),
@@ -75,6 +76,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="contribute"
         options={{
+          title: 'Contribuir',
           tabBarLabel: 'Contribuir',
           tabBarIcon: ({ color }: { color: string }) =>
             renderTabIcon(
@@ -85,6 +87,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="favorites"
         options={{
+          title: 'Favoritos',
           tabBarLabel: 'Favoritos',
           tabBarIcon: ({ color }: { color: string }) =>
             renderTabIcon(<Feather size={28} name="star" color={color} />),

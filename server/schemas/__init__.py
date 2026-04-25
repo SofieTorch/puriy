@@ -1,4 +1,4 @@
-from .line import LineCreate, LineRead, LineUpdate, path_to_linestring
+from .line import LineCreate, LineRead, LineUpdate
 from .recording import (
     EndSessionRequest,
     TripSessionPointBatch,
@@ -15,7 +15,6 @@ __all__ = [
     "LineCreate",
     "LineRead",
     "LineUpdate",
-    "path_to_linestring",
     "TripSessionCreate",
     "TripSessionRead",
     "EndSessionRequest",

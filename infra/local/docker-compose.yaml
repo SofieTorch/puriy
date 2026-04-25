@@ -59,9 +59,39 @@ services:
       build_admins: "False"
       build_time_zones: "False"
 
+  nominatim:
+    image: mediagis/nominatim:4.4
+    ports:
+      - "8004:8080"
+    environment:
+      PBF_URL: https://download.geofabrik.de/south-america/bolivia-latest.osm.pbf
+      REPLICATION_URL: https://download.geofabrik.de/south-america/bolivia-updates/
+      NOMINATIM_PASSWORD: nominatim
+      IMPORT_STYLE: full
+    volumes:
+      - nominatim_data:/var/lib/postgresql/14/main
+    shm_size: 1g
+
+  tileserver:
+    # Serves vector tiles from Protomaps' free planet basemap.
+    # Tiles are streamed on demand (no large download needed).
+    # Cache is stored in the volume for faster subsequent loads.
+    image: protomaps/go-pmtiles:latest
+    ports:
+      - "8003:8080"
+    volumes:
+      - tileserver_cache:/tmp/pmtiles
+    command:
+      - serve
+      - /tmp/pmtiles
+      - --bucket=https://build.protomaps.com/20250305.pmtiles
+      - --port=8080
+
 volumes:
   tempo_data:
   loki_data:
   prometheus_data:
   grafana_data:
   valhalla_data:
+  nominatim_data:
+  tileserver_cache:
