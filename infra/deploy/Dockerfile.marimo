@@ -21,6 +21,8 @@ RUN cd packages/geodata && uv sync --frozen --no-dev
 # Install transit-lab (depends on geodata, database)
 COPY transit-lab/pyproject.toml transit-lab/uv.lock transit-lab/
 COPY transit-lab/*.py transit-lab/
+COPY transit-lab/components transit-lab/components
+COPY transit-lab/seed transit-lab/seed
 RUN cd transit-lab && uv sync --frozen --no-dev
 
 # Patch run_app.py to bind to 0.0.0.0 so it's reachable outside the container

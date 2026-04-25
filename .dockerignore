@@ -1,0 +1,40 @@
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.venv/
+**/venv/
+**/*.egg-info/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+
+# Tests (not needed in production images)
+**/tests/
+
+# Secrets / env
+**/.env
+**/.env.*
+!**/.env.example
+
+# Git / CI / editor
+.git/
+.github/
+.gitignore
+.idea/
+.vscode/
+**/.DS_Store
+
+# Tooling
+.claude/
+plans/
+
+# Subprojects not needed by deploy images
+app/
+infra/local/
+
+# Marimo cache
+transit-lab/__marimo__/
+
+# Docs (small, but not needed at runtime)
+**/README.md

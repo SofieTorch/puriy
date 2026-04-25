@@ -24,6 +24,7 @@ COPY server/pyproject.toml server/uv.lock server/
 COPY server/*.py server/
 COPY server/routes server/routes
 COPY server/schemas server/schemas
+COPY server/services server/services
 RUN cd server && uv sync --frozen --no-dev
 
 EXPOSE 8000
