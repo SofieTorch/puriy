@@ -17,11 +17,17 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: |
+            set -e
             cd ${{ secrets.DEPLOY_DIRECTORY }}
 
             # Pull latest code
             git fetch origin main
             git reset --hard origin/main
 
-            # Rebuild and restart only changed services
-            docker compose -f infra/deploy/docker-compose.yml up -d --build --remove-orphans
+            # Rebuild and restart only changed services. On failure, dump logs.
+            if ! docker compose -f infra/deploy/docker-compose.yml up -d --build --remove-orphans; then
+              echo "=== compose up failed, dumping logs ==="
+              docker compose -f infra/deploy/docker-compose.yml logs --no-log-prefix --tail=200 migrate || true
+              docker compose -f infra/deploy/docker-compose.yml ps
+              exit 1
+            fi
