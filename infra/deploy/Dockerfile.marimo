@@ -1,0 +1,31 @@
+FROM python:3.14-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgeos-dev libproj-dev gcc g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+WORKDIR /app
+
+# Install packages/database
+COPY packages/database/pyproject.toml packages/database/uv.lock packages/database/
+COPY packages/database/src packages/database/src
+RUN cd packages/database && uv sync --frozen --no-dev
+
+# Install packages/geodata (depends on database)
+COPY packages/geodata/pyproject.toml packages/geodata/uv.lock packages/geodata/
+COPY packages/geodata/src packages/geodata/src
+RUN cd packages/geodata && uv sync --frozen --no-dev
+
+# Install transit-lab (depends on geodata, database)
+COPY transit-lab/pyproject.toml transit-lab/uv.lock transit-lab/
+COPY transit-lab/*.py transit-lab/
+RUN cd transit-lab && uv sync --frozen --no-dev
+
+# Patch run_app.py to bind to 0.0.0.0 so it's reachable outside the container
+RUN sed -i 's/host="127.0.0.1"/host="0.0.0.0"/' transit-lab/run_app.py
+
+EXPOSE 2727
+
+CMD ["transit-lab/.venv/bin/python", "transit-lab/run_app.py"]

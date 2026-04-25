@@ -1,0 +1,27 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allows manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_DIRECTORY }}
+
+            # Pull latest code
+            git fetch origin main
+            git reset --hard origin/main
+
+            # Rebuild and restart only changed services
+            docker compose -f infra/deploy/docker-compose.yml up -d --build --remove-orphans

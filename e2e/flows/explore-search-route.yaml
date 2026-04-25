@@ -1,0 +1,51 @@
+appId: com.cbba.mobility
+---
+- launchApp:
+    permissions:
+      location: always
+- setLocation:
+    latitude: -17.394
+    longitude: -66.182
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Type destination (a place along Route 250)
+- tapOn:
+    id: "explore-dest-input"
+- inputText: "Lanza Cochabamba"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Hide keyboard so suggestions are tappable
+- hideKeyboard
+- waitForAnimationToEnd
+
+# Pick first suggestion
+- tapOn: "Calle Leonardo Lanza"
+- waitForAnimationToEnd
+
+# Search for routes
+- tapOn:
+    id: "explore-search-btn"
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Verify results
+- assertVisible:
+    id: "explore-results-title"
+
+# Tap first route to see detail
+- tapOn:
+    text: "min"
+    index: 0
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+
+# Verify detail view with save button
+- assertVisible: "Guardar"
+
+- takeScreenshot: "explore-search-results"
