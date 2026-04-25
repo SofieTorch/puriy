@@ -31,3 +31,6 @@ jobs:
               docker compose -f infra/deploy/docker-compose.yml ps
               exit 1
             fi
+
+            # Reload Caddy in case the Caddyfile changed (it's bind-mounted, not in the image)
+            docker compose -f infra/deploy/docker-compose.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile
