@@ -127,49 +127,97 @@ def _(run_button, strategy_selector, line_selector, params_form, traces, mo):
 
 @app.cell
 def _(reconstruction_result, show_traces, traces, mo):
+    from geodata.match import trace_match as _trace_match
     from components.maps import path_layer, scatter_layer, deck, default_view_state
-    from components.style import COLORS
+
+    _BLUE = [59, 130, 246, 220]
+    _LIGHT_BLUE = [147, 197, 253, 220]
 
     _features = reconstruction_result.geojson.get("features", [])
     mo.stop(not _features, mo.md("*No features in reconstruction result.*"))
 
     layers = []
 
-    # Input traces first (behind the route)
+    # Input traces (gray) + edge intersection dots from traces
+    _edge_junction_points = []
     if show_traces.value and traces:
         _trace_paths = []
         for _trace in traces:
             _pts = [[p.longitude, p.latitude] for p in _trace.points]
-            if len(_pts) >= 2:
-                _trace_paths.append({"path": _pts, "color": [160, 160, 160, 70], "name": "trace"})
+            if len(_pts) < 2:
+                continue
+            _trace_paths.append({"path": _pts, "color": [140, 140, 140, 140], "name": f"trace {_trace.trace_id[:8]}"})
+
+            # Edge intersection dots: where matched edges meet along this trace
+            if _trace.matched_edges and len(_trace.matched_edges) > 1:
+                _sorted_edges = sorted(_trace.matched_edges, key=lambda e: e.sequence)
+                _n_edges = len(_sorted_edges)
+                _n_pts = len(_pts)
+                # Approximate edge boundary positions along the trace points
+                for _ei in range(1, _n_edges):
+                    _pt_idx = min(int(_ei / _n_edges * _n_pts), _n_pts - 1)
+                    _edge_junction_points.append({
+                        "position": _pts[_pt_idx],
+                        "color": [255, 140, 0, 180],
+                    })
+
         if _trace_paths:
-            layers.append(path_layer(_trace_paths, id="traces", width=2, opacity=0.3))
+            layers.append(path_layer(_trace_paths, id="traces", width=2, opacity=0.5))
 
-    # Reconstructed route — one color per fragment, solid line
-    _start_end_points = []
-    for _frag_idx, _feature in enumerate(_features):
+    if _edge_junction_points:
+        layers.append(scatter_layer(_edge_junction_points, id="trace-junctions", radius=15))
+
+    # Reconstructed route: trace_match to get per-edge geometry, alternating blue/light blue
+    _all_coords = []
+    for _feature in _features:
         _coords = _feature.get("geometry", {}).get("coordinates", [])
-        if len(_coords) < 2:
-            continue
-        _color = COLORS[_frag_idx % len(COLORS)] if len(_features) > 1 else [59, 130, 246, 230]
-        _label = f"Fragment {_frag_idx}" if len(_features) > 1 else "Reconstructed route"
-        layers.append(
-            path_layer(
-                [{"path": _coords, "color": _color, "name": _label}],
-                id=f"route-{_frag_idx}",
-                width=5,
+        if _all_coords and _coords:
+            _all_coords.extend(_coords[1:])
+        else:
+            _all_coords.extend(_coords)
+
+    if len(_all_coords) >= 2:
+        _shape = [{"lat": _c[1], "lon": _c[0]} for _c in _all_coords]
+        _matched = _trace_match(_shape, costing="bus", search_radius=60, gps_accuracy=20)
+
+        if _matched.edges:
+            _edge_paths = []
+            _route_junctions = []
+            for _ei, _edge in enumerate(_matched.edges):
+                _begin = _edge.get("begin_shape_index", 0)
+                _end = _edge.get("end_shape_index", _begin)
+                _seg = _matched.shape_coords[_begin : _end + 1]
+                if len(_seg) < 2:
+                    continue
+                _seg_lonlat = [[_lon, _lat] for _lat, _lon in _seg]
+                _color = _BLUE if _ei % 2 == 0 else _LIGHT_BLUE
+                _edge_paths.append({
+                    "path": _seg_lonlat,
+                    "color": _color,
+                    "name": f"Edge {_ei} ({_edge.get('id', '?')})",
+                })
+                # Junction dot between consecutive edges
+                if _ei > 0:
+                    _route_junctions.append({
+                        "position": _seg_lonlat[0],
+                        "color": [30, 30, 30, 200],
+                    })
+
+            layers.append(path_layer(_edge_paths, id="route-edges", width=5))
+            if _route_junctions:
+                layers.append(scatter_layer(_route_junctions, id="route-junctions", radius=10))
+        else:
+            # Fallback: solid line if trace_match returned no edges
+            layers.append(
+                path_layer(
+                    [{"path": _all_coords, "color": _BLUE, "name": "Reconstructed route"}],
+                    id="route-fallback",
+                    width=5,
+                )
             )
-        )
-        # Start and end markers
-        _start_end_points.append({"position": _coords[0], "color": [34, 197, 94, 230]})
-        _start_end_points.append({"position": _coords[-1], "color": [239, 68, 68, 230]})
 
-    if _start_end_points:
-        layers.append(scatter_layer(_start_end_points, id="endpoints", radius=40))
-
-    _first_coords = _features[0]["geometry"]["coordinates"]
-    _mid = len(_first_coords) // 2
-    _view = default_view_state(lat=_first_coords[_mid][1], lon=_first_coords[_mid][0], zoom=14)
+    _mid = len(_all_coords) // 2
+    _view = default_view_state(lat=_all_coords[_mid][1], lon=_all_coords[_mid][0], zoom=14)
 
     result_map = deck(
         layers,
