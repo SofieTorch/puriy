@@ -857,19 +857,66 @@ def test_edge_sequence_overlap_assembly_preview_stitches_persisted_edge_sequence
     assert result.diagnostics["consensus_method"] == "edge_sequence_overlap_assembly"
 
 
-def test_edge_sequence_overlap_assembly_preview_fails_on_gap():
+def test_edge_sequence_overlap_assembly_preview_returns_fragments_on_gap(monkeypatch):
     strategy = EdgeSequenceOverlapAssemblyPreviewStrategy()
+    responses = {
+        "left": {
+            "shape_coords": [
+                (0.0, 0.0),
+                (0.0, 0.001),
+                (0.0, 0.002),
+            ],
+            "edges": [
+                {"id": 101, "forward": True, "begin_shape_index": 0, "end_shape_index": 1},
+                {"id": 102, "forward": True, "begin_shape_index": 1, "end_shape_index": 2},
+            ],
+        },
+        "right": {
+            "shape_coords": [
+                (0.0, 0.003),
+                (0.0, 0.004),
+                (0.0, 0.005),
+            ],
+            "edges": [
+                {"id": 104, "forward": True, "begin_shape_index": 0, "end_shape_index": 1},
+                {"id": 105, "forward": True, "begin_shape_index": 1, "end_shape_index": 2},
+            ],
+        },
+    }
+
+    def fake_trace_match(
+        points,
+        *,
+        trace_id=None,
+        costing="bus",
+        search_radius=60,
+        gps_accuracy=20,
+    ):
+        payload = responses[str(trace_id)]
+        return _TraceOutput(
+            shape_coords=payload["shape_coords"],
+            edges=payload["edges"],
+            matched_points=[],
+            match_score=1.0,
+            mean_snap_distance=0.0,
+        )
+
+    monkeypatch.setattr(edge_sequence_strategy, "trace_match", fake_trace_match)
+
     traces = [
         _make_edge_trace("left", [101, 102]),
         _make_edge_trace("right", [104, 105], lon_start=0.003),
     ]
+    result = strategy.reconstruct(uuid4(), traces)
 
-    with pytest.raises(ValueError, match="gap with no supported overlap"):
-        strategy.reconstruct(
-            uuid4(),
-            traces,
-            params={"recover_geometry": False},
-        )
+    assert result.diagnostics["fragment_count"] == 2
+    assert len(result.geojson["features"]) == 2
+    fragment_edges = [
+        feature["properties"]["consensus_edge_ids"]
+        for feature in result.geojson["features"]
+    ]
+    assert [101, 102] in fragment_edges
+    assert [104, 105] in fragment_edges
 
 
 def test_edge_sequence_overlap_assembly_preview_handles_inserted_edge_noise(monkeypatch):
