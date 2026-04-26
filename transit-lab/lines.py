@@ -94,7 +94,7 @@ def _(db, lines_table, mo):
                 "name": mo.ui.text(value=_line.name, label="Name"),
                 "description": mo.ui.text(value=_line.description or "", label="Description"),
                 "line_type": mo.ui.dropdown(
-                    options={"": "—", "micro": "Micro", "trufi": "Trufi", "taxi_trufi": "Taxi-trufi"},
+                    options={"—": "", "Micro": "micro", "Trufi": "trufi", "Taxi-trufi": "taxi_trufi"},
                     value=_line.line_type.value if _line.line_type else "",
                     label="Type",
                 ),
@@ -121,7 +121,7 @@ def _(mo):
             "name": mo.ui.text(label="Name"),
             "description": mo.ui.text(label="Description"),
             "line_type": mo.ui.dropdown(
-                options={"": "—", "micro": "Micro", "trufi": "Trufi", "taxi_trufi": "Taxi-trufi"},
+                options={"—": "", "Micro": "micro", "Trufi": "trufi", "Taxi-trufi": "taxi_trufi"},
                 value="",
                 label="Type",
             ),

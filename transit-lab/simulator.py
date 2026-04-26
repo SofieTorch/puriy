@@ -39,7 +39,7 @@ def _(db, mo):
     from components.data import load_lines as _load_lines
 
     _lines = _load_lines(db)
-    _options = {"": "— Draw or upload —", **{row["id"]: row["name"] for row in _lines}}
+    _options = {"— Draw or upload —": "", **{row["name"]: row["id"] for row in _lines}}
     line_source = mo.ui.dropdown(options=_options, value="", label="Load route from line")
     line_source
     return (line_source,)
@@ -245,7 +245,7 @@ def _(db, mo):
     from components.data import load_lines as _load_lines
 
     _lines = _load_lines(db)
-    _options = {row["id"]: row["name"] for row in _lines}
+    _options = {row["name"]: row["id"] for row in _lines}
     save_line = mo.ui.dropdown(options=_options, label="Assign to line")
     device_id_input = mo.ui.text(value="simulator", label="Device ID")
     save_button = mo.ui.run_button(label="Save traces to DB")

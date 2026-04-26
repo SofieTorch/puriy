@@ -31,7 +31,7 @@ def _(db, mo):
     from components.data import load_lines
 
     _lines = load_lines(db)
-    _options = {row["id"]: row["name"] for row in _lines}
+    _options = {row["name"]: row["id"] for row in _lines}
     line_selector = mo.ui.dropdown(
         options=_options,
         label="Line",

@@ -33,7 +33,7 @@ def _(db, mo):
     from components.data import load_lines
 
     _lines = load_lines(db)
-    _options = {row["id"]: row["name"] for row in _lines}
+    _options = {row["name"]: row["id"] for row in _lines}
     line_selector = mo.ui.dropdown(options=_options, label="Line")
     line_selector
     return (line_selector,)
@@ -44,7 +44,7 @@ def _(mo):
     from geodata.reconstruction import get_reconstruction_strategies as _get_reconstruction_strategies
 
     _strategies = _get_reconstruction_strategies()
-    _options = {key: s.label for key, s in _strategies.items()}
+    _options = {s.label: key for key, s in _strategies.items()}
 
     strategy_selector = mo.ui.dropdown(options=_options, label="Strategy")
     strategy_selector
