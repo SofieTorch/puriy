@@ -14,7 +14,6 @@ from database.models.line import Line, LineVote  # noqa: F401
 from database.models.trip import TripSession, TripSessionPoint, TripSensorReading  # noqa: F401
 from database.models.route import (  # noqa: F401
     Trip, TripMatchedEdge, TripPoint, Route, RouteEdge, EdgeVote, TravelTimeSample,
-    ResampledTrip, ResampledTripPoint,
 )
 
 load_dotenv()
@@ -44,8 +43,6 @@ _APP_TABLES = {
     "line_votes",
     "detours",
     "travel_time_samples",
-    "resampled_trips",
-    "resampled_trip_points",
     "fare_zones",
     "fare_reports",
 }

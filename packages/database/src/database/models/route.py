@@ -55,7 +55,6 @@ class Trip(SQLModel, table=True):
     points: list["TripPoint"] = Relationship(back_populates="trip")
     matched_edges: list["TripMatchedEdge"] = Relationship(back_populates="trip")
     travel_time_samples: list["TravelTimeSample"] = Relationship(back_populates="trip")
-    resampled_trips: list["ResampledTrip"] = Relationship(back_populates="trip")
 
 
 class TripPoint(SQLModel, table=True):
@@ -131,6 +130,7 @@ class Route(SQLModel, table=True):
     source: RouteSource = Field(default=RouteSource.COMPUTED)
     status: RouteStatus = Field(default=RouteStatus.PENDING)
     trip_count: int = Field(default=0)
+    strategy_key: Optional[str] = Field(default=None, max_length=100)
     fragment_index: int = Field(default=0)
     fragment_count: int = Field(default=1)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -208,52 +208,6 @@ class EdgeVote(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     edge: Optional["RouteEdge"] = Relationship(back_populates="votes")
-
-
-# ---------------------------------------------------------------------------
-# Resampled trips (uniform-interval normalization)
-# ---------------------------------------------------------------------------
-
-
-class ResampledTrip(SQLModel, table=True):
-    """A Trip resampled to uniform distance intervals (pipeline step 4)."""
-
-    __tablename__ = "resampled_trips"
-
-    id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
-    trip_id: UUID = Field(foreign_key="trips.id", index=True)
-
-    interval_meters: float = Field(description="Resampling interval in metres")
-    match_score: Optional[float] = Field(default=None, description="Min score filter used when batch-resampled; null for manual resamples")
-    point_count: int = Field(default=0)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-    trip: Optional["Trip"] = Relationship(back_populates="resampled_trips")
-    points: list["ResampledTripPoint"] = Relationship(back_populates="resampled_trip")
-
-
-class ResampledTripPoint(SQLModel, table=True):
-    """A single point in a resampled trip."""
-
-    __tablename__ = "resampled_trip_points"
-
-    id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
-    resampled_trip_id: UUID = Field(foreign_key="resampled_trips.id", index=True)
-    point_index: int
-
-    timestamp: datetime
-    latitude: float = Field(ge=-90, le=90)
-    longitude: float = Field(ge=-180, le=180)
-
-    point: Any = Field(
-        default=None,
-        sa_column=Column(
-            Geometry(geometry_type="POINT", srid=4326),
-            nullable=True,
-        ),
-    )
-
-    resampled_trip: Optional["ResampledTrip"] = Relationship(back_populates="points")
 
 
 # ---------------------------------------------------------------------------

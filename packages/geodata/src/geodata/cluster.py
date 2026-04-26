@@ -42,8 +42,6 @@ from sqlalchemy.orm import Session
 
 from database.models import (
     Line,
-    ResampledTrip,
-    ResampledTripPoint,
     Route,
     RouteEdge,
     RouteSource,
@@ -105,7 +103,7 @@ class _ClusterCoreResult:
 # ---------------------------------------------------------------------------
 
 
-def cluster_route(
+def cluster_route(  # noqa: C901
     db: Session,
     line_id: UUID,
     interval_meters: float,
@@ -151,6 +149,11 @@ def cluster_route(
         If the line is not found, no points are available, or fewer than two
         clusters are produced (all points noise or single cluster).
     """
+    # Lazy import — resampling tables have been dropped from the schema.
+    # This function is retained for backward compatibility but will fail
+    # at runtime if called (the tables no longer exist).
+    from database.models.route import ResampledTrip, ResampledTripPoint  # type: ignore[attr-defined]  # noqa: F811
+
     with tracer.start_as_current_span(
         "cluster_route",
         attributes={

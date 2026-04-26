@@ -82,6 +82,7 @@ def import_route_from_geojson(
             line_id=line_id,
             version=next_version,
             source=RouteSource.IMPORTED,
+            strategy_key="imported",
             status=RouteStatus.PENDING,
             trip_count=0,
             fragment_index=fragment_index,

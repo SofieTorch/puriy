@@ -4,8 +4,6 @@ from .line import Line, LineBase, LineStatus, LineType, LineVote
 from .route import (
     EdgeStatus,
     EdgeVote,
-    ResampledTrip,
-    ResampledTripPoint,
     Route,
     RouteEdge,
     RouteSource,
@@ -58,6 +56,4 @@ __all__ = [
     "EdgeVote",
     "VoteChoice",
     "TravelTimeSample",
-    "ResampledTrip",
-    "ResampledTripPoint",
 ]
