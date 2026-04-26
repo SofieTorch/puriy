@@ -127,41 +127,81 @@ def _(run_button, strategy_selector, line_selector, params_form, traces, mo):
 
 @app.cell
 def _(reconstruction_result, show_traces, traces, mo):
-    from components.maps import path_layer, deck, default_view_state
-    from components.style import COLORS
+    from components.maps import path_layer, scatter_layer, deck, default_view_state
 
     _features = reconstruction_result.geojson.get("features", [])
     mo.stop(not _features, mo.md("*No features in reconstruction result.*"))
 
+    def _gradient_color(_t: float) -> list[int]:
+        """Blue (0.0) → Cyan → Green → Yellow → Red (1.0)."""
+        if _t < 0.25:
+            _f = _t / 0.25
+            return [0, int(255 * _f), 255, 220]
+        elif _t < 0.5:
+            _f = (_t - 0.25) / 0.25
+            return [0, 255, int(255 * (1 - _f)), 220]
+        elif _t < 0.75:
+            _f = (_t - 0.5) / 0.25
+            return [int(255 * _f), 255, 0, 220]
+        else:
+            _f = (_t - 0.75) / 0.25
+            return [255, int(255 * (1 - _f)), 0, 220]
+
     layers = []
 
-    # Reconstruction result layers (one per fragment)
-    for _idx, _feature in enumerate(_features):
+    # Input traces first (behind the route)
+    if show_traces.value and traces:
+        _trace_paths = []
+        for _trace in traces:
+            _pts = [[p.longitude, p.latitude] for p in _trace.points]
+            if len(_pts) >= 2:
+                _trace_paths.append({"path": _pts, "color": [160, 160, 160, 70], "name": "trace"})
+        if _trace_paths:
+            layers.append(path_layer(_trace_paths, id="traces", width=2, opacity=0.3))
+
+    # Route segments with gradient coloring + junction dots
+    _segment_size = 5
+    _all_junctions = []
+
+    for _frag_idx, _feature in enumerate(_features):
         _coords = _feature.get("geometry", {}).get("coordinates", [])
         if len(_coords) < 2:
             continue
-        color = COLORS[_idx % len(COLORS)]
-        layers.append(
-            path_layer(
-                [{"path": _coords, "color": color, "name": f"Fragment {_idx}"}],
-                id=f"result-{_idx}",
-                width=6,
-            )
-        )
 
-    # Input traces (dimmed)
-    if show_traces.value and traces:
-        trace_paths = []
-        for trace in traces:
-            pts = [[p.longitude, p.latitude] for p in trace.points]
-            if len(pts) >= 2:
-                trace_paths.append({"path": pts, "color": [150, 150, 150, 80], "name": "trace"})
-        if trace_paths:
-            layers.append(path_layer(trace_paths, id="traces", width=2, opacity=0.4))
+        _n_segments = max(1, (len(_coords) - 1) // _segment_size)
+        _segment_paths = []
 
-    _coords = _features[0]["geometry"]["coordinates"]
-    _mid = len(_coords) // 2
-    _view = default_view_state(lat=_coords[_mid][1], lon=_coords[_mid][0], zoom=14)
+        for _s in range(_n_segments):
+            _start = _s * _segment_size
+            _end = min(_start + _segment_size + 1, len(_coords))
+            _seg_coords = _coords[_start:_end]
+            if len(_seg_coords) < 2:
+                continue
+
+            _t = _s / max(_n_segments - 1, 1)
+            _color = _gradient_color(_t)
+            _segment_paths.append({
+                "path": _seg_coords,
+                "color": _color,
+                "name": f"Segment {_s + 1}/{_n_segments}",
+            })
+
+            # Junction point at the start of each segment (except first)
+            if _s > 0:
+                _all_junctions.append({
+                    "position": _seg_coords[0],
+                    "color": [40, 40, 40, 200],
+                })
+
+        if _segment_paths:
+            layers.append(path_layer(_segment_paths, id=f"route-{_frag_idx}", width=5))
+
+    if _all_junctions:
+        layers.append(scatter_layer(_all_junctions, id="junctions", radius=20))
+
+    _first_coords = _features[0]["geometry"]["coordinates"]
+    _mid = len(_first_coords) // 2
+    _view = default_view_state(lat=_first_coords[_mid][1], lon=_first_coords[_mid][0], zoom=14)
 
     result_map = deck(
         layers,
