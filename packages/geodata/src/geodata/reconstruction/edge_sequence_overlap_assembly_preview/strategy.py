@@ -44,6 +44,17 @@ class _AssemblyState:
     approximate_merge_steps: int
 
 
+@dataclass(frozen=True)
+class _AssemblyFragment:
+    contig: list[str]
+    trace_count: int
+    contained_trace_count: int
+    approximate_contained_trace_count: int
+    merge_steps: int
+    approximate_merge_steps: int
+    beam_search_used: bool
+
+
 def _collapse_consecutive(edge_ids: list[str]) -> list[str]:
     collapsed: list[str] = []
     for edge_id in edge_ids:
@@ -579,6 +590,136 @@ def _beam_search_assembly(
     return best_completed
 
 
+def _assemble_fragments(
+    observations: list[_TraceObservation],
+    *,
+    min_overlap_edges: int,
+    approx_containment_coverage: float,
+    approx_block_fraction: float,
+    approx_block_min_edges: int,
+    approx_merge_match_fraction: float,
+    approx_merge_min_edges: int,
+) -> list[_AssemblyFragment]:
+    """Assemble observations into one or more contiguous fragments.
+
+    Runs greedy overlap assembly (with beam-search fallback) repeatedly until
+    all observations are consumed.  Each round produces one fragment.
+    """
+    fragments: list[_AssemblyFragment] = []
+    unassembled = list(observations)
+
+    while unassembled:
+        seed = max(
+            unassembled,
+            key=lambda obs: _seed_score(
+                obs.edge_ids,
+                [o.edge_ids for o in unassembled],
+                min_coverage=approx_containment_coverage,
+                min_block_fraction=approx_block_fraction,
+                min_block_edges=approx_block_min_edges,
+            ),
+        )
+        contig = list(seed.edge_ids)
+        remaining: dict[str, list[str]] = {
+            obs.trace_id: list(obs.edge_ids)
+            for obs in unassembled
+            if obs.trace_id != seed.trace_id
+        }
+        initial_state = _AssemblyState(
+            contig=list(contig),
+            remaining=dict(remaining),
+            contained_trace_count=0,
+            approximate_contained_trace_count=0,
+            merge_steps=0,
+            approximate_merge_steps=0,
+        )
+
+        edge_support, pair_support = _support_counters(
+            [contig, *remaining.values()]
+        )
+        contained_trace_count = 0
+        approximate_contained_trace_count = 0
+        merge_steps = 0
+        approximate_merge_steps = 0
+        beam_search_used = False
+        greedy_failed = False
+
+        while remaining:
+            remaining, dropped_contained, dropped_approximate = _drop_resolved_traces(
+                contig,
+                remaining,
+                min_coverage=approx_containment_coverage,
+                min_block_fraction=approx_block_fraction,
+                min_block_edges=approx_block_min_edges,
+            )
+            contained_trace_count += dropped_contained
+            approximate_contained_trace_count += dropped_approximate
+            if not remaining:
+                break
+
+            merge_candidates = _build_merge_candidates(
+                contig,
+                remaining,
+                edge_support=edge_support,
+                pair_support=pair_support,
+                min_overlap_edges=min_overlap_edges,
+                approx_merge_match_fraction=approx_merge_match_fraction,
+                approx_merge_min_edges=approx_merge_min_edges,
+            )
+            best_merge = _select_unambiguous_candidate(merge_candidates)
+            if best_merge is None:
+                greedy_failed = True
+                break
+
+            contig = best_merge.merged_edge_ids
+            remaining.pop(best_merge.trace_id, None)
+            merge_steps += 1
+            if best_merge.kind == "approximate":
+                approximate_merge_steps += 1
+
+            edge_support, pair_support = _support_counters(
+                [contig, *remaining.values()]
+            )
+
+        if greedy_failed:
+            beam_state = _beam_search_assembly(
+                initial_state,
+                total_trace_count=len(unassembled),
+                min_coverage=approx_containment_coverage,
+                min_block_fraction=approx_block_fraction,
+                min_block_edges=approx_block_min_edges,
+                min_overlap_edges=min_overlap_edges,
+                approx_merge_match_fraction=approx_merge_match_fraction,
+                approx_merge_min_edges=approx_merge_min_edges,
+            )
+            if beam_state is not None and not beam_state.remaining:
+                beam_search_used = True
+                contig = beam_state.contig
+                remaining = {}
+                contained_trace_count = beam_state.contained_trace_count
+                approximate_contained_trace_count = beam_state.approximate_contained_trace_count
+                merge_steps = beam_state.merge_steps
+                approximate_merge_steps = beam_state.approximate_merge_steps
+
+        consumed_count = len(unassembled) - len(remaining)
+        fragments.append(
+            _AssemblyFragment(
+                contig=contig,
+                trace_count=consumed_count,
+                contained_trace_count=contained_trace_count,
+                approximate_contained_trace_count=approximate_contained_trace_count,
+                merge_steps=merge_steps,
+                approximate_merge_steps=approximate_merge_steps,
+                beam_search_used=beam_search_used,
+            )
+        )
+        unassembled = [
+            obs for obs in unassembled if obs.trace_id in remaining
+        ]
+
+    return fragments
+
+
 def _select_representative_geometry(geometries: list[list[list[float]]]) -> list[list[float]]:
     if not geometries:
         return []
@@ -792,126 +933,57 @@ class EdgeSequenceOverlapAssemblyPreviewStrategy:
         if not retained_observations:
             raise ValueError("All traces were isolated; need more overlapping trips")
 
-        seed_observation = max(
+        fragments = _assemble_fragments(
             retained_observations,
-            key=lambda obs: _seed_score(
-                obs.edge_ids,
-                [other.edge_ids for other in retained_observations],
-                min_coverage=approx_containment_coverage,
-                min_block_fraction=approx_block_fraction,
-                min_block_edges=approx_block_min_edges,
-            ),
+            min_overlap_edges=min_overlap_edges,
+            approx_containment_coverage=approx_containment_coverage,
+            approx_block_fraction=approx_block_fraction,
+            approx_block_min_edges=approx_block_min_edges,
+            approx_merge_match_fraction=approx_merge_match_fraction,
+            approx_merge_min_edges=approx_merge_min_edges,
         )
-        contig = list(seed_observation.edge_ids)
-        remaining = {
-            obs.trace_id: list(obs.edge_ids)
-            for obs in retained_observations
-            if obs.trace_id != seed_observation.trace_id
-        }
-        initial_state = _AssemblyState(
-            contig=list(contig),
-            remaining=dict(remaining),
-            contained_trace_count=0,
-            approximate_contained_trace_count=0,
-            merge_steps=0,
-            approximate_merge_steps=0,
-        )
-
-        edge_support, pair_support = _support_counters(
-            [contig, *remaining.values()]
-        )
-        contained_trace_count = 0
-        approximate_contained_trace_count = 0
-        merge_steps = 0
-        approximate_merge_steps = 0
-        beam_search_used = False
-        greedy_failed = False
-
-        while remaining:
-            remaining, dropped_contained, dropped_approximate = _drop_resolved_traces(
-                contig,
-                remaining,
-                min_coverage=approx_containment_coverage,
-                min_block_fraction=approx_block_fraction,
-                min_block_edges=approx_block_min_edges,
-            )
-            contained_trace_count += dropped_contained
-            approximate_contained_trace_count += dropped_approximate
-            if not remaining:
-                break
-
-            merge_candidates = _build_merge_candidates(
-                contig,
-                remaining,
-                edge_support=edge_support,
-                pair_support=pair_support,
-                min_overlap_edges=min_overlap_edges,
-                approx_merge_match_fraction=approx_merge_match_fraction,
-                approx_merge_min_edges=approx_merge_min_edges,
-            )
-            best_merge = _select_unambiguous_candidate(merge_candidates)
-            if best_merge is None:
-                greedy_failed = True
-                break
-
-            contig = best_merge.merged_edge_ids
-            remaining.pop(best_merge.trace_id, None)
-            merge_steps += 1
-            if best_merge.kind == "approximate":
-                approximate_merge_steps += 1
-
-            edge_support, pair_support = _support_counters([contig, *remaining.values()])
-
-        if greedy_failed:
-            beam_state = _beam_search_assembly(
-                initial_state,
-                total_trace_count=len(retained_observations),
-                min_coverage=approx_containment_coverage,
-                min_block_fraction=approx_block_fraction,
-                min_block_edges=approx_block_min_edges,
-                min_overlap_edges=min_overlap_edges,
-                approx_merge_match_fraction=approx_merge_match_fraction,
-                approx_merge_min_edges=approx_merge_min_edges,
-            )
-            if beam_state is None or beam_state.remaining:
-                raise ValueError(
-                    "Trace assembly is fragmented; there is at least one gap with no supported overlap"
-                )
-            beam_search_used = True
-            contig = beam_state.contig
-            contained_trace_count = beam_state.contained_trace_count
-            approximate_contained_trace_count = beam_state.approximate_contained_trace_count
-            merge_steps = beam_state.merge_steps
-            approximate_merge_steps = beam_state.approximate_merge_steps
 
         geometry_by_edge_id = {
             edge_id: _select_representative_geometry(samples)
             for edge_id, samples in geometry_samples.items()
         }
-        route_coordinates = _stitch_geometries(contig, geometry_by_edge_id)
-        if len(route_coordinates) < 2:
-            raise ValueError("Consensus edge sequence could not be converted into a line")
-
-        consensus_edge_ids = [int(edge_id.split(":", 1)[0]) for edge_id in contig]
-        geojson = {
-            "type": "FeatureCollection",
-            "features": [
+        features: list[dict[str, Any]] = []
+        total_route_points = 0
+        for fragment_index, fragment in enumerate(fragments):
+            route_coordinates = _stitch_geometries(fragment.contig, geometry_by_edge_id)
+            if len(route_coordinates) < 2:
+                continue
+            total_route_points += len(route_coordinates)
+            consensus_edge_ids = [
+                int(edge_id.split(":", 1)[0]) for edge_id in fragment.contig
+            ]
+            features.append(
                 {
                     "type": "Feature",
                     "properties": {
                         "strategy": self.label,
                         "line_id": str(line_id),
+                        "fragment_index": fragment_index,
+                        "fragment_count": len(fragments),
                         "trace_count": len(traces),
                         "usable_trace_count": len(retained_observations),
+                        "fragment_trace_count": fragment.trace_count,
                         "consensus_edge_ids": consensus_edge_ids,
-                        "consensus_directed_edge_ids": contig,
+                        "consensus_directed_edge_ids": fragment.contig,
                     },
                     "geometry": {
                         "type": "LineString",
                         "coordinates": route_coordinates,
                     },
                 }
-            ],
+            )
+
+        if not features:
+            raise ValueError("Consensus edge sequences could not be converted into lines")
+
+        geojson = {
+            "type": "FeatureCollection",
+            "features": features,
         }
         diagnostics: dict[str, int | float | str] = {
             "line_id": str(line_id),
@@ -920,11 +992,14 @@ class EdgeSequenceOverlapAssemblyPreviewStrategy:
             "persisted_trace_count": persisted_trace_count,
             "fallback_trace_match_count": fallback_trace_match_count,
             "dropped_isolated_trace_count": dropped_isolated_trace_count,
-            "contained_trace_count": contained_trace_count,
-            "approximate_contained_trace_count": approximate_contained_trace_count,
-            "merge_steps": merge_steps,
-            "approximate_merge_steps": approximate_merge_steps,
-            "beam_search_used": int(beam_search_used),
+            "fragment_count": len(fragments),
+            "contained_trace_count": sum(f.contained_trace_count for f in fragments),
+            "approximate_contained_trace_count": sum(
+                f.approximate_contained_trace_count for f in fragments
+            ),
+            "merge_steps": sum(f.merge_steps for f in fragments),
+            "approximate_merge_steps": sum(f.approximate_merge_steps for f in fragments),
+            "beam_search_used": int(any(f.beam_search_used for f in fragments)),
             "min_overlap_edges": min_overlap_edges,
             "min_edge_support": min_edge_support,
             "min_pair_support": min_pair_support,
@@ -933,9 +1008,11 @@ class EdgeSequenceOverlapAssemblyPreviewStrategy:
             "approx_block_min_edges": approx_block_min_edges,
             "approx_merge_match_fraction": approx_merge_match_fraction,
             "approx_merge_min_edges": approx_merge_min_edges,
-            "consensus_edge_count": len(contig),
-            "route_points": len(route_coordinates),
-            "consensus_edge_ids_json": json.dumps(consensus_edge_ids),
+            "consensus_edge_count": sum(len(f.contig) for f in fragments),
+            "route_points": total_route_points,
+            "consensus_edge_ids_json": json.dumps(
+                [int(e.split(":", 1)[0]) for e in fragments[0].contig]
+            ),
             "consensus_method": "edge_sequence_overlap_assembly",
         }
         return ReconstructionResult(
