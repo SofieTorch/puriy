@@ -94,7 +94,7 @@ def _(line_selector, db):
 
     _line_id = line_selector.value
     traces = (
-        load_reconstruction_traces_from_db(_UUID(_line_id), trace_source="cleaned")
+        load_reconstruction_traces_from_db(line_id=_UUID(_line_id), trace_source="cleaned")
         if _line_id
         else []
     )
