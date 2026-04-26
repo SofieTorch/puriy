@@ -9,6 +9,7 @@ from sqlmodel import SQLModel
 
 # Import all models so they're registered with SQLModel.metadata
 from database.models.detour import Detour  # noqa: F401
+from database.models.fare import FareReport, FareZone  # noqa: F401
 from database.models.line import Line, LineVote  # noqa: F401
 from database.models.trip import TripSession, TripSessionPoint, TripSensorReading  # noqa: F401
 from database.models.route import (  # noqa: F401
@@ -45,6 +46,8 @@ _APP_TABLES = {
     "travel_time_samples",
     "resampled_trips",
     "resampled_trip_points",
+    "fare_zones",
+    "fare_reports",
 }
 
 

@@ -343,6 +343,25 @@ def _cmd_evaluate_reconstruction(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_import_fare_zones(args: argparse.Namespace) -> int:
+    from .import_fare_zones import import_fare_zones_from_osm
+
+    db = SessionLocal()
+    try:
+        result = import_fare_zones_from_osm(
+            db,
+            department=args.department,
+            admin_level=args.admin_level,
+        )
+        print(f"Done: {result['created']} created, {result['updated']} updated")
+        return 0
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        db.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="geodata")
     subparsers = parser.add_subparsers(
@@ -495,6 +514,23 @@ def main() -> int:
         help="Write the evaluation suite JSON to a file instead of stdout",
     )
     evaluate_parser.set_defaults(handler=_cmd_evaluate_reconstruction)
+
+    fare_zones_parser = subparsers.add_parser(
+        "import-fare-zones",
+        help="Import fare zones from OSM administrative boundaries via Overpass API",
+    )
+    fare_zones_parser.add_argument(
+        "--department",
+        default="Cochabamba",
+        help="OSM area name for the department (default: Cochabamba)",
+    )
+    fare_zones_parser.add_argument(
+        "--admin-level",
+        type=int,
+        default=8,
+        help="OSM admin_level for zones (default: 8 = municipalities)",
+    )
+    fare_zones_parser.set_defaults(handler=_cmd_import_fare_zones)
 
     args = parser.parse_args()
     return args.handler(args)

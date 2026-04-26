@@ -131,6 +131,8 @@ class Route(SQLModel, table=True):
     source: RouteSource = Field(default=RouteSource.COMPUTED)
     status: RouteStatus = Field(default=RouteStatus.PENDING)
     trip_count: int = Field(default=0)
+    fragment_index: int = Field(default=0)
+    fragment_count: int = Field(default=1)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     line: Optional["Line"] = Relationship(back_populates="routes")

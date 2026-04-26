@@ -1,5 +1,6 @@
 from .detour import Detour, DetourStatus
-from .line import Line, LineBase, LineStatus, LineVote
+from .fare import FareReport, FareZone
+from .line import Line, LineBase, LineStatus, LineType, LineVote
 from .route import (
     EdgeStatus,
     EdgeVote,
@@ -30,9 +31,12 @@ from .trip import (
 __all__ = [
     "Detour",
     "DetourStatus",
+    "FareReport",
+    "FareZone",
     "Line",
     "LineBase",
     "LineStatus",
+    "LineType",
     "LineVote",
     "TripSession",
     "TripSessionBase",

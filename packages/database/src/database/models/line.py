@@ -11,6 +11,7 @@ from .route import VoteChoice
 
 if TYPE_CHECKING:
     from .detour import Detour
+    from .fare import FareReport
     from .route import Route, Trip
     from .trip import TripSession
 
@@ -21,6 +22,14 @@ class LineStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
     MERGED = "merged"
+
+
+class LineType(str, Enum):
+    """Type of transit line."""
+
+    MICRO = "micro"
+    TRUFI = "trufi"
+    TAXI_TRUFI = "taxi_trufi"
 
 
 class LineBase(SQLModel):
@@ -43,6 +52,7 @@ class Line(LineBase, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     status: LineStatus = Field(default=LineStatus.PENDING)
+    line_type: Optional[LineType] = Field(default=None)
     merged_into_id: Optional[UUID] = Field(default=None, foreign_key="lines.id")
 
     trip_sessions: list["TripSession"] = Relationship(back_populates="line")
@@ -50,6 +60,7 @@ class Line(LineBase, table=True):
     routes: list["Route"] = Relationship(back_populates="line")
     line_votes: list["LineVote"] = Relationship(back_populates="line")
     detours: list["Detour"] = Relationship(back_populates="line")
+    fare_reports: list["FareReport"] = Relationship(back_populates="line")
 
 
 class LineVote(SQLModel, table=True):

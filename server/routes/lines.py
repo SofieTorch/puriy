@@ -25,6 +25,7 @@ def create_line(line_data: LineCreate, db: Session = Depends(get_db)) -> LineRea
     line = Line(
         name=line_data.name,
         description=line_data.description,
+        line_type=line_data.line_type,
     )
     db.add(line)
     db.commit()
@@ -146,13 +147,17 @@ def merge_line(
     return LineRead.model_validate(target)
 
 
-@router.post("/{line_id}/route/import", response_model=RouteRead, status_code=201)
+@router.post("/{line_id}/route/import", response_model=list[RouteRead], status_code=201)
 async def import_route(
     line_id: UUID,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-) -> RouteRead:
-    """Import a GeoJSON file as an inferred route with Valhalla edges."""
+) -> list[RouteRead]:
+    """Import a GeoJSON file as inferred route(s) with Valhalla edges.
+
+    Multi-feature GeoJSON (e.g. fragmented reconstructions) creates one route
+    per fragment, all sharing the same version.
+    """
     from geodata.import_route import import_route_from_geojson
 
     content = await file.read()
@@ -162,7 +167,7 @@ async def import_route(
         raise HTTPException(status_code=400, detail="File must be valid UTF-8 encoded GeoJSON")
 
     try:
-        route = import_route_from_geojson(
+        result = import_route_from_geojson(
             db,
             geojson_str,
             line_id,
@@ -172,7 +177,8 @@ async def import_route(
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    return RouteRead.model_validate(route)
+    routes = result if isinstance(result, list) else [result]
+    return [RouteRead.model_validate(r) for r in routes]
 
 
 @router.get("/nearby/", response_model=list[NearbyLineWithRouteRead])
@@ -298,24 +304,73 @@ def find_lines_nearby(
 
 @router.get("/{line_id}/route")
 def get_line_route(line_id: UUID, db: Session = Depends(get_db)) -> dict:
-    """Get the active route geometry for a line as GeoJSON."""
+    """Get the active route geometry for a line as GeoJSON FeatureCollection.
+
+    Returns one Feature per route fragment.  For non-fragmented routes this
+    is a single-element collection (backward-compatible).
+    """
     line = db.get(Line, line_id)
     if not line:
         raise HTTPException(status_code=404, detail="Line not found")
 
-    from services.detour_analysis import get_line_route_geometry
+    routes = (
+        db.execute(
+            select(Route)
+            .where(Route.line_id == line_id, Route.status != RouteStatus.SUPERSEDED)
+            .order_by(Route.version.desc(), Route.fragment_index)
+        )
+        .scalars()
+        .all()
+    )
+    if not routes:
+        raise HTTPException(status_code=404, detail="No active route for this line")
 
-    route_geom = get_line_route_geometry(db, line_id)
-    if not route_geom:
+    # Only return routes from the latest version
+    latest_version = routes[0].version
+    routes = [r for r in routes if r.version == latest_version]
+
+    features: list[dict] = []
+    for route in routes:
+        edges = (
+            db.execute(
+                select(RouteEdge)
+                .where(RouteEdge.route_id == route.id)
+                .order_by(RouteEdge.sequence)
+            )
+            .scalars()
+            .all()
+        )
+        all_coords: list[list[float]] = []
+        for edge in edges:
+            if edge.path is not None and isinstance(edge.path, WKBElement):
+                shape = wkb.loads(bytes(edge.path.data))
+                coords = [list(c) for c in shape.coords]
+                if all_coords and coords:
+                    all_coords.extend(coords[1:])
+                else:
+                    all_coords.extend(coords)
+
+        if len(all_coords) >= 2:
+            features.append({
+                "type": "Feature",
+                "properties": {
+                    "line_id": str(line.id),
+                    "line_name": line.name,
+                    "fragment_index": route.fragment_index,
+                    "fragment_count": route.fragment_count,
+                },
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": all_coords,
+                },
+            })
+
+    if not features:
         raise HTTPException(status_code=404, detail="No active route for this line")
 
     return {
-        "type": "Feature",
-        "properties": {"line_id": str(line.id), "line_name": line.name},
-        "geometry": {
-            "type": "LineString",
-            "coordinates": [list(c) for c in route_geom.coords],
-        },
+        "type": "FeatureCollection",
+        "features": features,
     }
 
 
