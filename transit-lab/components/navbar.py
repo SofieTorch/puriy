@@ -10,10 +10,13 @@ def navbar() -> mo.Html:
     prefix = os.getenv("MARIMO_PATH_PREFIX", "")
     return mo.nav_menu(
         {
-            f"{prefix}/tracks": "Tracks",
+            f"{prefix}/": "Overview",
             f"{prefix}/lines": "Lines",
+            f"{prefix}/traces": "Traces",
             f"{prefix}/reconstruction": "Reconstruction",
-            f"{prefix}/routes": "Routes",
+            f"{prefix}/routes": "Routes & Votes",
+            f"{prefix}/simulator": "Simulator",
+            f"{prefix}/fares": "Fares",
         },
         orientation="horizontal",
     )
