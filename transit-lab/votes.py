@@ -506,7 +506,7 @@ def _(active_route, db, line_selector, minimap_mode, vote_sim_result):
 
 @app.cell
 def _(minimap_mode, mo, voter_views):
-    from components.maps import path_layer, deck
+    from components.maps import path_layer as _path_layer, deck as _deck
     from components.vote_simulator import zoom_for_extent
     import pydeck as pdk
 
@@ -518,7 +518,7 @@ def _(minimap_mode, mo, voter_views):
     def _minimap(view):
         _layers = []
         if view["raw_paths"]:
-            _layers.append(path_layer(
+            _layers.append(_path_layer(
                 [{"path": p, "color": RAW_COLOR, "name": "Raw GPS"} for p in view["raw_paths"]],
                 id=f"raw-{view['voter_id']}",
                 width=3,
@@ -526,7 +526,7 @@ def _(minimap_mode, mo, voter_views):
                 opacity=0.6,
             ))
         if view["cleaned_paths"]:
-            _layers.append(path_layer(
+            _layers.append(_path_layer(
                 [{"path": p, "color": CLEANED_COLOR, "name": "Cleaned trip"} for p in view["cleaned_paths"]],
                 id=f"clean-{view['voter_id']}",
                 width=3,
@@ -534,7 +534,7 @@ def _(minimap_mode, mo, voter_views):
                 opacity=0.85,
             ))
         if view["voted_edges"]:
-            _layers.append(path_layer(
+            _layers.append(_path_layer(
                 [
                     {
                         "path": ve["path"],
@@ -559,7 +559,7 @@ def _(minimap_mode, mo, voter_views):
                 zoom=_zoom, pitch=0, bearing=0,
             )
 
-        return deck(
+        return _deck(
             _layers,
             view_state=_view_state,
             height=240,
