@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
-from database.models.line import Line, LineBase, LineStatus
+from database.models.line import Line, LineBase, LineStatus, LineType
 from pydantic import model_validator
 from sqlmodel import Field, SQLModel
 
@@ -10,7 +10,7 @@ from sqlmodel import Field, SQLModel
 class LineCreate(LineBase):
     """Schema for creating a new line."""
 
-    pass
+    line_type: Optional[LineType] = None
 
 
 class LineRead(LineBase):
@@ -18,6 +18,7 @@ class LineRead(LineBase):
 
     id: UUID
     status: LineStatus
+    line_type: Optional[LineType] = None
     merged_into_id: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
@@ -31,6 +32,7 @@ class LineRead(LineBase):
                 "name": data.name,
                 "description": data.description,
                 "status": data.status,
+                "line_type": data.line_type,
                 "merged_into_id": data.merged_into_id,
                 "created_at": data.created_at,
                 "updated_at": data.updated_at,
@@ -54,3 +56,4 @@ class LineUpdate(SQLModel):
     name: Optional[str] = Field(default=None, max_length=255)
     description: Optional[str] = Field(default=None, max_length=1000)
     status: Optional[LineStatus] = None
+    line_type: Optional[LineType] = None

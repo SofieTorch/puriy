@@ -1,10 +1,9 @@
 from .detour import Detour, DetourStatus
-from .line import Line, LineBase, LineStatus, LineVote
+from .fare import FareReport, FareZone
+from .line import Line, LineBase, LineStatus, LineType, LineVote
 from .route import (
     EdgeStatus,
     EdgeVote,
-    ResampledTrip,
-    ResampledTripPoint,
     Route,
     RouteEdge,
     RouteSource,
@@ -30,9 +29,12 @@ from .trip import (
 __all__ = [
     "Detour",
     "DetourStatus",
+    "FareReport",
+    "FareZone",
     "Line",
     "LineBase",
     "LineStatus",
+    "LineType",
     "LineVote",
     "TripSession",
     "TripSessionBase",
@@ -54,6 +56,4 @@ __all__ = [
     "EdgeVote",
     "VoteChoice",
     "TravelTimeSample",
-    "ResampledTrip",
-    "ResampledTripPoint",
 ]

@@ -9,10 +9,12 @@ if __name__ == "__main__":
     root = Path(__file__).parent
     server = (
         marimo.create_asgi_app()
-        .with_app(path="/tracks", root=root / "01_tracks.py")
-        .with_app(path="/lines", root=root / "02_lines.py")
-        .with_app(path="/reconstruction", root=root / "05_reconstruction.py")
-        .with_app(path="/routes", root=root / "06_routes.py")
         .with_app(path="", root=root / "index.py")
+        .with_app(path="/lines", root=root / "lines.py")
+        .with_app(path="/traces", root=root / "traces.py")
+        .with_app(path="/reconstruction", root=root / "reconstruction.py")
+        .with_app(path="/routes", root=root / "routes.py")
+        .with_app(path="/simulator", root=root / "simulator.py")
+        .with_app(path="/fares", root=root / "fares.py")
     )
     uvicorn.run(server.build(), host="127.0.0.1", port=2727)

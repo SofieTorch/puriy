@@ -114,7 +114,14 @@ def build_transit_graph(db: Session) -> TransitGraph:
     Includes both approved and pending lines/routes. Each edge is tagged
     with `line_approved` and `route_confirmed` so the pathfinder can
     filter at search time based on user preferences.
+
+    If the ``ROUTE_STRATEGY_FILTER`` environment variable is set, only
+    routes whose ``strategy_key`` matches the value are included.
     """
+    import os
+
+    strategy_filter = os.environ.get("ROUTE_STRATEGY_FILTER")
+
     graph = TransitGraph()
     coord_to_node: dict[tuple[float, float], int] = {}
 
@@ -133,6 +140,8 @@ def build_transit_graph(db: Session) -> TransitGraph:
         is_approved = line.status == LineStatus.APPROVED
         for route in line.routes:
             if route.status == RouteStatus.SUPERSEDED:
+                continue
+            if strategy_filter and route.strategy_key != strategy_filter:
                 continue
             is_confirmed = route.status == RouteStatus.CONFIRMED
 

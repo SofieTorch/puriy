@@ -20,7 +20,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from database.models import Line, ResampledTrip, ResampledTripPoint, Trip
+from database.models import Line, Trip
 
 from .telemetry import tracer
 
@@ -70,8 +70,8 @@ class DirectionValidationResult:
 
 
 def _start_end_vector(
-    first: ResampledTripPoint,
-    last: ResampledTripPoint,
+    first: Any,
+    last: Any,
     min_distance_m: float = 50.0,
 ) -> tuple[float, float] | None:
     """Return a normalised (east, north) direction vector for a trip.
@@ -178,6 +178,9 @@ def validate_trip_directions(
             "interval_meters": interval_meters,
         },
     ) as span:
+        # Lazy import — resampling tables have been dropped from the schema.
+        from database.models.route import ResampledTrip, ResampledTripPoint  # type: ignore[attr-defined]  # noqa: F811
+
         line = db.get(Line, line_id)
         if not line:
             raise ValueError(f"Line {line_id} not found")

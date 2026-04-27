@@ -67,6 +67,9 @@ class RouteRead(SQLModel):
     source: RouteSource
     status: RouteStatus
     trip_count: int
+    strategy_key: Optional[str] = None
+    fragment_index: int
+    fragment_count: int
     created_at: datetime
     edges: list[RouteEdgeRead] = []
 
@@ -81,6 +84,9 @@ class RouteRead(SQLModel):
                 "source": data.source,
                 "status": data.status,
                 "trip_count": data.trip_count,
+                "strategy_key": data.strategy_key,
+                "fragment_index": data.fragment_index,
+                "fragment_count": data.fragment_count,
                 "created_at": data.created_at,
                 "edges": [
                     RouteEdgeRead.model_validate(edge)

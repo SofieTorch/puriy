@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from database.connection import get_db
 from geodata.reduce import reduce_linestring_from_recording_session
 from schemas.recording import (
+    AssignDeviceRequest,
     EndSessionRequest,
     TripSessionPointBatch,
     TripSessionPointCreate,
@@ -88,6 +89,28 @@ def get_recording(session_id: UUID, db: Session = Depends(get_db)) -> TripSessio
     session = db.get(TripSession, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Trip session not found")
+    return TripSessionRead.model_validate(session)
+
+
+@router.patch("/{session_id}/device", response_model=TripSessionRead)
+def assign_device(
+    session_id: UUID,
+    body: AssignDeviceRequest,
+    db: Session = Depends(get_db),
+) -> TripSessionRead:
+    """Assign a trip session to a device (testing utility)."""
+    session = db.get(TripSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Trip session not found")
+
+    session.device_id = body.device_id
+    if body.device_model is not None:
+        session.device_model = body.device_model
+    if body.os_version is not None:
+        session.os_version = body.os_version
+
+    db.commit()
+    db.refresh(session)
     return TripSessionRead.model_validate(session)
 
 

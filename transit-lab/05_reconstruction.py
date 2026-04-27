@@ -664,14 +664,6 @@ def _(
         features = reconstruction_result.geojson.get("features", [])
         if not features:
             raise ValueError("Reconstruction result has no features to persist")
-        coordinates = features[0].get("geometry", {}).get("coordinates", [])
-        if len(coordinates) < 2:
-            raise ValueError("Reconstruction result has insufficient coordinates to persist")
-
-        shape = [{"lat": lat, "lon": lon} for lon, lat in coordinates]
-        matched = trace_match(shape, costing="bus", search_radius=60, gps_accuracy=20)
-        if not matched.edges:
-            raise ValueError("Valhalla returned no edges for the reconstructed route")
 
         max_version = (
             db.execute(
@@ -682,37 +674,58 @@ def _(
             .scalars()
             .first()
         )
-        route = Route(
-            line_id=line_id,
-            version=(max_version or 0) + 1,
-            source=RouteSource.COMPUTED,
-            status=RouteStatus.PENDING,
-            trip_count=trip_count,
-        )
-        db.add(route)
-        db.flush()
+        next_version = (max_version or 0) + 1
+        fragment_count = len(features)
+        routes = []
 
-        for sequence, edge in enumerate(matched.edges):
-            begin_idx = edge.get("begin_shape_index", 0)
-            end_idx = edge.get("end_shape_index", begin_idx)
-            edge_coords = matched.shape_coords[begin_idx : end_idx + 1]
-            if len(edge_coords) < 2:
+        for fragment_index, feature in enumerate(features):
+            coordinates = feature.get("geometry", {}).get("coordinates", [])
+            if len(coordinates) < 2:
                 continue
-            edge_linestring = LineString([(lon, lat) for lat, lon in edge_coords])
-            db.add(
-                RouteEdge(
-                    route_id=route.id,
-                    sequence=sequence,
-                    valhalla_edge_id=edge.get("id"),
-                    forward=edge.get("forward", True),
-                    path=from_shape(edge_linestring, srid=4326),
-                    confidence=1.0,
-                )
+
+            shape = [{"lat": lat, "lon": lon} for lon, lat in coordinates]
+            matched = trace_match(shape, costing="bus", search_radius=60, gps_accuracy=20)
+            if not matched.edges:
+                continue
+
+            route = Route(
+                line_id=line_id,
+                version=next_version,
+                source=RouteSource.COMPUTED,
+                status=RouteStatus.PENDING,
+                trip_count=trip_count,
+                fragment_index=fragment_index,
+                fragment_count=fragment_count,
             )
+            db.add(route)
+            db.flush()
+
+            for sequence, edge in enumerate(matched.edges):
+                begin_idx = edge.get("begin_shape_index", 0)
+                end_idx = edge.get("end_shape_index", begin_idx)
+                edge_coords = matched.shape_coords[begin_idx : end_idx + 1]
+                if len(edge_coords) < 2:
+                    continue
+                edge_linestring = LineString([(lon, lat) for lat, lon in edge_coords])
+                db.add(
+                    RouteEdge(
+                        route_id=route.id,
+                        sequence=sequence,
+                        valhalla_edge_id=edge.get("id"),
+                        forward=edge.get("forward", True),
+                        path=from_shape(edge_linestring, srid=4326),
+                        confidence=1.0,
+                    )
+                )
+            routes.append(route)
+
+        if not routes:
+            raise ValueError("No features with valid edges could be persisted")
 
         db.commit()
-        db.refresh(route)
-        return route
+        for route in routes:
+            db.refresh(route)
+        return routes[0] if len(routes) == 1 else routes
 
     return load_latest_cached_reconstruction, persist_reconstruction_to_db
 

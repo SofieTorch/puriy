@@ -391,8 +391,6 @@ def load_reconstruction_traces_from_db(
 
     from database.connection import SessionLocal
     from database.models import (
-        ResampledTrip,
-        ResampledTripPoint,
         Trip,
         TripMatchedEdge,
         TripPoint,
@@ -443,47 +441,10 @@ def load_reconstruction_traces_from_db(
                 )
             return [trace for trace in traces if len(trace.points) >= 2]
 
-        if interval_meters is None:
-            raise ValueError("interval_meters is required when trace_source='resampled'")
-
-        score_filter = (
-            ResampledTrip.match_score.is_(None)
-            if min_match_score is None
-            else ResampledTrip.match_score == min_match_score
+        raise ValueError(
+            "trace_source='resampled' is no longer supported — resampling tables "
+            "have been removed. Use trace_source='cleaned' instead."
         )
-        resampled_trips = (
-            db.execute(
-                select(ResampledTrip)
-                .join(Trip, ResampledTrip.trip_id == Trip.id)
-                .where(
-                    Trip.line_id == line_id,
-                    ResampledTrip.interval_meters == interval_meters,
-                    score_filter,
-                )
-                .order_by(ResampledTrip.created_at)
-            )
-            .scalars()
-            .all()
-        )
-        traces = []
-        for resampled_trip in resampled_trips:
-            points = (
-                db.execute(
-                    select(ResampledTripPoint)
-                    .where(ResampledTripPoint.resampled_trip_id == resampled_trip.id)
-                    .order_by(ResampledTripPoint.point_index)
-                )
-                .scalars()
-                .all()
-            )
-            traces.append(
-                _rows_to_trace(
-                    trace_id=str(resampled_trip.id),
-                    points=points,
-                    point_index_attr="point_index",
-                )
-            )
-        return [trace for trace in traces if len(trace.points) >= 2]
     finally:
         db.close()
 

@@ -13,7 +13,7 @@ from geoalchemy2 import WKBElement
 from pydantic import model_validator
 from shapely import wkb
 from shapely.geometry import LineString
-from sqlmodel import SQLModel
+from sqlmodel import Field, SQLModel
 
 
 class TripSessionCreate(SQLModel):
@@ -74,6 +74,14 @@ class TripSessionRead(TripSessionBase):
                     result["computed_path"] = list(data.computed_path.coords)
             return result
         return data
+
+
+class AssignDeviceRequest(SQLModel):
+    """Schema for assigning a trip session to a device (testing utility)."""
+
+    device_id: str = Field(max_length=255)
+    device_model: Optional[str] = Field(default=None, max_length=100)
+    os_version: Optional[str] = Field(default=None, max_length=50)
 
 
 class TripSessionPointCreate(TripSessionPointBase):
