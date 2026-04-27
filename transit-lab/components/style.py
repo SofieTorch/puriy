@@ -51,3 +51,11 @@ def vote_ratio_color(votes_for: int, votes_against: int, alpha: int = 180) -> li
 def cycle_color(index: int) -> list[int]:
     """Pick a color from the palette by index (wraps around)."""
     return list(COLORS[index % len(COLORS)])
+
+
+def darken(color: list[int], factor: float = 0.55) -> list[int]:
+    """Return a darker variant of an RGB or RGBA color (factor in 0–1)."""
+    rgb = [max(0, min(255, int(c * factor))) for c in color[:3]]
+    if len(color) > 3:
+        return rgb + [color[3]]
+    return rgb

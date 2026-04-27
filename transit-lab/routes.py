@@ -66,19 +66,36 @@ def _(line_selector, db, mo):
 
 
 @app.cell
-def _(line_selector, db, mo):
+def _(line_selector, routes_data, routes_table, db, mo):
     from uuid import UUID as _UUID
     from components.data import load_route_edges
-    from components.maps import path_layer, deck, default_view_state
-    from components.style import confidence_color, vote_ratio_color
+    from components.maps import path_layer, scatter_layer, deck, default_view_state
+    from components.style import confidence_color, darken
 
     mo.stop(not line_selector.value)
 
-    edges = load_route_edges(db, _UUID(line_selector.value))
-    mo.stop(not edges, mo.md("*No active route edges.*"))
+    # Pick the route version selected in the table; otherwise default to the
+    # newest non-superseded route (what load_route_edges returns by default).
+    _selected_rows = routes_table.value if routes_table is not None else None
+    _selected_route_id = None
+    if _selected_rows:
+        _sel = _selected_rows[0]
+        _matches = [
+            r for r in routes_data
+            if r["version"] == _sel["version"]
+            and r["fragment_index"] == int(_sel["fragment"].split("/")[0])
+        ]
+        if _matches:
+            _selected_route_id = _UUID(_matches[0]["id"])
+
+    edges = load_route_edges(
+        db, _UUID(line_selector.value), route_id=_selected_route_id
+    )
+    mo.stop(not edges, mo.md("*No edges for the selected route.*"))
 
     edge_paths = []
-    for edge in edges:
+    junction_dots = []
+    for _i, edge in enumerate(edges):
         if not edge["path"] or len(edge["path"]) < 2:
             continue
         color = confidence_color(edge["confidence"])
@@ -86,6 +103,25 @@ def _(line_selector, db, mo):
             "path": edge["path"],
             "color": color,
             "name": f"Edge {edge['sequence']} (conf: {edge['confidence']:.2f}, +{edge['votes_for']}/-{edge['votes_against']})",
+        })
+        # Junction dot at the start of every edge (= joint with previous edge,
+        # or the route's start). Color = darker variant of this edge's color.
+        dot_color = darken(color)
+        dot_color[3] = 230  # mostly opaque
+        junction_dots.append({
+            "position": [edge["path"][0][0], edge["path"][0][1]],
+            "color": dot_color,
+            "name": f"Joint @ edge {edge['sequence']} (conf: {edge['confidence']:.2f})",
+        })
+    # Closing dot at the very end of the route.
+    if edges and edges[-1]["path"] and len(edges[-1]["path"]) >= 2:
+        _last_color = confidence_color(edges[-1]["confidence"])
+        _end_color = darken(_last_color)
+        _end_color[3] = 230
+        junction_dots.append({
+            "position": [edges[-1]["path"][-1][0], edges[-1]["path"][-1][1]],
+            "color": _end_color,
+            "name": f"Route end (edge {edges[-1]['sequence']})",
         })
 
     _view = default_view_state()
@@ -97,8 +133,14 @@ def _(line_selector, db, mo):
             zoom=14,
         )
 
+    _layers = []
+    if edge_paths:
+        _layers.append(path_layer(edge_paths, id="edges", width=5))
+    if junction_dots:
+        _layers.append(scatter_layer(junction_dots, id="junctions", radius=8))
+
     route_map = deck(
-        [path_layer(edge_paths, id="edges", width=5)] if edge_paths else [],
+        _layers,
         view_state=_view,
         height=500,
         tooltip_html="<b>{name}</b>",

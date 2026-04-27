@@ -116,13 +116,21 @@ def load_trips(db: Session, line_id: UUID, *, min_score: float = 0.0) -> list[di
     return result
 
 
-def load_route_edges(db: Session, line_id: UUID) -> list[dict]:
-    """Load edges from the active route for a line."""
-    route = db.execute(
-        select(Route)
-        .where(Route.line_id == line_id, Route.status != RouteStatus.SUPERSEDED)
-        .order_by(Route.version.desc())
-    ).scalars().first()
+def load_route_edges(
+    db: Session,
+    line_id: UUID,
+    *,
+    route_id: UUID | None = None,
+) -> list[dict]:
+    """Load edges for a route. Defaults to the active route for the line."""
+    if route_id is not None:
+        route = db.get(Route, route_id)
+    else:
+        route = db.execute(
+            select(Route)
+            .where(Route.line_id == line_id, Route.status != RouteStatus.SUPERSEDED)
+            .order_by(Route.version.desc())
+        ).scalars().first()
 
     if not route:
         return []
