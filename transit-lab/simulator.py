@@ -6,10 +6,12 @@ app = marimo.App(width="full")
 
 @app.cell
 def _():
+    from pathlib import Path
+
     import marimo as mo
     from components.navbar import navbar
 
-    return mo, navbar
+    return Path, mo, navbar
 
 
 @app.cell
@@ -39,14 +41,28 @@ def _(db, mo):
     from components.data import load_lines as _load_lines
 
     _lines = _load_lines(db)
-    _options = {"— Draw or upload —": "", **{row["name"]: row["id"] for row in _lines}}
-    line_source = mo.ui.dropdown(options=_options, value="", label="Load route from line")
+    _options = {row["name"]: row["id"] for row in _lines}
+    line_source = mo.ui.dropdown(options=_options, label="Load route from line")
     line_source
     return (line_source,)
 
 
 @app.cell
-def _(mo):
+def _(Path, mo):
+    _seed_dir = Path(__file__).parent / "seed"
+    _seed_dir.mkdir(parents=True, exist_ok=True)
+    seed_file_browser = mo.ui.file_browser(
+        initial_path=_seed_dir,
+        filetypes=[".geojson"],
+        multiple=False,
+        label="Server seed files",
+        restrict_navigation=True,
+    )
+    return (seed_file_browser,)
+
+
+@app.cell
+def _(mo, seed_file_browser):
     import folium
     from folium.plugins import Draw
 
@@ -63,8 +79,30 @@ def _(mo):
         edit_options={"edit": True, "remove": True},
     ).add_to(m)
 
+    # Overlay the selected seed-file route as a dashed reference line.
+    if seed_file_browser.value:
+        from geodata.geojson import parse_route_from_geojson as _parse
+
+        try:
+            _selected = seed_file_browser.path(0)
+            with open(_selected, encoding="utf-8") as _f:
+                _coords = _parse(_f.read())
+            if len(_coords) >= 2:
+                folium.PolyLine(
+                    locations=[[lat, lon] for lon, lat in _coords],
+                    color="#6366f1",
+                    weight=3,
+                    opacity=0.8,
+                    dash_array="8",
+                ).add_to(m)
+                _lats = [c[1] for c in _coords]
+                _lons = [c[0] for c in _coords]
+                m.fit_bounds([[min(_lats), min(_lons)], [max(_lats), max(_lons)]])
+        except Exception:
+            pass
+
     draw_map = mo.Html(m._repr_html_())
-    draw_map
+    mo.hstack([draw_map, seed_file_browser], gap=1, align="start", widths=[3, 1])
     return
 
 
@@ -146,6 +184,7 @@ def _(
     line_source,
     mo,
     noise_config,
+    seed_file_browser,
     seed_input,
     sim_params,
 ):
@@ -169,12 +208,20 @@ def _(
                 if edge["path"] and len(edge["path"]) >= 2:
                     route.extend(edge["path"] if not route else edge["path"][1:])
 
+    # From server seed file
+    if not route and seed_file_browser.value:
+        with open(seed_file_browser.path(0), encoding="utf-8") as _f:
+            route = parse_route_from_geojson(_f.read())
+
     # From uploaded file
     if not route and geojson_upload.value:
         raw = geojson_upload.value[0].contents.decode("utf-8")
         route = parse_route_from_geojson(raw)
 
-    mo.stop(not route or len(route) < 2, mo.md("**Draw a route on the map, upload a GeoJSON, or select a line.**"))
+    mo.stop(
+        not route or len(route) < 2,
+        mo.md("**Draw a route on the map, pick a server seed file, upload a GeoJSON, or select a line.**"),
+    )
 
     config = {
         "sim_params": {k: w.value for k, w in sim_params.items()},
