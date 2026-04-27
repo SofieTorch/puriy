@@ -138,34 +138,17 @@ def _(reconstruction_result, show_traces, traces, mo):
 
     layers = []
 
-    # Input traces (gray) + edge intersection dots from traces
-    _edge_junction_points = []
+    # Input traces (subtle gray, behind the route)
     if show_traces.value and traces:
         _trace_paths = []
         for _trace in traces:
             _pts = [[p.longitude, p.latitude] for p in _trace.points]
-            if len(_pts) < 2:
-                continue
-            _trace_paths.append({"path": _pts, "color": [140, 140, 140, 140], "name": f"trace {_trace.trace_id[:8]}"})
-
-            # Edge intersection dots: where matched edges meet along this trace
-            if _trace.matched_edges and len(_trace.matched_edges) > 1:
-                _sorted_edges = sorted(_trace.matched_edges, key=lambda e: e.sequence)
-                _n_edges = len(_sorted_edges)
-                _n_pts = len(_pts)
-                # Approximate edge boundary positions along the trace points
-                for _ei in range(1, _n_edges):
-                    _pt_idx = min(int(_ei / _n_edges * _n_pts), _n_pts - 1)
-                    _edge_junction_points.append({
-                        "position": _pts[_pt_idx],
-                        "color": [255, 140, 0, 180],
-                    })
+            if len(_pts) < 3:
+                continue  # skip traces with too few points (straight-line artifacts)
+            _trace_paths.append({"path": _pts, "color": [170, 170, 170, 100], "name": f"trace {_trace.trace_id[:8]}"})
 
         if _trace_paths:
-            layers.append(path_layer(_trace_paths, id="traces", width=2, opacity=0.5))
-
-    if _edge_junction_points:
-        layers.append(scatter_layer(_edge_junction_points, id="trace-junctions", radius=15))
+            layers.append(path_layer(_trace_paths, id="traces", width=2, opacity=0.35))
 
     # Reconstructed route: trace_match to get per-edge geometry, alternating blue/light blue
     _all_coords = []
@@ -200,12 +183,12 @@ def _(reconstruction_result, show_traces, traces, mo):
                 if _ei > 0:
                     _route_junctions.append({
                         "position": _seg_lonlat[0],
-                        "color": [30, 30, 30, 200],
+                        "color": [255, 255, 255, 220],
                     })
 
             layers.append(path_layer(_edge_paths, id="route-edges", width=5))
             if _route_junctions:
-                layers.append(scatter_layer(_route_junctions, id="route-junctions", radius=10))
+                layers.append(scatter_layer(_route_junctions, id="route-junctions", radius=4))
         else:
             # Fallback: solid line if trace_match returned no edges
             layers.append(
