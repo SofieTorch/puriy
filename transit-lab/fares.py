@@ -80,7 +80,7 @@ def _(db, mo):
 
     _lines = load_lines(db)
     _options = {"All lines": "", **{row["name"]: row["id"] for row in _lines}}
-    fare_line_selector = mo.ui.dropdown(options=_options, value="", label="Filter by line")
+    fare_line_selector = mo.ui.dropdown(options=_options, value="All lines", label="Filter by line")
     fare_line_selector
     return (fare_line_selector,)
 
