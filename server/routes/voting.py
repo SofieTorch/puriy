@@ -29,7 +29,7 @@ from schemas.voting import (
     VoteRequest,
     VoteResponse,
 )
-from services.edge_overlap import (
+from geodata.edge_overlap import (
     DEFAULT_MIN_TRIPS,
     count_device_trips_for_line,
     find_lines_near_device_trips,

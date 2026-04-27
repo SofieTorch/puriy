@@ -21,6 +21,7 @@ from database.models import (
     Trip,
     TripSession,
     SessionStatus,
+    VoteChoice,
 )
 
 
@@ -185,6 +186,121 @@ def load_route_info(db: Session, line_id: UUID) -> list[dict]:
             "created_at": route.created_at.isoformat(),
         })
     return result
+
+
+def count_eligible_voters(db: Session, line_id: UUID, *, min_trips: int = 3) -> int:
+    """Count distinct devices with at least ``min_trips`` cleaned trips on a line."""
+    device_trip_counts = (
+        select(TripSession.device_id, func.count(Trip.id).label("trip_count"))
+        .join(Trip, Trip.session_id == TripSession.id)
+        .where(
+            Trip.line_id == line_id,
+            Trip.computed_path.isnot(None),
+            TripSession.device_id.isnot(None),
+        )
+        .group_by(TripSession.device_id)
+        .subquery()
+    )
+    return db.execute(
+        select(func.count())
+        .select_from(device_trip_counts)
+        .where(device_trip_counts.c.trip_count >= min_trips)
+    ).scalar_one()
+
+
+def load_edge_voter_counts(db: Session, route_id: UUID) -> dict[str, int]:
+    """Map ``edge_id`` (as str) -> distinct voter count for the given route."""
+    rows = db.execute(
+        select(EdgeVote.edge_id, func.count(func.distinct(EdgeVote.device_id)))
+        .join(RouteEdge, RouteEdge.id == EdgeVote.edge_id)
+        .where(RouteEdge.route_id == route_id)
+        .group_by(EdgeVote.edge_id)
+    ).all()
+    return {str(edge_id): int(count) for edge_id, count in rows}
+
+
+def load_voting_events(db: Session, route_id: UUID) -> list[dict]:
+    """Reconstruct voting events for a route by grouping EdgeVote rows.
+
+    A voting event is one device's POST to /vote/{line_id}; that creates many
+    EdgeVote rows in a single transaction with very close timestamps. We group
+    by (device_id, vote, second-bucketed created_at) and aggregate the edge ids.
+    """
+    bucket = func.date_trunc("second", EdgeVote.created_at).label("event_time")
+    rows = db.execute(
+        select(
+            EdgeVote.device_id,
+            EdgeVote.vote,
+            bucket,
+            func.count().label("edge_count"),
+            func.array_agg(EdgeVote.edge_id).label("edge_ids"),
+        )
+        .join(RouteEdge, RouteEdge.id == EdgeVote.edge_id)
+        .where(RouteEdge.route_id == route_id)
+        .group_by(EdgeVote.device_id, EdgeVote.vote, bucket)
+        .order_by(bucket.desc())
+    ).all()
+    return [
+        {
+            "device_id": device_id,
+            "vote": vote.value if isinstance(vote, VoteChoice) else str(vote),
+            "created_at": created_at,
+            "edge_count": int(edge_count),
+            "edge_ids": [str(eid) for eid in edge_ids],
+        }
+        for device_id, vote, created_at, edge_count, edge_ids in rows
+    ]
+
+
+def load_segment_for_device(
+    db: Session,
+    line_id: UUID,
+    device_id: str,
+    *,
+    min_trips: int = 3,
+) -> dict:
+    """Compute what segment the live API would currently show this device.
+
+    Returns a dict with:
+      - ``trip_count``: cleaned trips this device has on the line
+      - ``eligible``: True if trip_count >= min_trips
+      - ``edges``: list of edge dicts (same shape as load_route_edges) — empty
+        when not eligible or no overlap remains
+    """
+    from geodata.edge_overlap import (
+        count_device_trips_for_line,
+        find_unvoted_overlapping_edges,
+        get_active_route,
+        get_device_trips_for_line,
+    )
+
+    trip_count = count_device_trips_for_line(db, device_id, line_id)
+    if trip_count < min_trips:
+        return {"trip_count": trip_count, "eligible": False, "edges": []}
+
+    route = get_active_route(db, line_id)
+    if route is None:
+        return {"trip_count": trip_count, "eligible": True, "edges": []}
+
+    trips = get_device_trips_for_line(db, device_id, line_id)
+    trip_ids = [t.id for t in trips]
+    edges = find_unvoted_overlapping_edges(db, route.id, trip_ids, device_id)
+
+    edge_dicts = []
+    for edge in edges:
+        edge_dicts.append({
+            "id": str(edge.id),
+            "route_id": str(edge.route_id),
+            "sequence": edge.sequence,
+            "valhalla_edge_id": edge.valhalla_edge_id,
+            "forward": edge.forward,
+            "confidence": edge.confidence,
+            "status": edge.status.value,
+            "votes_for": edge.votes_for,
+            "votes_against": edge.votes_against,
+            "path": _extract_coords(edge.path),
+        })
+    return {"trip_count": trip_count, "eligible": True, "edges": edge_dicts}
 
 
 def _extract_coords(geom) -> list[list[float]]:
