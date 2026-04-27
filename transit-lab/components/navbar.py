@@ -14,7 +14,7 @@ def navbar() -> mo.Html:
             f"{prefix}/lines": "Lines",
             f"{prefix}/traces": "Traces",
             f"{prefix}/reconstruction": "Reconstruction",
-            f"{prefix}/routes": "Routes & Votes",
+            f"{prefix}/votes": "Votes",
             f"{prefix}/simulator": "Simulator",
             f"{prefix}/fares": "Fares",
         },
