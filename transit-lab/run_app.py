@@ -13,7 +13,7 @@ if __name__ == "__main__":
         .with_app(path="/lines", root=root / "lines.py")
         .with_app(path="/traces", root=root / "traces.py")
         .with_app(path="/reconstruction", root=root / "reconstruction.py")
-        .with_app(path="/routes", root=root / "routes.py")
+        .with_app(path="/votes", root=root / "votes.py")
         .with_app(path="/simulator", root=root / "simulator.py")
         .with_app(path="/fares", root=root / "fares.py")
     )
