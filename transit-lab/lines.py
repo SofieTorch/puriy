@@ -89,13 +89,17 @@ def _(db, lines_table, mo):
         if not _line:
             return mo.md("")
 
+        _type_options = {"—": "", "Micro": "micro", "Trufi": "trufi", "Taxi-trufi": "taxi_trufi"}
+        _current = _line.line_type.value if _line.line_type else ""
+        _current_label = next((k for k, v in _type_options.items() if v == _current), "—")
+
         form = mo.ui.dictionary(
             {
                 "name": mo.ui.text(value=_line.name, label="Name"),
                 "description": mo.ui.text(value=_line.description or "", label="Description"),
                 "line_type": mo.ui.dropdown(
-                    options={"—": "", "Micro": "micro", "Trufi": "trufi", "Taxi-trufi": "taxi_trufi"},
-                    value=_line.line_type.value if _line.line_type else "",
+                    options=_type_options,
+                    value=_current_label,
                     label="Type",
                 ),
             }
@@ -122,7 +126,7 @@ def _(mo):
             "description": mo.ui.text(label="Description"),
             "line_type": mo.ui.dropdown(
                 options={"—": "", "Micro": "micro", "Trufi": "trufi", "Taxi-trufi": "taxi_trufi"},
-                value="",
+                value="—",
                 label="Type",
             ),
         }
