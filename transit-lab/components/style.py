@@ -53,6 +53,17 @@ def cycle_color(index: int) -> list[int]:
     return list(COLORS[index % len(COLORS)])
 
 
+def coverage_color(count: int, *, cap: int = 20, alpha: int = 180) -> list[int]:
+    """Map a voter count (0..cap) to a light-grey → deep-blue gradient."""
+    t = max(0.0, min(1.0, count / cap)) if cap > 0 else 0.0
+    light = (230, 230, 230)
+    deep = (30, 64, 175)
+    r = int(light[0] + (deep[0] - light[0]) * t)
+    g = int(light[1] + (deep[1] - light[1]) * t)
+    b = int(light[2] + (deep[2] - light[2]) * t)
+    return [r, g, b, alpha]
+
+
 def darken(color: list[int], factor: float = 0.55) -> list[int]:
     """Return a darker variant of an RGB or RGBA color (factor in 0–1)."""
     rgb = [max(0, min(255, int(c * factor))) for c in color[:3]]
