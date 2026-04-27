@@ -500,6 +500,156 @@ def load_synthetic_voter_views(
     return views
 
 
+def load_real_voter_views(
+    db: Session,
+    line_id: UUID,
+    route_id: UUID,
+    *,
+    voter_prefix: str = DEFAULT_VOTER_PREFIX,
+) -> list[dict]:
+    """Per-voter rendering payload for real-user vote minimaps.
+
+    A real voter is any device that has cast at least one EdgeVote on this
+    route and whose ``device_id`` does NOT start with ``voter_prefix + '-'``
+    (so synthetic voters are filtered out). For each device we gather:
+
+      * raw_paths: TripSession.computed_path coords for every session that
+        device recorded on this line
+      * cleaned_paths: Trip.computed_path coords for every cleaned trip
+      * voted_edges: cumulative {path, vote, sequence, edge_id} for edges
+        this device has voted on for this route. (Real users may have
+        submitted multiple POSTs over time; this view shows the union.)
+      * bounds: dict with lat/lon min-max for view-state framing, or None
+    """
+    voter_ids = (
+        db.execute(
+            select(EdgeVote.device_id)
+            .distinct()
+            .join(RouteEdge, RouteEdge.id == EdgeVote.edge_id)
+            .where(
+                RouteEdge.route_id == route_id,
+                EdgeVote.device_id.notlike(f"{voter_prefix}-%"),
+            )
+            .order_by(EdgeVote.device_id)
+        )
+        .scalars()
+        .all()
+    )
+    if not voter_ids:
+        return []
+
+    # Pre-fetch every relevant vote+edge in one query.
+    rows = db.execute(
+        select(EdgeVote, RouteEdge)
+        .join(RouteEdge, RouteEdge.id == EdgeVote.edge_id)
+        .where(
+            RouteEdge.route_id == route_id,
+            EdgeVote.device_id.in_(voter_ids),
+        )
+        .order_by(RouteEdge.sequence)
+    ).all()
+    votes_by_voter: dict[str, list[tuple]] = {}
+    for vote_row, edge in rows:
+        votes_by_voter.setdefault(vote_row.device_id, []).append((vote_row, edge))
+
+    # Pre-fetch every relevant TripSession (with cleaned trips) for the line.
+    sessions_by_voter: dict[str, list[TripSession]] = {}
+    sessions = (
+        db.execute(
+            select(TripSession)
+            .join(Trip, Trip.session_id == TripSession.id)
+            .where(
+                Trip.line_id == line_id,
+                Trip.computed_path.isnot(None),
+                TripSession.device_id.in_(voter_ids),
+            )
+            .order_by(TripSession.started_at, TripSession.id)
+            .distinct()
+        )
+        .scalars()
+        .all()
+    )
+    for s in sessions:
+        sessions_by_voter.setdefault(s.device_id, []).append(s)
+
+    views: list[dict] = []
+    for voter_id in voter_ids:
+        voter_votes = votes_by_voter.get(voter_id, [])
+        if not voter_votes:
+            continue
+        voter_sessions = sessions_by_voter.get(voter_id, [])
+
+        raw_paths = [
+            _coords(s.computed_path)
+            for s in voter_sessions
+            if s.computed_path is not None
+        ]
+        raw_paths = [p for p in raw_paths if len(p) >= 2]
+
+        cleaned_paths: list[list[list[float]]] = []
+        for s in voter_sessions:
+            for t in s.trips:
+                if t.line_id == line_id and t.computed_path is not None:
+                    coords = _coords(t.computed_path)
+                    if len(coords) >= 2:
+                        cleaned_paths.append(coords)
+
+        voted_edges: list[dict] = []
+        for vote_row, edge in voter_votes:
+            coords = _coords(edge.path)
+            if len(coords) < 2:
+                continue
+            voted_edges.append({
+                "path": coords,
+                "vote": vote_row.vote.value,
+                "sequence": edge.sequence,
+                "edge_id": str(edge.id),
+            })
+
+        all_lons: list[float] = []
+        all_lats: list[float] = []
+        for path in raw_paths + cleaned_paths:
+            all_lons.extend(c[0] for c in path)
+            all_lats.extend(c[1] for c in path)
+        for ve in voted_edges:
+            all_lons.extend(c[0] for c in ve["path"])
+            all_lats.extend(c[1] for c in ve["path"])
+
+        if all_lons and all_lats:
+            bounds = {
+                "lat_min": min(all_lats),
+                "lat_max": max(all_lats),
+                "lon_min": min(all_lons),
+                "lon_max": max(all_lons),
+                "lat_center": (min(all_lats) + max(all_lats)) / 2,
+                "lon_center": (min(all_lons) + max(all_lons)) / 2,
+            }
+        else:
+            bounds = None
+
+        approve = sum(1 for ve in voted_edges if ve["vote"] == "approve")
+        reject = sum(1 for ve in voted_edges if ve["vote"] == "reject")
+
+        # Truncate display id so the title doesn't blow out the tile width.
+        display_id = voter_id if len(voter_id) <= 16 else voter_id[:8] + "…" + voter_id[-4:]
+
+        views.append({
+            "voter_id": display_id,
+            "full_voter_id": voter_id,
+            "session_count": len(voter_sessions),
+            "trip_count": sum(1 for s in voter_sessions for t in s.trips
+                              if t.line_id == line_id and t.computed_path is not None),
+            "raw_paths": raw_paths,
+            "cleaned_paths": cleaned_paths,
+            "voted_edges": voted_edges,
+            "approve": approve,
+            "reject": reject,
+            "bounds": bounds,
+        })
+
+    return views
+
+
 def zoom_for_extent(lat_extent_deg: float, lon_extent_deg: float) -> int:
     """Heuristic zoom level (~deck.gl) for a bounding box in degrees."""
     extent = max(lat_extent_deg, lon_extent_deg, 1e-6)

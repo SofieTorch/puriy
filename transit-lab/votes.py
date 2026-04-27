@@ -37,11 +37,129 @@ def _(db, mo):
     return (line_selector,)
 
 
+@app.cell(hide_code=True)
+def _(line_selector, mo):
+    if not line_selector.value:
+        _hdr = mo.md("")
+    else:
+        _hdr = mo.md(
+            "### Simulate votes\n"
+            "Closes the loop: existing **simulator-tagged** trips on this line → "
+            "active route → synthetic votes. Each round-robin bucket of sessions "
+            "becomes one synthetic voter; they vote **approve** if their segment "
+            "tightly fits their actual path, **reject** otherwise."
+        )
+    _hdr
+    return
+
+
 @app.cell
-def _(line_selector, db, mo):
+def _(line_selector, mo):
+    if not line_selector.value:
+        n_voters = None
+        fit_threshold = None
+        tight_tolerance = None
+        reset_synthetic = None
+        sim_votes_button = None
+        _block = mo.md("")
+    else:
+        n_voters = mo.ui.number(value=10, start=1, stop=200, step=1, label="Number of voters")
+        fit_threshold = mo.ui.number(
+            value=0.7, start=0.0, stop=1.0, step=0.05,
+            label="Approve if fit ratio ≥",
+        )
+        tight_tolerance = mo.ui.number(
+            value=15.0, start=1.0, stop=100.0, step=1.0,
+            label="Tight overlap tolerance (m)",
+        )
+        reset_synthetic = mo.ui.switch(
+            value=False,
+            label="Reset synthetic votes (wipe & regenerate; real-user votes untouched)",
+        )
+        sim_votes_button = mo.ui.run_button(label="Simulate votes", kind="success")
+        _block = mo.vstack(
+            [
+                mo.hstack([n_voters, fit_threshold, tight_tolerance], gap=1, align="end"),
+                mo.hstack([reset_synthetic, sim_votes_button], gap=2, align="end"),
+            ],
+            gap=0.5,
+        )
+    _block
+    return (
+        fit_threshold,
+        n_voters,
+        reset_synthetic,
+        sim_votes_button,
+        tight_tolerance,
+    )
+
+
+@app.cell
+def _(
+    db,
+    fit_threshold,
+    line_selector,
+    mo,
+    n_voters,
+    reset_synthetic,
+    sim_votes_button,
+    tight_tolerance,
+):
+    from uuid import UUID as _UUID
+    from components.vote_simulator import simulate_votes_for_line
+
+    if not line_selector.value or sim_votes_button is None or not sim_votes_button.value:
+        vote_sim_result = None
+    else:
+        vote_sim_result = simulate_votes_for_line(
+            db,
+            _UUID(line_selector.value),
+            n_voters=int(n_voters.value),
+            fit_threshold=float(fit_threshold.value),
+            tight_tolerance_m=float(tight_tolerance.value),
+            reset_synthetic=bool(reset_synthetic.value),
+        )
+    return (vote_sim_result,)
+
+
+@app.cell
+def _(mo, vote_sim_result):
+    if vote_sim_result is None:
+        _view = mo.md("")
+    elif vote_sim_result.error:
+        _view = mo.md(f"**{vote_sim_result.error}**")
+    else:
+        _stats = mo.hstack(
+            [
+                mo.stat(label="Sessions", value=str(vote_sim_result.sessions_considered)),
+                mo.stat(label="Voters", value=str(vote_sim_result.voters_total)),
+                mo.stat(label="Eligible", value=str(vote_sim_result.voters_eligible)),
+                mo.stat(label="Events", value=str(vote_sim_result.events_created)),
+                mo.stat(label="Approve", value=str(vote_sim_result.approve)),
+                mo.stat(label="Reject", value=str(vote_sim_result.reject)),
+                mo.stat(label="Edges affected", value=str(vote_sim_result.edges_affected)),
+                mo.stat(label="Synthetic wiped", value=str(vote_sim_result.synthetic_votes_wiped)),
+            ],
+            gap=1,
+            justify="start",
+        )
+        _table = mo.ui.table(
+            vote_sim_result.voter_breakdown or [],
+            selection=None,
+            label="Per-voter breakdown",
+        )
+        _view = mo.vstack([_stats, _table], gap=1, align="stretch")
+    _view
+    return
+
+
+@app.cell
+def _(line_selector, db, mo, vote_sim_result):
     from uuid import UUID as _UUID
     from components.data import load_route_edges, load_edge_voter_counts
     from geodata.edge_overlap import get_active_route
+
+    _ = vote_sim_result  # re-load after a sim run so the rest of the page refreshes
 
     if not line_selector.value:
         active_route = None
@@ -353,21 +471,41 @@ def _(mo, preview_result):
 
 
 @app.cell
-def _(active_route, db, line_selector):
-    from uuid import UUID as _UUID
-    from components.vote_simulator import load_synthetic_voter_views
-
-    if not line_selector.value or active_route is None:
-        synthetic_voter_views = []
-    else:
-        synthetic_voter_views = load_synthetic_voter_views(
-            db, _UUID(line_selector.value), active_route.id
-        )
-    return (synthetic_voter_views,)
+def _(mo):
+    minimap_mode = mo.ui.radio(
+        options=["synthetic", "real"],
+        value="synthetic",
+        label="Show minimaps for",
+        inline=True,
+    )
+    return (minimap_mode,)
 
 
 @app.cell
-def _(mo, synthetic_voter_views):
+def _(active_route, db, line_selector, minimap_mode, vote_sim_result):
+    from uuid import UUID as _UUID
+    from components.vote_simulator import (
+        load_synthetic_voter_views,
+        load_real_voter_views,
+    )
+
+    _ = vote_sim_result  # re-load after a sim run
+
+    if not line_selector.value or active_route is None:
+        voter_views = []
+    elif minimap_mode.value == "real":
+        voter_views = load_real_voter_views(
+            db, _UUID(line_selector.value), active_route.id
+        )
+    else:
+        voter_views = load_synthetic_voter_views(
+            db, _UUID(line_selector.value), active_route.id
+        )
+    return (voter_views,)
+
+
+@app.cell
+def _(minimap_mode, mo, voter_views):
     from components.maps import path_layer, deck
     from components.vote_simulator import zoom_for_extent
     import pydeck as pdk
@@ -428,8 +566,11 @@ def _(mo, synthetic_voter_views):
             tooltip_html="<b>{name}</b>",
         )
 
-    if not synthetic_voter_views:
-        _grid = mo.md("*No synthetic voters with votes yet for this route. Run the vote simulator on `/simulator` first.*")
+    if not voter_views:
+        if minimap_mode.value == "real":
+            _grid = mo.md("*No real-user votes yet for this route. Real users with `device_id` not starting with `simulator-vote-` will appear here once they vote.*")
+        else:
+            _grid = mo.md("*No synthetic voters with votes yet for this route. Run the vote simulator above first.*")
     else:
         _legend = mo.md(
             "**Legend:** "
@@ -452,7 +593,7 @@ def _(mo, synthetic_voter_views):
                 gap=0.25,
                 align="stretch",
             )
-            for v in synthetic_voter_views
+            for v in voter_views
         ]
         _rows = []
         for i in range(0, len(_tiles), _columns):
@@ -464,7 +605,8 @@ def _(mo, synthetic_voter_views):
 
         _grid = mo.vstack([_legend, *_rows], gap=1, align="stretch")
 
-    mo.vstack([mo.md("### Synthetic voter timelines"), _grid], gap=0.5, align="stretch")
+    _title = "### Synthetic voter timelines" if minimap_mode.value == "synthetic" else "### Real voter timelines"
+    mo.vstack([mo.md(_title), minimap_mode, _grid], gap=0.5, align="stretch")
     return
 
 
