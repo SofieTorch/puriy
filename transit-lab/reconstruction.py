@@ -143,64 +143,59 @@ def _(reconstruction_result, show_traces, traces, mo):
         _trace_paths = []
         for _trace in traces:
             _pts = [[p.longitude, p.latitude] for p in _trace.points]
-            if len(_pts) < 3:
-                continue  # skip traces with too few points (straight-line artifacts)
-            _trace_paths.append({"path": _pts, "color": [170, 170, 170, 100], "name": f"trace {_trace.trace_id[:8]}"})
+            if len(_pts) >= 2:
+                _trace_paths.append({"path": _pts, "color": [170, 170, 170, 100], "name": f"trace {_trace.trace_id[:8]}"})
 
         if _trace_paths:
             layers.append(path_layer(_trace_paths, id="traces", width=2, opacity=0.35))
 
-    # Reconstructed route: trace_match to get per-edge geometry, alternating blue/light blue
-    _all_coords = []
+    # Reconstructed route: trace_match each fragment separately to get per-edge geometry
+    _edge_paths = []
+    _route_junctions = []
+    _edge_counter = 0
+    _first_coords = []
+
     for _feature in _features:
         _coords = _feature.get("geometry", {}).get("coordinates", [])
-        if _all_coords and _coords:
-            _all_coords.extend(_coords[1:])
-        else:
-            _all_coords.extend(_coords)
+        if len(_coords) < 2:
+            continue
+        if not _first_coords:
+            _first_coords = _coords
 
-    if len(_all_coords) >= 2:
-        _shape = [{"lat": _c[1], "lon": _c[0]} for _c in _all_coords]
+        _shape = [{"lat": _c[1], "lon": _c[0]} for _c in _coords]
         _matched = _trace_match(_shape, costing="bus", search_radius=60, gps_accuracy=20)
 
         if _matched.edges:
-            _edge_paths = []
-            _route_junctions = []
-            for _ei, _edge in enumerate(_matched.edges):
+            for _edge in _matched.edges:
                 _begin = _edge.get("begin_shape_index", 0)
                 _end = _edge.get("end_shape_index", _begin)
                 _seg = _matched.shape_coords[_begin : _end + 1]
                 if len(_seg) < 2:
                     continue
                 _seg_lonlat = [[_lon, _lat] for _lat, _lon in _seg]
-                _color = _BLUE if _ei % 2 == 0 else _LIGHT_BLUE
+                _color = _BLUE if _edge_counter % 2 == 0 else _LIGHT_BLUE
                 _edge_paths.append({
                     "path": _seg_lonlat,
                     "color": _color,
-                    "name": f"Edge {_ei} ({_edge.get('id', '?')})",
+                    "name": f"Edge {_edge_counter} ({_edge.get('id', '?')})",
                 })
-                # Junction dot between consecutive edges
-                if _ei > 0:
+                if _edge_counter > 0:
                     _route_junctions.append({
                         "position": _seg_lonlat[0],
-                        "color": [255, 255, 255, 220],
+                        "color": [30, 64, 159, 220],
                     })
-
-            layers.append(path_layer(_edge_paths, id="route-edges", width=5))
-            if _route_junctions:
-                layers.append(scatter_layer(_route_junctions, id="route-junctions", radius=4))
+                _edge_counter += 1
         else:
-            # Fallback: solid line if trace_match returned no edges
-            layers.append(
-                path_layer(
-                    [{"path": _all_coords, "color": _BLUE, "name": "Reconstructed route"}],
-                    id="route-fallback",
-                    width=5,
-                )
-            )
+            _edge_paths.append({"path": _coords, "color": _BLUE, "name": "Fragment (no edges)"})
 
-    _mid = len(_all_coords) // 2
-    _view = default_view_state(lat=_all_coords[_mid][1], lon=_all_coords[_mid][0], zoom=14)
+    if _edge_paths:
+        layers.append(path_layer(_edge_paths, id="route-edges", width=5))
+    if _route_junctions:
+        layers.append(scatter_layer(_route_junctions, id="route-junctions", radius=4))
+
+    _ref_coords = _first_coords or _features[0]["geometry"]["coordinates"]
+    _mid = len(_ref_coords) // 2
+    _view = default_view_state(lat=_ref_coords[_mid][1], lon=_ref_coords[_mid][0], zoom=14)
 
     result_map = deck(
         layers,
