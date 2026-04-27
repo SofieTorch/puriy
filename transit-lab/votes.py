@@ -223,7 +223,7 @@ def _(mo, voting_events):
     else:
         _rows = [
             {
-                "device": (e["device_id"] or "")[:8],
+                "device": e["device_id"] or "—",
                 "vote": e["vote"],
                 "edges": e["edge_count"],
                 "when": e["created_at"].isoformat(timespec="seconds"),
@@ -296,7 +296,7 @@ def _(
             # Match selected row back to the events list (device + when + vote)
             for ev in voting_events:
                 if (
-                    (ev["device_id"] or "")[:8] == _sel["device"]
+                    (ev["device_id"] or "—") == _sel["device"]
                     and ev["vote"] == _sel["vote"]
                     and ev["created_at"].isoformat(timespec="seconds") == _sel["when"]
                 ):
