@@ -90,10 +90,19 @@ export interface VoteableEdge {
   votes_against: number;
 }
 
+export interface VoteableSection {
+  section_index: number;
+  edges: VoteableEdge[];
+  trip_count: number;
+  geometry: number[][];
+}
+
 export interface VoteableSegment {
   route_id: string;
   line_name: string;
   line_description: string | null;
+  route_geojson: { geometry?: { coordinates?: number[][] } } | null;
+  sections: VoteableSection[];
   edges: VoteableEdge[];
   segment_geojson: object | null;
 }
@@ -297,11 +306,14 @@ class ApiClient {
   async submitVote(
     lineId: string,
     deviceId: string,
-    vote: 'approve' | 'reject'
+    vote: 'approve' | 'reject',
+    sectionIndex?: number,
   ): Promise<VoteResponse> {
+    const body: Record<string, unknown> = { device_id: deviceId, vote };
+    if (sectionIndex !== undefined) body.section_index = sectionIndex;
     return this.request<VoteResponse>(`/vote/${lineId}`, {
       method: 'POST',
-      body: JSON.stringify({ device_id: deviceId, vote }),
+      body: JSON.stringify(body),
     });
   }
 
@@ -388,6 +400,33 @@ class ApiClient {
 
   async confirmDetour(detourId: string): Promise<void> {
     await this.request(`/detours/${detourId}/confirm`, { method: 'POST' });
+  }
+
+  // ============================================================
+  // Fares
+  // ============================================================
+
+  async submitFareReport(params: {
+    lineId: string;
+    deviceId: string;
+    amountBob: number;
+    boardingLat: number;
+    boardingLon: number;
+    alightingLat: number;
+    alightingLon: number;
+  }): Promise<void> {
+    await this.request('/fares/reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        line_id: params.lineId,
+        device_id: params.deviceId,
+        amount_bob: params.amountBob,
+        boarding_latitude: params.boardingLat,
+        boarding_longitude: params.boardingLon,
+        alighting_latitude: params.alightingLat,
+        alighting_longitude: params.alightingLon,
+      }),
+    });
   }
 }
 

@@ -5,10 +5,11 @@ import Feather from '@expo/vector-icons/Feather';
 import type { DetourInfo, Line } from '@/services/api';
 import api from '@/services/api';
 import { getLines } from '@/services/line-cache';
+import { getDeviceId } from '@/services/device-id';
 import RouteMap from '@/components/route-map';
 import { getDb } from '@/lib/db';
 import { locationPoints } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, asc, desc } from 'drizzle-orm';
 
 const DETOUR_REASONS = ['Construcción', 'Protesta', 'Accidente', 'Otro'] as const;
 type DetourReason = (typeof DETOUR_REASONS)[number];
@@ -44,6 +45,8 @@ export default function SaveRecordModal({
   const [customLineName, setCustomLineName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  const [fareAmount, setFareAmount] = useState('');
+
   const [isDetour, setIsDetour] = useState(false);
   const [detourReason, setDetourReason] = useState<DetourReason | null>(null);
   const [detourDescription, setDetourDescription] = useState('');
@@ -69,6 +72,7 @@ export default function SaveRecordModal({
     setSelectedLine(null);
     setDropdownOpen(false);
     setCustomLineName('');
+    setFareAmount('');
     setIsSaving(false);
     setIsDetour(false);
     setDetourReason(null);
@@ -113,6 +117,34 @@ export default function SaveRecordModal({
         detourReason: isDetour ? detourReason : null,
         detourDescription: isDetour && detourDescription.trim() ? detourDescription.trim() : null,
       });
+
+      // Submit fare report if amount was provided and we have a line + GPS points
+      const amount = parseFloat(fareAmount);
+      const lineId = selectedLine?.id;
+      if (amount > 0 && lineId && recordingId) {
+        try {
+          const points = getDb()
+            .select()
+            .from(locationPoints)
+            .where(eq(locationPoints.recordingId, recordingId))
+            .all();
+          if (points.length >= 2) {
+            const first = points[0];
+            const last = points[points.length - 1];
+            await api.submitFareReport({
+              lineId,
+              deviceId: getDeviceId(),
+              amountBob: amount,
+              boardingLat: first.latitude,
+              boardingLon: first.longitude,
+              alightingLat: last.latitude,
+              alightingLon: last.longitude,
+            });
+          }
+        } catch {
+          // Fare submission is best-effort — don't block the recording save
+        }
+      }
     } finally {
       setIsSaving(false);
     }
@@ -293,12 +325,61 @@ export default function SaveRecordModal({
             {/* Or create new line */}
             <Text className="mb-2 mt-2 text-[13px] font-medium text-gray-500">O crear nueva línea</Text>
             <TextInput
-              className="mb-4 rounded-xl bg-gray-100 px-4 py-3.5 text-base text-gray-900"
+              className="rounded-xl bg-gray-100 px-4 py-3.5 text-base text-gray-900"
               placeholder="Nombre de la línea"
               placeholderTextColor="#9CA3AF"
               value={customLineName}
               onChangeText={(text) => { setCustomLineName(text); if (text.trim()) setSelectedLine(null); }}
             />
+
+            {/* Matching existing lines — shown while typing a custom name */}
+            {customLineName.trim().length >= 1 && !selectedLine && (() => {
+              const q = customLineName.trim().toLowerCase();
+              const matches = lines.filter((l) => l.name.toLowerCase().includes(q));
+              if (matches.length === 0) return null;
+              return (
+                <View className="mt-1 mb-3 rounded-xl border border-sky-200 bg-sky-50 px-1 py-1">
+                  <Text className="px-3 pt-2 pb-1 text-[11px] font-semibold text-sky-600">¿Es alguna de estas?</Text>
+                  {matches.slice(0, 5).map((item) => (
+                    <Pressable
+                      key={item.id.toString()}
+                      className="flex-row items-center rounded-lg px-3 py-2.5 active:bg-sky-100"
+                      onPress={() => { setSelectedLine(item); setCustomLineName(''); }}
+                    >
+                      <Feather name="truck" size={14} color="#09A6F3" />
+                      <Text className="ml-2 flex-1 text-sm font-medium text-gray-800">{item.name}</Text>
+                      {item.status === 'pending' && (
+                        <View className="ml-2 rounded-md bg-amber-50 px-1.5 py-0.5">
+                          <Text className="text-[10px] font-medium text-amber-600">Pendiente</Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
+              );
+            })()}
+
+            {/* Spacer when no suggestions */}
+            {(customLineName.trim().length < 1 || selectedLine) && <View className="mb-4" />}
+
+            {/* Fare input (optional) */}
+            {(selectedLine || customLineName.trim()) && (
+              <View className="mb-4">
+                <Text className="mb-2 text-[13px] font-medium text-gray-500">¿Cuánto pagaste? (opcional)</Text>
+                <View className="flex-row items-center rounded-xl bg-gray-100 px-4 py-3.5">
+                  <Text className="mr-2 text-base font-semibold text-gray-500">Bs</Text>
+                  <TextInput
+                    testID="modal-fare-input"
+                    className="flex-1 text-base text-gray-900"
+                    placeholder="0.00"
+                    placeholderTextColor="#9CA3AF"
+                    value={fareAmount}
+                    onChangeText={setFareAmount}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              </View>
+            )}
 
             {/* Detour confirmation prompt */}
             {showDetourPrompt && (

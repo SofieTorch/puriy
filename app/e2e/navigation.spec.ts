@@ -1,17 +1,16 @@
 import { test, expect } from './fixtures';
 
 test.describe('Tab Navigation', () => {
-  test('app loads and shows explore tab by default', async ({ page }) => {
+  test('app loads and shows explore tab by default', async ({ mockedPage: page }) => {
     await page.goto('/');
-    // "Ubicación actual" is in a textbox, use getByRole
     await expect(page.getByRole('textbox', { name: 'Punto de partida' })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'Destino' })).toBeVisible();
   });
 
-  test('can navigate to all four tabs', async ({ page }) => {
+  test('can navigate to all four tabs', async ({ mockedPage: page }) => {
     await page.goto('/');
 
-    // Explore tab (default) — heading visible
+    // Explore tab (default)
     await expect(page.getByRole('heading', { name: 'Explorar' })).toBeVisible();
 
     // Record tab

@@ -790,6 +790,23 @@ wheels = [
 ]
 
 [[package]]
+name = "pipeline"
+version = "0.1.0"
+source = { editable = "../packages/pipeline" }
+dependencies = [
+    { name = "database" },
+    { name = "geodata" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "database", editable = "../packages/database" },
+    { name = "geodata", editable = "../packages/geodata" },
+    { name = "sqlalchemy", specifier = ">=2.0.48" },
+]
+
+[[package]]
 name = "plotly"
 version = "6.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1325,6 +1342,7 @@ dependencies = [
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-sdk" },
     { name = "pandas" },
+    { name = "pipeline" },
     { name = "plotly" },
     { name = "pydeck" },
     { name = "shapely" },
@@ -1345,6 +1363,7 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.20.0" },
     { name = "opentelemetry-sdk", specifier = ">=1.20.0" },
     { name = "pandas", specifier = ">=3.0.1" },
+    { name = "pipeline", editable = "../packages/pipeline" },
     { name = "plotly", specifier = ">=5.24.0" },
     { name = "pydeck", specifier = ">=0.9.1" },
     { name = "shapely", specifier = ">=2.1.2" },

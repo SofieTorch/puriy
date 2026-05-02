@@ -1,4 +1,5 @@
-import { test as base, expect, BrowserContext } from '@playwright/test';
+import { test as base, expect, BrowserContext, Page } from '@playwright/test';
+import { setupApiMocks } from './mocks';
 
 /** Cochabamba center coordinates. */
 export const COCHABAMBA = { latitude: -17.3895, longitude: -66.1568 };
@@ -20,7 +21,6 @@ export const BUS_ROUTE_POINTS = [
 
 /**
  * Simulate movement along a route by updating geolocation at intervals.
- * Playwright's setGeolocation triggers navigator.geolocation.watchPosition callbacks.
  */
 export async function simulateMovement(
   context: BrowserContext,
@@ -34,7 +34,14 @@ export async function simulateMovement(
 }
 
 /**
- * Wait for the app to fully load (database initialized, tabs rendered).
+ * Extended test fixture that sets up API mocks before each test.
+ * Use `test` from this file instead of `@playwright/test` to get mocked APIs.
  */
-export const test = base.extend({});
+export const test = base.extend<{ mockedPage: Page }>({
+  mockedPage: async ({ page }, use) => {
+    await setupApiMocks(page);
+    await use(page);
+  },
+});
+
 export { expect };

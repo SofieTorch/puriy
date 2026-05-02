@@ -166,7 +166,7 @@ def end_recording(
     elif line_name_trimmed:
         new_line = Line(
             name=line_name_trimmed,
-            status=LineStatus.PENDING,
+            status=LineStatus.DRAFT,
         )
         db.add(new_line)
         db.flush()

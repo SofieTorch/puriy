@@ -16,5 +16,6 @@ if __name__ == "__main__":
         .with_app(path="/votes", root=root / "votes.py")
         .with_app(path="/simulator", root=root / "simulator.py")
         .with_app(path="/fares", root=root / "fares.py")
+        .with_app(path="/pipeline", root=root / "pipeline_ui.py")
     )
     uvicorn.run(server.build(), host="127.0.0.1", port=2727)

@@ -15,6 +15,7 @@ from database.models.trip import TripSession, TripSessionPoint, TripSensorReadin
 from database.models.route import (  # noqa: F401
     Trip, TripMatchedEdge, TripPoint, Route, RouteEdge, EdgeVote, TravelTimeSample,
 )
+from database.models.pipeline import PipelineRun, PipelineStepResult  # noqa: F401
 
 load_dotenv()
 
@@ -45,6 +46,8 @@ _APP_TABLES = {
     "travel_time_samples",
     "fare_zones",
     "fare_reports",
+    "pipeline_runs",
+    "pipeline_step_results",
 }
 
 

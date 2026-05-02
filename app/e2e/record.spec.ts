@@ -1,38 +1,32 @@
 import { test, expect, BUS_ROUTE_POINTS, simulateMovement } from './fixtures';
 
 test.describe('Record Tab', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ mockedPage: page }) => {
     await page.goto('/');
     await page.getByRole('tab', { name: /Trazar/ }).click();
     await expect(page.getByTestId('record-swipe-switch')).toBeVisible();
   });
 
-  test('shows the swipe switch in off state', async ({ page }) => {
+  test('shows the swipe switch in off state', async ({ mockedPage: page }) => {
     await expect(page.getByTestId('record-swipe-switch')).toBeVisible();
   });
 
-  test('can start recording via swipe gesture', async ({ page }) => {
+  test('can start recording via swipe gesture', async ({ mockedPage: page }) => {
     const switchEl = page.getByTestId('record-swipe-switch');
     const box = await switchEl.boundingBox();
     if (!box) throw new Error('Switch not found');
 
-    // Simulate swipe right
-    const startX = box.x + 36;
-    const startY = box.y + box.height / 2;
-    const endX = box.x + box.width - 36;
-
-    await page.mouse.move(startX, startY);
+    await page.mouse.move(box.x + 36, box.y + box.height / 2);
     await page.mouse.down();
-    await page.mouse.move(endX, startY, { steps: 10 });
+    await page.mouse.move(box.x + box.width - 36, box.y + box.height / 2, { steps: 10 });
     await page.mouse.up();
 
-    // Recording should start
     await expect(page.getByTestId('record-duration')).toBeVisible({ timeout: 5000 });
     await expect(page.getByTestId('record-points')).toBeVisible();
   });
 
   test('accumulates points when location changes during recording', async ({
-    page,
+    mockedPage: page,
     context,
   }) => {
     const switchEl = page.getByTestId('record-swipe-switch');
@@ -55,7 +49,7 @@ test.describe('Record Tab', () => {
     expect(points).toBeGreaterThanOrEqual(1);
   });
 
-  test('duration counter increments while recording', async ({ page }) => {
+  test('duration counter increments while recording', async ({ mockedPage: page }) => {
     const switchEl = page.getByTestId('record-swipe-switch');
     const box = await switchEl.boundingBox();
     if (!box) throw new Error('Switch not found');

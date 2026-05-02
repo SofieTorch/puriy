@@ -25,6 +25,7 @@ from schemas.voting import (
     NearbyLineRead,
     PendingLineRead,
     VoteableEdgeRead,
+    VoteableSectionRead,
     VoteableSegmentRead,
     VoteRequest,
     VoteResponse,
@@ -165,11 +166,86 @@ def get_voteable_segment(
             },
         }
 
+    # Group contiguous edges into sections
+    edge_reads = [VoteableEdgeRead.model_validate(e) for e in edges]
+    raw_sections: list[list[VoteableEdgeRead]] = []
+    current: list[VoteableEdgeRead] = []
+    for er in edge_reads:
+        if current and er.sequence != current[-1].sequence + 1:
+            raw_sections.append(current)
+            current = []
+        current.append(er)
+    if current:
+        raw_sections.append(current)
+
+    # Compute trip count per section and stitch geometry
+    sections: list[VoteableSectionRead] = []
+    for idx, section_edges in enumerate(raw_sections):
+        # Stitch edge coordinates
+        stitched: list[list[float]] = []
+        for er in section_edges:
+            if er.path:
+                if not stitched:
+                    stitched.extend(er.path)
+                elif stitched[-1] == er.path[0]:
+                    stitched.extend(er.path[1:])
+                else:
+                    stitched.extend(er.path)
+
+        # Count trips that overlap ALL edges in this section
+        section_edge_ids = [er.id for er in section_edges]
+        section_db_edges = [e for e in edges if e.id in section_edge_ids]
+        section_trip_count = len(trip_ids)  # conservative: all trips
+        if section_db_edges:
+            # Count trips overlapping at least one edge in this section
+            from geodata.edge_overlap import find_overlapping_edges as _find
+            for tid in trip_ids:
+                overlaps = _find(db, route.id, [tid], tolerance_meters=50.0)
+                overlap_ids = {e.id for e in overlaps}
+                if not any(eid in overlap_ids for eid in section_edge_ids):
+                    section_trip_count -= 1
+
+        sections.append(VoteableSectionRead(
+            section_index=idx,
+            edges=section_edges,
+            trip_count=max(1, section_trip_count),
+            geometry=stitched,
+        ))
+
+    # Build full route GeoJSON for context
+    route_geojson = None
+    all_route_edges = (
+        db.execute(
+            select(RouteEdge)
+            .where(RouteEdge.route_id == route.id)
+            .order_by(RouteEdge.sequence)
+        ).scalars().all()
+    )
+    if all_route_edges:
+        route_coords: list[list[float]] = []
+        for re in all_route_edges:
+            if re.path is not None and isinstance(re.path, WKBElement):
+                shape = wkb.loads(bytes(re.path.data))
+                edge_coords = [list(c) for c in shape.coords]
+                if not route_coords:
+                    route_coords.extend(edge_coords)
+                elif route_coords[-1] == edge_coords[0]:
+                    route_coords.extend(edge_coords[1:])
+                else:
+                    route_coords.extend(edge_coords)
+        if len(route_coords) >= 2:
+            route_geojson = {
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": route_coords},
+            }
+
     return VoteableSegmentRead(
         route_id=route.id,
         line_name=line.name,
         line_description=line.description,
-        edges=[VoteableEdgeRead.model_validate(e) for e in edges],
+        route_geojson=route_geojson,
+        sections=sections,
+        edges=edge_reads,
         segment_geojson=segment_geojson,
     )
 
@@ -210,13 +286,32 @@ def submit_vote(
         )
 
     trip_ids = [t.id for t in trips]
-    edges = find_overlapping_edges(db, route.id, trip_ids)
+    all_edges = find_overlapping_edges(db, route.id, trip_ids)
 
-    if not edges:
+    if not all_edges:
         raise HTTPException(
             status_code=404,
             detail="No route edges overlap with this device's trips",
         )
+
+    # If section_index is specified, filter to only that section's edges
+    if vote_req.section_index is not None:
+        # Group into sections (same logic as get_voteable_segment)
+        raw_sections: list[list[RouteEdge]] = []
+        current_sec: list[RouteEdge] = []
+        for e in all_edges:
+            if current_sec and e.sequence != current_sec[-1].sequence + 1:
+                raw_sections.append(current_sec)
+                current_sec = []
+            current_sec.append(e)
+        if current_sec:
+            raw_sections.append(current_sec)
+
+        if vote_req.section_index < 0 or vote_req.section_index >= len(raw_sections):
+            raise HTTPException(status_code=400, detail="Invalid section_index")
+        edges = raw_sections[vote_req.section_index]
+    else:
+        edges = all_edges
 
     voted_count = 0
     for edge in edges:

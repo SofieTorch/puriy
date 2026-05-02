@@ -19,7 +19,8 @@ if TYPE_CHECKING:
 class LineStatus(str, Enum):
     """Status of a transit line."""
 
-    PENDING = "pending"
+    DRAFT = "draft"  # just created, not yet deduplicated — invisible to voters
+    PENDING = "pending"  # deduplicated, ready for voting
     APPROVED = "approved"
     MERGED = "merged"
 

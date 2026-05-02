@@ -21,6 +21,7 @@ interface RouteMapProps {
   legs?: Leg[];
   lineRoute?: LineRoute | null;
   detourPath?: [number, number][] | null;
+  highlightPath?: [number, number][] | null;
   currentLocation?: { lon: number; lat: number } | null;
   style?: StyleProp<ViewStyle>;
 }
@@ -54,13 +55,13 @@ function loadLeaflet(): Promise<void> {
   return leafletLoaded;
 }
 
-export default function RouteMap({ legs = [], lineRoute, detourPath, currentLocation, style }: RouteMapProps) {
+export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPath, currentLocation, style }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
 
   const data = useMemo(
-    () => ({ legs, lineRoute: lineRoute ?? null, detourPath: detourPath ?? null, currentLocation: currentLocation ?? null }),
-    [JSON.stringify(legs), JSON.stringify(lineRoute), JSON.stringify(detourPath), JSON.stringify(currentLocation)]
+    () => ({ legs, lineRoute: lineRoute ?? null, detourPath: detourPath ?? null, highlightPath: highlightPath ?? null, currentLocation: currentLocation ?? null }),
+    [JSON.stringify(legs), JSON.stringify(lineRoute), JSON.stringify(detourPath), JSON.stringify(highlightPath), JSON.stringify(currentLocation)]
   );
 
   useEffect(() => {
@@ -129,6 +130,12 @@ export default function RouteMap({ legs = [], lineRoute, detourPath, currentLoca
       if (data.detourPath && data.detourPath.length >= 2) {
         const coords = data.detourPath.map(([lng, lat]: [number, number]) => [lat, lng]);
         L.polyline(coords, { color: '#F97316', weight: 4, dashArray: '8 6' }).addTo(map);
+      }
+
+      // Highlighted section (bold blue, for voting)
+      if (data.highlightPath && data.highlightPath.length >= 2) {
+        const coords = data.highlightPath.map(([lng, lat]: [number, number]) => [lat, lng]);
+        L.polyline(coords, { color: '#09A6F3', weight: 7, opacity: 0.9 }).addTo(map);
       }
 
       // Markers for legs

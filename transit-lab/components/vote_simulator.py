@@ -34,6 +34,22 @@ SIMULATOR_DEVICE_PREFIX = "simulator"
 DEFAULT_VOTER_PREFIX = "simulator-vote"
 
 
+def _group_into_sections(edges: list[RouteEdge]) -> list[list[RouteEdge]]:
+    """Group contiguous edges (by sequence) into sections."""
+    if not edges:
+        return []
+    sections: list[list[RouteEdge]] = []
+    current: list[RouteEdge] = []
+    for edge in edges:
+        if current and edge.sequence != current[-1].sequence + 1:
+            sections.append(current)
+            current = []
+        current.append(edge)
+    if current:
+        sections.append(current)
+    return sections
+
+
 def _load_simulator_sessions(db: Session, line_id: UUID) -> list[TripSession]:
     """Pull every simulator-tagged TripSession with cleaned trips on this line,
     sorted deterministically by (started_at, id) so bucketing is stable.
@@ -221,42 +237,59 @@ def simulate_votes_for_line(
                 "vote": None,
                 "fit_ratio": None,
                 "edges": 0,
+                "sections": [],
             })
             continue
 
-        edge_ids = [e.id for e in segment_edges]
+        # Vote per section independently
+        sections = _group_into_sections(segment_edges)
         session_ids = [s.id for s in voter_sessions]
-        fit_ratio = _compute_fit_ratio(
-            db,
-            edge_ids=edge_ids,
-            trip_ids=voter_trip_ids,
-            session_ids=session_ids,
-            tight_tolerance_m=tight_tolerance_m,
-        )
-        vote = VoteChoice.APPROVE if fit_ratio >= fit_threshold else VoteChoice.REJECT
+        total_new_votes = 0
+        section_results = []
 
-        new_votes = _apply_vote(
-            db, voter_id=voter_id, edges=segment_edges, vote=vote
-        )
-        for e in segment_edges:
-            edges_affected.add(e.id)
+        for sec_idx, sec_edges in enumerate(sections):
+            sec_edge_ids = [e.id for e in sec_edges]
+            sec_fit = _compute_fit_ratio(
+                db,
+                edge_ids=sec_edge_ids,
+                trip_ids=voter_trip_ids,
+                session_ids=session_ids,
+                tight_tolerance_m=tight_tolerance_m,
+            )
+            sec_vote = VoteChoice.APPROVE if sec_fit >= fit_threshold else VoteChoice.REJECT
+            sec_new = _apply_vote(db, voter_id=voter_id, edges=sec_edges, vote=sec_vote)
+            total_new_votes += sec_new
 
-        if new_votes:
+            for e in sec_edges:
+                edges_affected.add(e.id)
+
+            if sec_new:
+                if sec_vote == VoteChoice.APPROVE:
+                    result.approve += 1
+                else:
+                    result.reject += 1
+
+            section_results.append({
+                "section_index": sec_idx,
+                "edges": len(sec_edges),
+                "fit_ratio": round(sec_fit, 3),
+                "vote": sec_vote.value,
+                "new_rows": sec_new,
+            })
+
+        if total_new_votes:
             result.events_created += 1
-            if vote == VoteChoice.APPROVE:
-                result.approve += 1
-            else:
-                result.reject += 1
 
         result.voter_breakdown.append({
             "voter": voter_id,
             "sessions": len(voter_sessions),
             "trips": len(voter_trip_ids),
-            "status": "voted" if new_votes else "no-op (already voted)",
-            "vote": vote.value,
-            "fit_ratio": round(fit_ratio, 3),
+            "status": "voted" if total_new_votes else "no-op (already voted)",
+            "vote": "per-section",
+            "fit_ratio": None,
             "edges": len(segment_edges),
-            "new_rows": new_votes,
+            "new_rows": total_new_votes,
+            "sections": section_results,
         })
 
     db.commit()
@@ -381,6 +414,32 @@ def _wipe_synthetic_votes(db: Session, route_id: UUID, voter_prefix: str) -> int
     return len(rows)
 
 
+def _build_section_view(edges: list[dict]) -> dict:
+    """Build a section summary from a group of contiguous voted edges."""
+    # Stitch geometry
+    stitched: list[list[float]] = []
+    for ve in edges:
+        if not stitched:
+            stitched.extend(ve["path"])
+        elif stitched[-1] == ve["path"][0]:
+            stitched.extend(ve["path"][1:])
+        else:
+            stitched.extend(ve["path"])
+
+    votes = [ve["vote"] for ve in edges]
+    # Section vote = majority of edge votes (all same in practice since we vote per section)
+    approve_count = sum(1 for v in votes if v == "approve")
+    section_vote = "approve" if approve_count > len(votes) / 2 else "reject"
+
+    return {
+        "edges": edges,
+        "edge_count": len(edges),
+        "geometry": stitched,
+        "vote": section_vote,
+        "sequences": [ve["sequence"] for ve in edges],
+    }
+
+
 def load_synthetic_voter_views(
     db: Session,
     line_id: UUID,
@@ -460,6 +519,19 @@ def load_synthetic_voter_views(
                 "edge_id": str(edge.id),
             })
 
+        # Group voted edges into contiguous sections for carousel display
+        voted_sections: list[dict] = []
+        if voted_edges:
+            sorted_ve = sorted(voted_edges, key=lambda x: x["sequence"])
+            current_sec: list[dict] = [sorted_ve[0]]
+            for ve in sorted_ve[1:]:
+                if ve["sequence"] == current_sec[-1]["sequence"] + 1:
+                    current_sec.append(ve)
+                else:
+                    voted_sections.append(_build_section_view(current_sec))
+                    current_sec = [ve]
+            voted_sections.append(_build_section_view(current_sec))
+
         all_lons: list[float] = []
         all_lats: list[float] = []
         for path in raw_paths + cleaned_paths:
@@ -492,6 +564,7 @@ def load_synthetic_voter_views(
             "raw_paths": raw_paths,
             "cleaned_paths": cleaned_paths,
             "voted_edges": voted_edges,
+            "voted_sections": voted_sections,
             "approve": approve,
             "reject": reject,
             "bounds": bounds,
@@ -606,6 +679,19 @@ def load_real_voter_views(
                 "edge_id": str(edge.id),
             })
 
+        # Group voted edges into contiguous sections
+        voted_sections: list[dict] = []
+        if voted_edges:
+            sorted_ve = sorted(voted_edges, key=lambda x: x["sequence"])
+            current_sec: list[dict] = [sorted_ve[0]]
+            for ve in sorted_ve[1:]:
+                if ve["sequence"] == current_sec[-1]["sequence"] + 1:
+                    current_sec.append(ve)
+                else:
+                    voted_sections.append(_build_section_view(current_sec))
+                    current_sec = [ve]
+            voted_sections.append(_build_section_view(current_sec))
+
         all_lons: list[float] = []
         all_lats: list[float] = []
         for path in raw_paths + cleaned_paths:
@@ -642,6 +728,7 @@ def load_real_voter_views(
             "raw_paths": raw_paths,
             "cleaned_paths": cleaned_paths,
             "voted_edges": voted_edges,
+            "voted_sections": voted_sections,
             "approve": approve,
             "reject": reject,
             "bounds": bounds,

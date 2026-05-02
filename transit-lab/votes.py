@@ -515,12 +515,13 @@ def _(minimap_mode, mo, voter_views):
     RAW_COLOR = [180, 180, 180, 160]
     CLEANED_COLOR = [59, 130, 246, 200]
 
-    def _minimap(view):
+    def _section_minimap(view, section_idx=None):
+        """Render a minimap for a voter, optionally highlighting a specific section."""
         _layers = []
         if view["raw_paths"]:
             _layers.append(_path_layer(
                 [{"path": p, "color": RAW_COLOR, "name": "Raw GPS"} for p in view["raw_paths"]],
-                id=f"raw-{view['voter_id']}",
+                id=f"raw-{view['voter_id']}-{section_idx}",
                 width=3,
                 pickable=False,
                 opacity=0.6,
@@ -528,21 +529,37 @@ def _(minimap_mode, mo, voter_views):
         if view["cleaned_paths"]:
             _layers.append(_path_layer(
                 [{"path": p, "color": CLEANED_COLOR, "name": "Cleaned trip"} for p in view["cleaned_paths"]],
-                id=f"clean-{view['voter_id']}",
+                id=f"clean-{view['voter_id']}-{section_idx}",
                 width=3,
                 pickable=False,
                 opacity=0.85,
             ))
-        if view["voted_edges"]:
+
+        # Show all voted edges dimmed, then highlight the current section
+        voted_sections = view.get("voted_sections", [])
+        if voted_sections and section_idx is not None and section_idx < len(voted_sections):
+            # Dim all other sections
+            _other_edges = []
+            for si, sec in enumerate(voted_sections):
+                if si == section_idx:
+                    continue
+                for ve in sec["edges"]:
+                    _other_edges.append({"path": ve["path"], "color": [180, 180, 180, 100], "name": f"Edge {ve['sequence']}"})
+            if _other_edges:
+                _layers.append(_path_layer(_other_edges, id=f"dim-{view['voter_id']}-{section_idx}", width=4, pickable=False, opacity=0.4))
+
+            # Highlight current section
+            _sec = voted_sections[section_idx]
+            _sec_color = APPROVE_COLOR if _sec["vote"] == "approve" else REJECT_COLOR
+            _sec_edges = [
+                {"path": ve["path"], "color": _sec_color, "name": f"Section {section_idx+1} — Edge {ve['sequence']} — {ve['vote'].upper()}"}
+                for ve in _sec["edges"]
+            ]
+            _layers.append(_path_layer(_sec_edges, id=f"sec-{view['voter_id']}-{section_idx}", width=7, pickable=True, opacity=0.9))
+        elif view["voted_edges"]:
+            # No sections or no specific index — show all edges
             _layers.append(_path_layer(
-                [
-                    {
-                        "path": ve["path"],
-                        "color": APPROVE_COLOR if ve["vote"] == "approve" else REJECT_COLOR,
-                        "name": f"Edge {ve['sequence']} — {ve['vote'].upper()}",
-                    }
-                    for ve in view["voted_edges"]
-                ],
+                [{"path": ve["path"], "color": APPROVE_COLOR if ve["vote"] == "approve" else REJECT_COLOR, "name": f"Edge {ve['sequence']} — {ve['vote'].upper()}"} for ve in view["voted_edges"]],
                 id=f"voted-{view['voter_id']}",
                 width=6,
                 pickable=True,
@@ -581,20 +598,25 @@ def _(minimap_mode, mo, voter_views):
             "&middot; hover an edge to see the vote"
         )
         _columns = 3
-        _tiles = [
-            mo.vstack(
-                [
-                    mo.md(
-                        f"**{v['voter_id']}** — {v['session_count']} sess. / {v['trip_count']} trips · "
-                        f"approve {v['approve']} / reject {v['reject']}"
-                    ),
-                    _minimap(v),
-                ],
-                gap=0.25,
-                align="stretch",
+        _tiles = []
+        for v in voter_views:
+            _header = mo.md(
+                f"**{v['voter_id']}** — {v['session_count']} sess. / {v['trip_count']} trips · "
+                f"approve {v['approve']} / reject {v['reject']}"
             )
-            for v in voter_views
-        ]
+            _sections = v.get("voted_sections", [])
+            if len(_sections) > 1:
+                # Section carousel: one tab per section
+                _tabs = {}
+                for _si, _sec in enumerate(_sections):
+                    _vote_label = "✓" if _sec["vote"] == "approve" else "✗"
+                    _tab_key = f"Sec {_si+1} ({_vote_label})"
+                    _tabs[_tab_key] = _section_minimap(v, section_idx=_si)
+                _tile = mo.vstack([_header, mo.ui.tabs(_tabs)], gap=0.25, align="stretch")
+            else:
+                # Single section or no sections — show one map
+                _tile = mo.vstack([_header, _section_minimap(v, section_idx=0 if _sections else None)], gap=0.25, align="stretch")
+            _tiles.append(_tile)
         _rows = []
         for i in range(0, len(_tiles), _columns):
             _row = _tiles[i : i + _columns]

@@ -57,12 +57,23 @@ class VoteableEdgeRead(SQLModel):
         return data
 
 
+class VoteableSectionRead(SQLModel):
+    """A contiguous group of edges the user can vote on as a unit."""
+
+    section_index: int
+    edges: list[VoteableEdgeRead] = []
+    trip_count: int  # how many of the user's trips cover this section
+    geometry: list[list[float]] = []  # stitched [lon, lat] coordinates
+
+
 class VoteableSegmentRead(SQLModel):
     """The voteable segment for a line — edges that overlap with the user's trips."""
 
     route_id: UUID
     line_name: str
     line_description: Optional[str] = None
+    route_geojson: Optional[dict] = None  # full route geometry for context
+    sections: list[VoteableSectionRead] = []  # grouped contiguous sections
     edges: list[VoteableEdgeRead] = []
     segment_geojson: Optional[dict] = None
 
@@ -72,6 +83,7 @@ class VoteRequest(SQLModel):
 
     device_id: str
     vote: VoteChoice
+    section_index: Optional[int] = None  # vote on specific section only
 
 
 class VoteResponse(SQLModel):

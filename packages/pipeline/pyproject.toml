@@ -1,0 +1,24 @@
+[project]
+name = "pipeline"
+version = "0.1.0"
+description = "Pipeline orchestration for transit route reconstruction"
+requires-python = ">=3.14"
+dependencies = [
+  "database>=0.1.0",
+  "geodata>=0.1.0",
+  "sqlalchemy>=2.0.48",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+pipeline = "pipeline.cli:main"
+
+[tool.uv.sources]
+database = {path = "../database", editable = true}
+geodata = {path = "../geodata", editable = true}

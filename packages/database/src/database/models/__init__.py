@@ -1,6 +1,7 @@
 from .detour import Detour, DetourStatus
 from .fare import FareReport, FareZone
 from .line import Line, LineBase, LineStatus, LineType, LineVote
+from .pipeline import PipelineRun, PipelineRunStatus, PipelineStepResult, StepStatus
 from .route import (
     EdgeStatus,
     EdgeVote,
@@ -56,4 +57,8 @@ __all__ = [
     "EdgeVote",
     "VoteChoice",
     "TravelTimeSample",
+    "PipelineRun",
+    "PipelineRunStatus",
+    "PipelineStepResult",
+    "StepStatus",
 ]
