@@ -1,0 +1,25 @@
+[project]
+name = "puriy-cli"
+version = "0.1.0"
+description = "Unified CLI for the puriy transit data platform"
+requires-python = ">=3.14"
+dependencies = [
+  "database>=0.1.0",
+  "geodata>=0.1.0",
+  "pipeline>=0.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+puriy = "puriy_cli.main:main"
+
+[tool.uv.sources]
+database = {path = "../packages/database", editable = true}
+geodata = {path = "../packages/geodata", editable = true}
+pipeline = {path = "../packages/pipeline", editable = true}

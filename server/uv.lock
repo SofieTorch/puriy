@@ -309,6 +309,12 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.48" },
 ]
 
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "ruff", specifier = ">=0.15.12" },
+]
+
 [[package]]
 name = "googleapis-common-protos"
 version = "1.74.0"
@@ -720,6 +726,28 @@ sdist = { url = "https://files.pythonhosted.org/packages/a1/d4/1fc4078c65507b51b
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl", hash = "sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484", size = 66469, upload-time = "2025-04-19T11:48:57.875Z" },
 ]
+
+[[package]]
+name = "pipeline"
+version = "0.1.0"
+source = { editable = "../packages/pipeline" }
+dependencies = [
+    { name = "database" },
+    { name = "geodata" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "database", editable = "../packages/database" },
+    { name = "geodata", editable = "../packages/geodata" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
+    { name = "sqlalchemy", specifier = ">=2.0.48" },
+]
+provides-extras = ["test"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.15.12" }]
 
 [[package]]
 name = "pluggy"
@@ -1139,6 +1167,7 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "geoalchemy2" },
     { name = "geodata" },
+    { name = "httpx" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-grpc" },
     { name = "opentelemetry-instrumentation-fastapi" },
@@ -1153,6 +1182,7 @@ dependencies = [
 [package.optional-dependencies]
 test = [
     { name = "httpx" },
+    { name = "pipeline" },
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
@@ -1164,12 +1194,14 @@ requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.0" },
     { name = "geoalchemy2", specifier = ">=0.15.0" },
     { name = "geodata", editable = "../packages/geodata" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'test'", specifier = ">=0.27.0" },
     { name = "opentelemetry-api", specifier = ">=1.20.0" },
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.20.0" },
     { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.41b0" },
     { name = "opentelemetry-instrumentation-sqlalchemy", specifier = ">=0.41b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.20.0" },
+    { name = "pipeline", marker = "extra == 'test'", editable = "../packages/pipeline" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=4.1.0" },

@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: puriy-cli
+Version: 0.1.0
+Summary: Unified CLI for the puriy transit data platform
+Requires-Python: >=3.14
+Requires-Dist: database>=0.1.0
+Requires-Dist: geodata>=0.1.0
+Requires-Dist: pipeline>=0.1.0

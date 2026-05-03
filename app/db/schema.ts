@@ -93,6 +93,9 @@ export const savedTrips = sqliteTable('saved_trips', {
   destLat: real('dest_lat').notNull(),
   type: text('type', { enum: ['one_time', 'commute'] }).notNull(),
   routeJson: text('route_json').notNull(), // serialized DirectionsResponse
+  /** Optional HH:mm in local Cochabamba time. When set, a local notification
+   * is scheduled to fire LEAD_MINUTES_BEFORE before this time. */
+  departureTime: text('departure_time'),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 });
 

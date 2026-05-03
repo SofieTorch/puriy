@@ -1,4 +1,5 @@
-from .line import LineCreate, LineRead, LineUpdate
+from .device import DeviceRead, DeviceRegister, SubscriptionsUpdate
+from .line import DayScheduleRead, LineCreate, LineRead, LineUpdate
 from .recording import (
     EndSessionRequest,
     TripSessionPointBatch,
@@ -12,9 +13,13 @@ from .recording import (
 )
 
 __all__ = [
+    "DayScheduleRead",
+    "DeviceRead",
+    "DeviceRegister",
     "LineCreate",
     "LineRead",
     "LineUpdate",
+    "SubscriptionsUpdate",
     "TripSessionCreate",
     "TripSessionRead",
     "EndSessionRequest",

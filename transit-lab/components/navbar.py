@@ -17,6 +17,7 @@ def navbar() -> mo.Html:
             f"{prefix}/votes": "Votes",
             f"{prefix}/simulator": "Simulator",
             f"{prefix}/fares": "Fares",
+            f"{prefix}/pipeline": "Pipeline",
         },
         orientation="horizontal",
     )

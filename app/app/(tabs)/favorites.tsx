@@ -189,6 +189,17 @@ function TripCard({ trip, index, onPress, onDelete }: { trip: SavedTrip; index: 
       <View className="mb-2 flex-row items-center gap-3">
         <Text className="text-lg font-bold text-gray-800">{formatDuration(route.total_duration_s)}</Text>
         <Text className="text-sm text-gray-400">{formatDistance(route.total_distance_m)}</Text>
+        {route.total_fare_bob != null && (
+          <Text className="text-sm font-semibold text-[#09A6F3]" testID={`favorites-fare-${index}`}>
+            Bs. {route.total_fare_bob.toFixed(2)}
+          </Text>
+        )}
+        {trip.departureTime && (
+          <View className="ml-auto flex-row items-center gap-1 rounded-lg bg-[#DDF6FF] px-2 py-0.5" testID={`favorites-departure-${index}`}>
+            <Feather name="clock" size={11} color={BLUE} />
+            <Text className="text-xs font-semibold text-[#09A6F3]">{trip.departureTime}</Text>
+          </View>
+        )}
       </View>
       <View className="mb-2 flex-row items-center gap-1">
         {route.legs.map((leg, i) => <View key={i} className={`h-1.5 rounded-full ${leg.mode === 'bus' ? 'bg-[#09A6F3]' : 'bg-gray-300'}`} style={{ flex: leg.distance_m, minWidth: 6 }} />)}

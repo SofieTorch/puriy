@@ -574,6 +574,39 @@ class BatchMatchResult:
     skipped: int
 
 
+def _match_session_in_worker(
+    session_id: UUID,
+    *,
+    costing: str,
+    search_radius: int,
+    gps_accuracy: int,
+) -> tuple[UUID, MatchResult | None, str | None]:
+    """ThreadPoolExecutor worker: opens its own DB session, matches one
+    TripSession, returns `(session_id, result_or_None, error_or_None)`.
+
+    Each worker uses its own SQLAlchemy session because the library is
+    not thread-safe — running parallel `match_session` calls on a
+    shared session would corrupt the unit-of-work / identity map.
+    `match_session` already does its own commit at the end, so each
+    worker's transaction is independent.
+    """
+    from database.connection import SessionLocal
+
+    db = SessionLocal()
+    try:
+        result = match_session(
+            db, session_id,
+            costing=costing,
+            search_radius=search_radius,
+            gps_accuracy=gps_accuracy,
+        )
+        return session_id, result, None
+    except Exception as exc:
+        return session_id, None, str(exc)
+    finally:
+        db.close()
+
+
 def match_line(
     db: Session,
     line_id: UUID,
@@ -581,16 +614,27 @@ def match_line(
     costing: str = "bus",
     search_radius: int = 60,
     gps_accuracy: int = 20,
+    concurrency: int = 6,
 ) -> BatchMatchResult:
     """Map-match all RAW trip sessions for a given line.
 
     Fetches all TripSessions with processing_status=RAW and status=COMPLETED
-    for the given line, and runs match_session on each.
-    Sessions that fail are marked FAILED and collected in the result.
+    for the given line, and runs match_session on each in parallel up to
+    `concurrency` workers. Each worker opens its own DB session so the
+    SQLAlchemy session/identity-map remains thread-safe; the pipeline's
+    `db` argument is only used for the initial line + sessions lookup.
+
+    Parallelisation is I/O-bound (Valhalla HTTP calls dominate) so threads
+    work fine despite the GIL — the GIL is released during socket reads.
+    On a single-machine Valhalla, ~6 concurrent requests is a sensible
+    upper bound; higher values just queue inside Valhalla.
     """
     with tracer.start_as_current_span(
         "match_line",
-        attributes={"line_id": str(line_id)},
+        attributes={
+            "line_id": str(line_id),
+            "concurrency": concurrency,
+        },
     ) as span:
         line = db.get(Line, line_id)
         if not line:
@@ -619,20 +663,42 @@ def match_line(
         failed: list[tuple[UUID, str]] = []
         skipped = 0
 
-        for session in sessions:
-            try:
-                result = match_session(
-                    db,
-                    session.id,
-                    costing=costing,
-                    search_radius=search_radius,
-                    gps_accuracy=gps_accuracy,
-                )
-                matched.append(result)
-            except (ValueError, RuntimeError) as e:
-                failed.append((session.id, str(e)))
-            except Exception as e:
-                failed.append((session.id, str(e)))
+        # Sequential fallback when there's no benefit to parallelism
+        # (and easier to debug) — also keeps existing tests that monkey-
+        # patch `trace_match` working without thread-context surprises.
+        if concurrency <= 1 or len(sessions) <= 1:
+            for session in sessions:
+                try:
+                    result = match_session(
+                        db, session.id,
+                        costing=costing,
+                        search_radius=search_radius,
+                        gps_accuracy=gps_accuracy,
+                    )
+                    matched.append(result)
+                except Exception as e:
+                    failed.append((session.id, str(e)))
+        else:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            session_ids = [s.id for s in sessions]
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                futures = [
+                    pool.submit(
+                        _match_session_in_worker,
+                        sid,
+                        costing=costing,
+                        search_radius=search_radius,
+                        gps_accuracy=gps_accuracy,
+                    )
+                    for sid in session_ids
+                ]
+                for future in as_completed(futures):
+                    sid, result, error = future.result()
+                    if result is not None:
+                        matched.append(result)
+                    else:
+                        failed.append((sid, error or "unknown error"))
 
         span.set_attributes({
             "sessions.matched": len(matched),

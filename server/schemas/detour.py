@@ -9,6 +9,7 @@ from shapely.geometry import LineString
 from sqlmodel import SQLModel
 
 from database.models.detour import Detour
+from services.detour_confidence import compute_confidence_pct
 
 
 class DetourRead(SQLModel):
@@ -32,7 +33,10 @@ class DetourRead(SQLModel):
         if isinstance(data, Detour):
             now = datetime.utcnow()
             days = (now - data.last_confirmed_at).days
-            confidence = max(0, min(100, 100 - (days * 100 // 7)))
+            confidence = compute_confidence_pct(
+                days_since_confirmed=days,
+                confirmed_count=data.confirmed_count,
+            )
 
             path = None
             if data.path is not None:

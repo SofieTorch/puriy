@@ -239,14 +239,21 @@ class TestGetVoteableSegment:
         assert "confidence" in edge
         assert "path" in edge
 
-    def test_404_no_trips(self, client: TestClient, line_with_route):
-        """Should 404 when device has no trips for this line."""
+    def test_403_no_trips_for_device(self, client: TestClient, line_with_route):
+        """A device with zero trips for this line gets the same 403
+        "Keep recording!" response as a device with some-but-not-enough
+        trips — the `trip_count < min_trips` check fires first and is
+        the more actionable UX (zero is just the lower bound of "not
+        enough"). The 404 branch below it in `voting.py` is a defensive
+        safety net for the case where the count and trips queries ever
+        diverge."""
         line, _ = line_with_route
 
         resp = client.get(
             f"/vote/{line.id}/segment", params={"device_id": "no-trips-device", "min_trips": 1}
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 403
+        assert "Keep recording" in resp.json()["detail"]
 
     def test_404_no_line(self, client: TestClient):
         """Should 404 for non-existent line."""
@@ -390,8 +397,12 @@ class TestSubmitVote:
             assert e.votes_for == 0
             assert e.votes_against == 1
 
-    def test_404_no_trips_for_device(self, client: TestClient, line_with_route):
-        """Should 404 when device has no trips."""
+    def test_403_no_trips_for_device(self, client: TestClient, line_with_route):
+        """Same logic as the segment-fetch test: a device with zero
+        trips fails the `trip_count < min_trips` gate first, returning
+        a 403 with the actionable "Keep recording!" message. The 404
+        branch in `voting.py` for the symmetric case is a defensive
+        safety net."""
         line, _ = line_with_route
 
         resp = client.post(
@@ -399,7 +410,8 @@ class TestSubmitVote:
             json={"device_id": "ghost-device", "vote": "approve"},
             params={"min_trips": 1},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 403
+        assert "Keep recording" in resp.json()["detail"]
 
 
 # ---------------------------------------------------------------------------

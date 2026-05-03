@@ -157,39 +157,44 @@ export default function RecordScreen() {
     // Background location works in both foreground and background
     await startBackgroundLocation();
 
-    Accelerometer.setUpdateInterval(SENSOR_INTERVAL);
-    accelSubscription.current = Accelerometer.addListener((data) => {
-      const reading: SensorReading = {
-        timestamp: new Date().toISOString(),
-        accel_x: data.x,
-        accel_y: data.y,
-        accel_z: data.z,
-        gyro_x: null,
-        gyro_y: null,
-        gyro_z: null,
-        pressure: null,
-        magnetic_heading: null,
-      };
-      sensorBuffer.current.push(reading);
-      addSensorReadings(localRecordingId, [reading]);
-    });
+    // Sensors may not be available on web (no native module)
+    try {
+      Accelerometer.setUpdateInterval(SENSOR_INTERVAL);
+      accelSubscription.current = Accelerometer.addListener((data) => {
+        const reading: SensorReading = {
+          timestamp: new Date().toISOString(),
+          accel_x: data.x,
+          accel_y: data.y,
+          accel_z: data.z,
+          gyro_x: null,
+          gyro_y: null,
+          gyro_z: null,
+          pressure: null,
+          magnetic_heading: null,
+        };
+        sensorBuffer.current.push(reading);
+        addSensorReadings(localRecordingId, [reading]);
+      });
+    } catch {}
 
-    Gyroscope.setUpdateInterval(SENSOR_INTERVAL);
-    gyroSubscription.current = Gyroscope.addListener((data) => {
-      const reading: SensorReading = {
-        timestamp: new Date().toISOString(),
-        accel_x: null,
-        accel_y: null,
-        accel_z: null,
-        gyro_x: data.x,
-        gyro_y: data.y,
-        gyro_z: data.z,
-        pressure: null,
-        magnetic_heading: null,
-      };
-      sensorBuffer.current.push(reading);
-      addSensorReadings(localRecordingId, [reading]);
-    });
+    try {
+      Gyroscope.setUpdateInterval(SENSOR_INTERVAL);
+      gyroSubscription.current = Gyroscope.addListener((data) => {
+        const reading: SensorReading = {
+          timestamp: new Date().toISOString(),
+          accel_x: null,
+          accel_y: null,
+          accel_z: null,
+          gyro_x: data.x,
+          gyro_y: data.y,
+          gyro_z: data.z,
+          pressure: null,
+          magnetic_heading: null,
+        };
+        sensorBuffer.current.push(reading);
+        addSensorReadings(localRecordingId, [reading]);
+      });
+    } catch {}
 
     durationInterval.current = setInterval(() => {
       setRecordingDuration((prev) => prev + 1);

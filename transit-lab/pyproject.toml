@@ -12,6 +12,7 @@ dependencies = [
     "sqlalchemy>=2.0.48",
     "database>=0.1.0",
     "geodata>=0.1.0",
+    "pipeline>=0.1.0",
     "altair>=6.0.0",
     "plotly>=5.24.0",
     "pydeck>=0.9.1",
@@ -26,6 +27,7 @@ dependencies = [
 [tool.uv.sources]
 database = {path = "../packages/database", editable = true}
 geodata = {path = "../packages/geodata", editable = true}
+pipeline = {path = "../packages/pipeline", editable = true}
 
 [tool.marimo.runtime]
 output_max_bytes = 1000_000_000

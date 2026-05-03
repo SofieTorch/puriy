@@ -17,14 +17,15 @@ interface RouteMapProps {
   legs?: Leg[];
   lineRoute?: LineRoute | null;
   detourPath?: [number, number][] | null;
+  highlightPath?: [number, number][] | null;
   currentLocation?: { lon: number; lat: number } | null;
   style?: StyleProp<ViewStyle>;
 }
 
-export default function RouteMap({ legs = [], lineRoute, detourPath, currentLocation, style }: RouteMapProps) {
+export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPath, currentLocation, style }: RouteMapProps) {
   const html = useMemo(
-    () => buildMapHtml(legs, currentLocation ?? null, lineRoute ?? null, detourPath ?? null),
-    [JSON.stringify(legs), JSON.stringify(currentLocation), JSON.stringify(lineRoute), JSON.stringify(detourPath)]
+    () => buildMapHtml(legs, currentLocation ?? null, lineRoute ?? null, detourPath ?? null, highlightPath ?? null),
+    [JSON.stringify(legs), JSON.stringify(currentLocation), JSON.stringify(lineRoute), JSON.stringify(detourPath), JSON.stringify(highlightPath)]
   );
 
   return (
@@ -43,6 +44,7 @@ function buildMapHtml(
   currentLocation: { lon: number; lat: number } | null,
   lineRoute: LineRoute | null,
   detourPath: [number, number][] | null,
+  highlightPath: [number, number][] | null,
 ): string {
   let minLat = Infinity, maxLat = -Infinity;
   let minLng = Infinity, maxLng = -Infinity;
@@ -90,6 +92,14 @@ function buildMapHtml(
     const coords = detourPath.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
     detourPathJs = `L.polyline([${coords}], {color:'#F97316', weight:4, dashArray:'8 6'}).addTo(map);`;
     for (const [lng, lat] of detourPath) addToBounds(lng, lat);
+  }
+
+  // Highlighted section (bold blue, for voting)
+  let highlightPathJs = '';
+  if (highlightPath && highlightPath.length >= 2) {
+    const coords = highlightPath.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
+    highlightPathJs = `L.polyline([${coords}], {color:'#09A6F3', weight:7, opacity:0.9}).addTo(map);`;
+    for (const [lng, lat] of highlightPath) addToBounds(lng, lat);
   }
 
   // Markers
@@ -168,6 +178,7 @@ function buildMapHtml(
   ${polylines}
   ${lineRouteJs}
   ${detourPathJs}
+  ${highlightPathJs}
   ${markers.join('\n  ')}
   ${currentLocJs}
   if (bounds) map.fitBounds(bounds, {padding: [30,30]});

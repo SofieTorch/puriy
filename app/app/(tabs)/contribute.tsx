@@ -13,13 +13,19 @@ import {
   View,
 } from 'react-native';
 
+import SectionVoteScreen from '@/components/section-vote-screen';
+
 export default function ContributeScreen() {
   const [pending, setPending] = useState<PendingLine[]>([]);
   const [nearbyLines, setNearbyLines] = useState<NearbyLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Section voting modal
+  const [votingSegment, setVotingSegment] = useState<VoteableSegment | null>(null);
   const [votingLineId, setVotingLineId] = useState<string | null>(null);
-  const [segment, setSegment] = useState<VoteableSegment | null>(null);
+  const [votingLineName, setVotingLineName] = useState('');
+  const [loadingSegment, setLoadingSegment] = useState<string | null>(null);
 
   const deviceId = getDeviceId();
   const tabBarHeight = useBottomTabBarHeight();
@@ -47,42 +53,38 @@ export default function ContributeScreen() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    setSegment(null);
-    setVotingLineId(null);
     fetchPending();
   };
 
-  const loadSegment = async (lineId: string) => {
-    setVotingLineId(lineId);
+  const openSectionVoting = async (lineId: string, lineName: string) => {
+    setLoadingSegment(lineId);
     try {
       const seg = await api.getVoteableSegment(lineId, deviceId);
-      setSegment(seg);
+      if (seg.sections.length === 0) {
+        Alert.alert('Sin secciones', 'No hay secciones para votar en esta ruta.');
+        return;
+      }
+      setVotingLineId(lineId);
+      setVotingLineName(lineName);
+      setVotingSegment(seg);
     } catch {
-      setSegment(null);
-      Alert.alert('Error', 'No se pudo cargar el segmento de ruta.');
+      Alert.alert('Error', 'No se pudo cargar la ruta.');
+    } finally {
+      setLoadingSegment(null);
     }
+  };
+
+  const handleVotingDone = () => {
+    setVotingSegment(null);
+    setVotingLineId(null);
+    setVotingLineName('');
+    fetchPending();
   };
 
   const submitLineVote = async (lineId: string, vote: 'approve' | 'reject') => {
     try {
       await api.submitLineVote(lineId, deviceId, vote);
       setNearbyLines((prev) => prev.filter((l) => l.line_id !== lineId));
-    } catch {
-      Alert.alert('Error', 'No se pudo enviar tu voto.');
-    }
-  };
-
-  const submitVote = async (lineId: string, vote: 'approve' | 'reject') => {
-    try {
-      const result = await api.submitVote(lineId, deviceId, vote);
-      Alert.alert(
-        vote === 'approve' ? 'Aprobado' : 'Rechazado',
-        `Votaste en ${result.edges_voted} segmentos.`
-      );
-      // Refresh to remove voted line
-      setSegment(null);
-      setVotingLineId(null);
-      fetchPending();
     } catch {
       Alert.alert('Error', 'No se pudo enviar tu voto.');
     }
@@ -134,10 +136,7 @@ export default function ContributeScreen() {
                         Línea {line.line_name}
                       </Text>
                       {line.line_description && (
-                        <Text
-                          className="text-sm text-gray-500"
-                          numberOfLines={1}
-                        >
+                        <Text className="text-sm text-gray-500" numberOfLines={1}>
                           {line.line_description}
                         </Text>
                       )}
@@ -148,22 +147,14 @@ export default function ContributeScreen() {
                         className="h-9 w-9 items-center justify-center rounded-full bg-green-50"
                         onPress={() => submitLineVote(line.line_id, 'approve')}
                       >
-                        <MaterialCommunityIcons
-                          name="check"
-                          size={20}
-                          color="#22C55E"
-                        />
+                        <MaterialCommunityIcons name="check" size={20} color="#22C55E" />
                       </Pressable>
                       <Pressable
                         testID={`contribute-line-reject-${idx}`}
                         className="h-9 w-9 items-center justify-center rounded-full bg-red-50"
                         onPress={() => submitLineVote(line.line_id, 'reject')}
                       >
-                        <MaterialCommunityIcons
-                          name="close"
-                          size={20}
-                          color="#EF4444"
-                        />
+                        <MaterialCommunityIcons name="close" size={20} color="#EF4444" />
                       </Pressable>
                     </View>
                   </View>
@@ -178,92 +169,56 @@ export default function ContributeScreen() {
               </Text>
             )}
 
-            {pending.map((line, idx) => (
+            {pending.map((line) => (
               <View
                 key={line.line_id}
                 className="overflow-hidden rounded-2xl border border-gray-200 bg-white"
               >
-                {/* Line info */}
                 <View className="gap-1 p-4">
                   <Text className="text-base font-semibold text-gray-800">
                     Línea {line.line_name}
                   </Text>
                   {line.line_description && (
-                    <Text
-                      className="text-sm text-gray-500"
-                      numberOfLines={2}
-                    >
+                    <Text className="text-sm text-gray-500" numberOfLines={2}>
                       {line.line_description}
                     </Text>
                   )}
                   <Text className="mt-1 text-xs text-gray-400">
-                    {line.pending_edge_count} segmentos pendientes de{' '}
-                    {line.total_edge_count} totales
+                    {line.pending_edge_count} segmentos pendientes de {line.total_edge_count} totales
                   </Text>
                 </View>
 
-                {/* Segment detail (if expanded) */}
-                {votingLineId === line.line_id && segment && (
-                  <View className="border-t border-gray-100 bg-gray-50 px-4 py-3">
-                    <Text className="text-sm text-gray-600">
-                      {segment.edges.length} segmentos para revisar
-                    </Text>
-                  </View>
-                )}
-
-                {/* Actions */}
-                <View className="flex-row border-t border-gray-100">
-                  {votingLineId !== line.line_id ? (
-                    <Pressable
-                      className="flex-1 items-center py-3"
-                      onPress={() => loadSegment(line.line_id)}
-                    >
-                      <Text className="text-sm font-medium text-[#09A6F3]">
-                        Ver ruta
-                      </Text>
-                    </Pressable>
+                <Pressable
+                  className="flex-row items-center justify-center border-t border-gray-100 py-3"
+                  onPress={() => openSectionVoting(line.line_id, line.line_name)}
+                  disabled={loadingSegment === line.line_id}
+                >
+                  {loadingSegment === line.line_id ? (
+                    <ActivityIndicator size="small" color="#09A6F3" />
                   ) : (
-                    <>
-                      <Pressable
-                        testID={`contribute-route-approve-${idx}`}
-                        className="flex-1 flex-row items-center justify-center gap-1.5 border-r border-gray-100 py-3"
-                        onPress={() =>
-                          submitVote(line.line_id, 'approve')
-                        }
-                      >
-                        <MaterialCommunityIcons
-                          name="check-circle"
-                          size={20}
-                          color="#22C55E"
-                        />
-                        <Text className="text-sm font-medium text-green-600">
-                          Aprobar
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        testID={`contribute-route-reject-${idx}`}
-                        className="flex-1 flex-row items-center justify-center gap-1.5 py-3"
-                        onPress={() =>
-                          submitVote(line.line_id, 'reject')
-                        }
-                      >
-                        <MaterialCommunityIcons
-                          name="close-circle"
-                          size={20}
-                          color="#EF4444"
-                        />
-                        <Text className="text-sm font-medium text-red-500">
-                          Rechazar
-                        </Text>
-                      </Pressable>
-                    </>
+                    <Text className="text-sm font-medium text-[#09A6F3]">
+                      Votar por secciones
+                    </Text>
                   )}
-                </View>
+                </Pressable>
               </View>
             ))}
           </View>
         )}
       </ScrollView>
+
+      {/* Section voting modal */}
+      {votingSegment && votingLineId && (
+        <SectionVoteScreen
+          visible
+          lineId={votingLineId}
+          routeId={votingSegment.route_id}
+          lineName={votingLineName}
+          routeGeojson={votingSegment.route_geojson}
+          sections={votingSegment.sections}
+          onDone={handleVotingDone}
+        />
+      )}
     </View>
   );
 }

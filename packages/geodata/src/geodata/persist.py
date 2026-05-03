@@ -16,6 +16,7 @@ def save_tracks_to_db(
     db: Session,
     tracks: list[dict],
     line_id: UUID,
+    device_id: str | None = None,
     notes: str | None = None,
 ) -> list[TripSession]:
     """Persist generated track records as TripSessions + TripSessionPoints.
@@ -53,6 +54,7 @@ def save_tracks_to_db(
 
             session = TripSession(
                 line_id=line_id,
+                device_id=device_id or f"simulator-{track_id}",
                 status=SessionStatus.COMPLETED,
                 started_at=timestamps[0],
                 ended_at=timestamps[-1],

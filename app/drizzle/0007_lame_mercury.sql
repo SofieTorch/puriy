@@ -1,0 +1,1 @@
+ALTER TABLE `saved_trips` ADD `departure_time` text;

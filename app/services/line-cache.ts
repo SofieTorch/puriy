@@ -16,11 +16,12 @@ export async function getLines(): Promise<Line[]> {
 
   if (isOnline) {
     try {
-      const [approved, pending] = await Promise.all([
+      const [approved, pending, draft] = await Promise.all([
         api.getLines('approved'),
         api.getLines('pending'),
+        api.getLines('draft'),
       ]);
-      const all = [...approved, ...pending];
+      const all = [...approved, ...pending, ...draft];
       await refreshLineCache(all);
       return all;
     } catch (err) {

@@ -2,12 +2,27 @@
 
 import uuid as _uuid
 from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID
 
 from geoalchemy2 import Geometry
 from sqlalchemy import Column, Numeric
 from sqlmodel import Field, Relationship, SQLModel
+
+
+class FareSource(str, Enum):
+    """How a fare report was produced.
+
+    REGISTRATION: the user typed the amount themselves (free entry).
+    CONFIRMATION: the user picked an amount that was already reported by
+        somebody else (chip selection in the UI). Confirmations carry
+        more signal that the amount is "the going rate" because the user
+        agreed with a pre-existing value rather than supplying a new one.
+    """
+
+    REGISTRATION = "registration"
+    CONFIRMATION = "confirmation"
 
 if TYPE_CHECKING:
     from .line import Line
@@ -49,7 +64,7 @@ class FareReport(SQLModel, table=True):
 
     id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
     line_id: UUID = Field(foreign_key="lines.id", index=True)
-    device_id: str = Field(max_length=255, index=True)
+    device_id: str = Field(foreign_key="devices.id", max_length=255, index=True)
     session_id: Optional[UUID] = Field(default=None, foreign_key="trip_sessions.id")
 
     amount_bob: float = Field(
@@ -68,6 +83,7 @@ class FareReport(SQLModel, table=True):
         default=None, foreign_key="fare_zones.id", index=True,
     )
 
+    source: FareSource = Field(default=FareSource.REGISTRATION)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     line: Optional["Line"] = Relationship(back_populates="fare_reports")

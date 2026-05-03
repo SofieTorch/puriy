@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import SQLModel
 
+from services.detour_confidence import compute_confidence_pct
+
 if TYPE_CHECKING:
     from database.models.detour import Detour
 
@@ -32,7 +34,10 @@ class DetourAlert(SQLModel):
             reason=detour.reason,
             description=detour.description,
             days_since_confirmed=days,
-            confidence_pct=max(0, 100 - days * 100 // 7),
+            confidence_pct=compute_confidence_pct(
+                days_since_confirmed=days,
+                confirmed_count=detour.confirmed_count,
+            ),
             detour_path=analysis.get("detour_path") if analysis else None,
             diverges_at=analysis.get("diverges_at") if analysis else None,
             rejoins_at=analysis.get("rejoins_at") if analysis else None,
@@ -53,6 +58,8 @@ class DirectionsLeg(SQLModel):
     geometry: list[list[float]]  # [[lon, lat], ...]
     distance_m: float
     duration_s: float
+    fare_bob: Optional[float] = None      # bus legs only — RF-03
+    frequency_min: Optional[int] = None   # bus legs only — RF-04
     detour_alert: Optional[DetourAlert] = None
 
 
@@ -60,6 +67,7 @@ class DirectionsResponse(SQLModel):
     legs: list[DirectionsLeg]
     total_distance_m: float
     total_duration_s: float
+    total_fare_bob: Optional[float] = None  # RF-30 — sum across bus legs, None if any is missing
 
 
 class GraphRebuildResponse(SQLModel):

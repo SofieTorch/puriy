@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { LogBox } from 'react-native';
+import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 if (process.env.EXPO_PUBLIC_E2E === 'true') {
@@ -11,6 +12,8 @@ if (process.env.EXPO_PUBLIC_E2E === 'true') {
 
 import { DatabaseProvider } from '@/components/DatabaseProvider';
 import { GluestackUIProvider } from '@/components/ui/gluestack-ui-provider';
+import { initPushNotifications } from '@/services/push';
+import { rescheduleAllSavedTrips } from '@/services/trip-notifications';
 import '@/global.css';
 
 const LightTheme: Theme = {
@@ -26,22 +29,38 @@ export const unstable_settings = {
   anchor: '(tabs)',
 };
 
+/**
+ * Effects that need the local DB to be initialized — mounted under
+ * DatabaseProvider so `getDb()` works.
+ */
+function PostBootEffects() {
+  useEffect(() => {
+    void rescheduleAllSavedTrips();
+  }, []);
+  return null;
+}
+
 export default function RootLayout() {
+  useEffect(() => {
+    void initPushNotifications();
+  }, []);
+
   return (
-    
+
     <GluestackUIProvider mode="light">
       <GestureHandlerRootView style={{ flex: 1 }}>
         <DatabaseProvider>
+          <PostBootEffects />
           <ThemeProvider value={LightTheme}>
             <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
             </Stack>
-            <StatusBar style="light" backgroundColor="#09A6F3" /> 
+            <StatusBar style="light" backgroundColor="#09A6F3" />
           </ThemeProvider>
         </DatabaseProvider>
       </GestureHandlerRootView>
     </GluestackUIProvider>
-  
+
   );
 }

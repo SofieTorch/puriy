@@ -64,6 +64,7 @@ class RouteRead(SQLModel):
     id: UUID
     line_id: UUID
     version: int
+    ramal_label: str
     source: RouteSource
     status: RouteStatus
     trip_count: int
@@ -71,6 +72,8 @@ class RouteRead(SQLModel):
     fragment_index: int
     fragment_count: int
     created_at: datetime
+    street_summary: list[str] = []
+    endpoint_zones: list[Optional[str]] = [None, None]
     edges: list[RouteEdgeRead] = []
 
     @model_validator(mode="before")
@@ -81,6 +84,7 @@ class RouteRead(SQLModel):
                 "id": data.id,
                 "line_id": data.line_id,
                 "version": data.version,
+                "ramal_label": data.ramal_label,
                 "source": data.source,
                 "status": data.status,
                 "trip_count": data.trip_count,
@@ -88,6 +92,8 @@ class RouteRead(SQLModel):
                 "fragment_index": data.fragment_index,
                 "fragment_count": data.fragment_count,
                 "created_at": data.created_at,
+                "street_summary": data.street_summary or [],
+                "endpoint_zones": data.endpoint_zones or [None, None],
                 "edges": [
                     RouteEdgeRead.model_validate(edge)
                     for edge in data.edges

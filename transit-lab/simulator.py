@@ -303,6 +303,7 @@ def _(db, mo):
 @app.cell
 def _(db, device_id_input, generated_records, mo, save_button, save_line):
     from uuid import UUID as _UUID
+    from database import ensure_device
     from geodata.persist import save_tracks_to_db
 
     mo.stop(not save_button.value)
@@ -315,8 +316,10 @@ def _(db, device_id_input, generated_records, mo, save_button, save_line):
         notes="simulated",
     )
 
-    # Assign device to all sessions
+    # Assign device to all sessions; ensure the Device row exists first
+    # since trip_sessions.device_id is now FK-constrained to devices.id.
     _device = device_id_input.value.strip() or "simulator"
+    ensure_device(db, _device)
     for session in sessions:
         session.device_id = _device
     db.commit()

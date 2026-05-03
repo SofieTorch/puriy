@@ -12,12 +12,15 @@ from sqlalchemy.orm import Session
 
 from database.connection import get_db
 from schemas.fare import (
+    CommonAmountRead,
     FareEstimateRead,
     FareReportCreate,
     FareReportRead,
     FareZoneRead,
     LineFareRead,
     ZoneFareRead,
+    ZoneResolveRequest,
+    ZoneResolveResponse,
 )
 
 router = APIRouter(prefix="/fares", tags=["fares"])
@@ -54,6 +57,35 @@ def list_fare_zones(db: Session = Depends(get_db)) -> list[FareZoneRead]:
     return [_zone_read(z) for z in zones]
 
 
+@router.post("/zones/resolve", response_model=ZoneResolveResponse)
+def resolve_zones(
+    body: ZoneResolveRequest, db: Session = Depends(get_db),
+) -> ZoneResolveResponse:
+    """Identify the boarding/alighting fare zones for a pair of GPS
+    points without persisting anything. Used by the mobile fare prompt
+    (CU-08) to show users which municipalities the system identified
+    before they confirm the report — turns invisible inference into
+    transparent feedback. Either zone may be None when the GPS point
+    falls outside any defined `FareZone.boundary`.
+    """
+    boarding_id = _resolve_zone(db, body.boarding_latitude, body.boarding_longitude)
+    alighting_id = _resolve_zone(db, body.alighting_latitude, body.alighting_longitude)
+    boarding_name = None
+    alighting_name = None
+    if boarding_id:
+        bz = db.get(FareZone, boarding_id)
+        if bz:
+            boarding_name = bz.name
+    if alighting_id:
+        az = db.get(FareZone, alighting_id)
+        if az:
+            alighting_name = az.name
+    return ZoneResolveResponse(
+        boarding_zone=boarding_name,
+        alighting_zone=alighting_name,
+    )
+
+
 # ============================================================
 # Reports
 # ============================================================
@@ -83,6 +115,7 @@ def submit_fare_report(
         alighting_longitude=body.alighting_longitude,
         boarding_zone_id=boarding_zone_id,
         alighting_zone_id=alighting_zone_id,
+        source=body.source,
     )
     db.add(report)
     db.commit()
@@ -111,6 +144,7 @@ def submit_fare_report(
         alighting_longitude=report.alighting_longitude,
         boarding_zone=boarding_zone_name,
         alighting_zone=alighting_zone_name,
+        source=report.source,
         created_at=report.created_at,
     )
 
@@ -194,16 +228,41 @@ def _aggregate_zone_fares(db: Session, line_id: UUID) -> list[ZoneFareRead]:
     ]
 
 
+def _common_amounts(db: Session, line_id: UUID, limit: int = 4) -> list[CommonAmountRead]:
+    """Distinct fare amounts previously reported on this line, ordered
+    by frequency (most-reported first), capped at `limit`. Used by the
+    app to present 'tap to confirm' chips before the free-entry input.
+    """
+    rows = db.execute(
+        select(
+            FareReport.amount_bob,
+            func.count().label("report_count"),
+        )
+        .where(FareReport.line_id == line_id)
+        .group_by(FareReport.amount_bob)
+        .order_by(func.count().desc(), FareReport.amount_bob.asc())
+        .limit(limit)
+    ).all()
+    return [
+        CommonAmountRead(amount_bob=float(row.amount_bob), report_count=row.report_count)
+        for row in rows
+    ]
+
+
 @router.get("/lines/{line_id}", response_model=LineFareRead)
 def get_line_fares(line_id: UUID, db: Session = Depends(get_db)) -> LineFareRead:
     """Get aggregated fare information for a line.
 
     For micros: returns a flat_rate (average of all reports).
     For trufis/taxi-trufis: returns a zone-pair fare matrix.
+    Always returns `common_amounts` — the distinct fare values
+    previously reported, ordered by frequency.
     """
     line = db.get(Line, line_id)
     if not line:
         raise HTTPException(status_code=404, detail="Line not found")
+
+    common_amounts = _common_amounts(db, line_id)
 
     if line.line_type == LineType.MICRO:
         avg_row = db.execute(
@@ -218,6 +277,7 @@ def get_line_fares(line_id: UUID, db: Session = Depends(get_db)) -> LineFareRead
             line_type=line.line_type,
             flat_rate=flat_rate,
             zone_fares=[],
+            common_amounts=common_amounts,
         )
 
     zone_fares = _aggregate_zone_fares(db, line_id)
@@ -227,6 +287,7 @@ def get_line_fares(line_id: UUID, db: Session = Depends(get_db)) -> LineFareRead
         line_type=line.line_type,
         flat_rate=None,
         zone_fares=zone_fares,
+        common_amounts=common_amounts,
     )
 
 

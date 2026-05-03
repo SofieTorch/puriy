@@ -23,9 +23,16 @@ TEST_DATABASE_URL = os.getenv(
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
 from database.connection import get_db
+from database.devices import ensure_device
 from main import app
 from database.models.line import Line, LineStatus
 from database.models.trip import TripSession, SessionStatus
+
+
+# Device IDs hard-coded in existing test fixtures (test_voting.py constants and
+# the inline "dev1"/"dev2" used as voters). After the FK refactor these need a
+# matching row in `devices`, so we pre-create them per test transaction.
+_TEST_DEVICE_IDS = ("test-device-abc", "other-device-xyz", "dev1", "dev2")
 
 
 def _create_test_database_if_not_exists():
@@ -80,9 +87,15 @@ def db() -> Generator[Session, None, None]:
     connection = test_engine.connect()
     transaction = connection.begin()
     session = TestSessionLocal(bind=connection)
-    
+
+    # Pre-register the well-known test device IDs so that fixtures inserting
+    # rows with FK-constrained device_id columns succeed.
+    for device_id in _TEST_DEVICE_IDS:
+        ensure_device(session, device_id)
+    session.flush()
+
     yield session
-    
+
     session.close()
     transaction.rollback()
     connection.close()
