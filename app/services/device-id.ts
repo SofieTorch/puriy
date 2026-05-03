@@ -1,35 +1,51 @@
 /**
- * Stable device identifier for voting attribution.
+ * Stable device identifier for crowdsourced contributions.
  *
- * Generates a UUID on first call and persists it in the local SQLite database
- * via a simple key-value approach. Survives app restarts but not reinstalls.
+ * Generates a UUID on first call and persists it in the local SQLite
+ * database (`preferences` table, key `device_id`). Survives app
+ * restarts but not reinstalls. Cached in memory after the first DB hit.
  *
- * In E2E test mode, uses a deterministic ID set via EXPO_PUBLIC_E2E_DEVICE_ID.
+ * In E2E test mode, returns the deterministic ID from
+ * `EXPO_PUBLIC_E2E_DEVICE_ID` and skips persistence — keeps mocked
+ * server fixtures working without DB writes.
  */
 
-import Constants from 'expo-constants';
+import { eq } from 'drizzle-orm';
+
+import { preferences } from '@/db/schema';
+import { getDb } from '@/lib/db';
 
 const E2E_DEVICE_ID = process.env.EXPO_PUBLIC_E2E_DEVICE_ID ?? null;
+const DEVICE_ID_KEY = 'device_id';
 
 let cachedDeviceId: string | null = null;
+
+function generateUuid(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 export function getDeviceId(): string {
   if (E2E_DEVICE_ID) return E2E_DEVICE_ID;
   if (cachedDeviceId) return cachedDeviceId;
 
-  // expo-constants provides a stable installation ID
-  const installId = Constants.installationId;
-  if (installId) {
-    cachedDeviceId = installId;
-    return installId;
+  const db = getDb();
+  const row = db
+    .select()
+    .from(preferences)
+    .where(eq(preferences.key, DEVICE_ID_KEY))
+    .get();
+
+  if (row) {
+    cachedDeviceId = row.value;
+    return row.value;
   }
 
-  // Fallback: generate a simple pseudo-UUID
-  cachedDeviceId =
-    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
-  return cachedDeviceId;
+  const newId = generateUuid();
+  db.insert(preferences).values({ key: DEVICE_ID_KEY, value: newId }).run();
+  cachedDeviceId = newId;
+  return newId;
 }
