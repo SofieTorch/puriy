@@ -8,6 +8,7 @@ import m0003 from './0003_majestic_sway.sql';
 import m0004 from './0004_kind_thundra.sql';
 import m0005 from './0005_hot_doctor_spectrum.sql';
 import m0006 from './0006_lumpy_hellion.sql';
+import m0007 from './0007_lame_mercury.sql';
 
   export default {
     journal,
@@ -18,7 +19,8 @@ m0002,
 m0003,
 m0004,
 m0005,
-m0006
+m0006,
+m0007
     }
   }
   

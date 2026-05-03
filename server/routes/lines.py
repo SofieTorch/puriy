@@ -9,11 +9,17 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from geoalchemy2 import Geography, WKBElement
 from shapely import wkb
 from sqlalchemy import func, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from database.connection import get_db
 from schemas.directions import DetourAlert
-from schemas.line import LineCreate, LineRead, LineUpdate, NearbyLineWithRouteRead
+from schemas.line import (
+    LineCreate,
+    LineRead,
+    LineUpdate,
+    NearbyLineWithRouteRead,
+    RamalSummary,
+)
 from schemas.route import RouteRead
 
 router = APIRouter(prefix="/lines", tags=["lines"])
@@ -48,7 +54,7 @@ def list_lines(
     db: Session = Depends(get_db)
 ) -> Sequence[LineRead]:
     """List transit lines. By default, only returns approved lines."""
-    query = select(Line)
+    query = select(Line).options(selectinload(Line.schedules))
 
     if not include_all:
         query = query.where(Line.status == status)
@@ -60,7 +66,11 @@ def list_lines(
 @router.get("/{line_id}", response_model=LineRead)
 def get_line(line_id: UUID, db: Session = Depends(get_db)) -> LineRead:
     """Get a specific line by ID."""
-    line = db.get(Line, line_id)
+    line = db.execute(
+        select(Line)
+        .options(selectinload(Line.schedules))
+        .where(Line.id == line_id)
+    ).scalar_one_or_none()
     if not line:
         raise HTTPException(status_code=404, detail="Line not found")
     return LineRead.model_validate(line)
@@ -242,15 +252,22 @@ def find_lines_nearby(
         if not line:
             continue
 
-        # Get the active route's edges in order
-        route = db.execute(
-            select(Route)
-            .where(Route.line_id == line_id, Route.status != RouteStatus.SUPERSEDED)
-            .order_by(Route.version.desc())
-        ).scalars().first()
+        # Get all active routes for this line (one per ramal). The
+        # partial unique index on `(line_id, ramal_label) WHERE status
+        # != 'SUPERSEDED'` guarantees no duplicates within a ramal.
+        active_routes = (
+            db.execute(
+                select(Route)
+                .where(Route.line_id == line_id, Route.status != RouteStatus.SUPERSEDED)
+                .order_by(Route.ramal_label)
+            )
+            .scalars()
+            .all()
+        )
 
+        ramales: list[RamalSummary] = []
         route_geojson = None
-        if route:
+        for route in active_routes:
             edges = (
                 db.execute(
                     select(RouteEdge)
@@ -262,16 +279,25 @@ def find_lines_nearby(
             )
             all_coords: list[list[float]] = []
             for edge in edges:
-                if edge.path is not None:
-                    if isinstance(edge.path, WKBElement):
-                        shape = wkb.loads(bytes(edge.path.data))
-                        coords = [list(c) for c in shape.coords]
-                        if all_coords and coords:
-                            all_coords.extend(coords[1:])
-                        else:
-                            all_coords.extend(coords)
+                if edge.path is not None and isinstance(edge.path, WKBElement):
+                    shape = wkb.loads(bytes(edge.path.data))
+                    coords = [list(c) for c in shape.coords]
+                    if all_coords and coords:
+                        all_coords.extend(coords[1:])
+                    else:
+                        all_coords.extend(coords)
 
-            if len(all_coords) >= 2:
+            ramales.append(RamalSummary(
+                route_id=route.id,
+                endpoint_zones=route.endpoint_zones or [None, None],
+                street_summary=route.street_summary or [],
+            ))
+
+            # Backwards-compat: `route_geojson` returns the first
+            # ramal's geometry (alphabetical → "main" first when present).
+            # Mobile clients should prefer iterating `ramales` going
+            # forward.
+            if route_geojson is None and len(all_coords) >= 2:
                 route_geojson = {
                     "type": "LineString",
                     "coordinates": all_coords,
@@ -296,6 +322,7 @@ def find_lines_nearby(
                 line_description=line.description,
                 route_geojson=route_geojson,
                 detour_alert=detour_alert,
+                ramales=ramales,
             )
         )
 
@@ -313,21 +340,20 @@ def get_line_route(line_id: UUID, db: Session = Depends(get_db)) -> dict:
     if not line:
         raise HTTPException(status_code=404, detail="Line not found")
 
+    # All active routes (one per ramal — the partial unique index on
+    # `(line_id, ramal_label)` enforces this). Each ramal has its own
+    # independent version chain, so no global "latest version" filter.
     routes = (
         db.execute(
             select(Route)
             .where(Route.line_id == line_id, Route.status != RouteStatus.SUPERSEDED)
-            .order_by(Route.version.desc(), Route.fragment_index)
+            .order_by(Route.ramal_label, Route.fragment_index)
         )
         .scalars()
         .all()
     )
     if not routes:
         raise HTTPException(status_code=404, detail="No active route for this line")
-
-    # Only return routes from the latest version
-    latest_version = routes[0].version
-    routes = [r for r in routes if r.version == latest_version]
 
     features: list[dict] = []
     for route in routes:
@@ -356,8 +382,12 @@ def get_line_route(line_id: UUID, db: Session = Depends(get_db)) -> dict:
                 "properties": {
                     "line_id": str(line.id),
                     "line_name": line.name,
+                    "route_id": str(route.id),
+                    "ramal_label": route.ramal_label,
                     "fragment_index": route.fragment_index,
                     "fragment_count": route.fragment_count,
+                    "street_summary": route.street_summary or [],
+                    "endpoint_zones": route.endpoint_zones or [None, None],
                 },
                 "geometry": {
                     "type": "LineString",

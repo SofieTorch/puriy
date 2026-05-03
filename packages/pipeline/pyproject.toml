@@ -9,6 +9,11 @@ dependencies = [
   "sqlalchemy>=2.0.48",
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0.0",
+]
+
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
@@ -16,9 +21,11 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[project.scripts]
-pipeline = "pipeline.cli:main"
-
 [tool.uv.sources]
 database = {path = "../database", editable = true}
 geodata = {path = "../geodata", editable = true}
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.12",
+]

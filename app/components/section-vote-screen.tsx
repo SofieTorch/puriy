@@ -2,12 +2,19 @@
  * Section-by-section voting screen.
  * Steps through contiguous edge groups, showing each on a map
  * with the full route as gray context.
+ *
+ * After the last section is voted on, if the line has ≥2 active
+ * ramales the screen shows a descriptor step scoped to the route
+ * the user just voted on — that's a high-intent moment to capture
+ * distinguishing features (orange flags, Univalle sticker, …).
+ * Single-ramal lines skip straight to the summary.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+import RamalDescriptorsScreen from '@/components/ramal-descriptors-screen';
 import RouteMap, { LineRoute } from '@/components/route-map';
 import api from '@/services/api';
 import { getDeviceId } from '@/services/device-id';
@@ -22,15 +29,21 @@ interface VoteableSection {
 interface SectionVoteScreenProps {
   visible: boolean;
   lineId: string;
+  /** The Route the user is voting on. Used to scope the descriptor
+   * step to the specific ramal they just confirmed. */
+  routeId: string;
   lineName: string;
   routeGeojson: { geometry?: { coordinates?: number[][] } } | null;
   sections: VoteableSection[];
   onDone: () => void;
 }
 
+type Step = 'voting' | 'describing' | 'done';
+
 export default function SectionVoteScreen({
   visible,
   lineId,
+  routeId,
   lineName,
   routeGeojson,
   sections,
@@ -39,7 +52,14 @@ export default function SectionVoteScreen({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [votes, setVotes] = useState<Record<number, 'approve' | 'reject'>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
+  const [step, setStep] = useState<Step>('voting');
+  // Endpoint zones + street summary for the ramal the user just voted
+  // on — passed to the descriptor screen header. `null` until we've
+  // confirmed the line has ≥2 ramales (otherwise we skip).
+  const [ramalIdentity, setRamalIdentity] = useState<{
+    endpointZones: (string | null)[];
+    streetSummary: string[];
+  } | null>(null);
 
   const section = sections[currentIndex];
   const isLast = currentIndex === sections.length - 1;
@@ -62,7 +82,8 @@ export default function SectionVoteScreen({
       setVotes((prev) => ({ ...prev, [section.section_index]: vote }));
 
       if (isLast) {
-        setDone(true);
+        // Decide whether to show the descriptor step before the summary.
+        await maybeStartDescribing();
       } else {
         setCurrentIndex((i) => i + 1);
       }
@@ -73,16 +94,91 @@ export default function SectionVoteScreen({
     }
   };
 
+  const maybeStartDescribing = async () => {
+    try {
+      const collection = await api.getLineRoute(lineId);
+      const features = collection.features ?? [];
+      // Only ask for descriptors when there's actual disambiguation
+      // to do — single-ramal lines skip straight to the summary.
+      if (features.length < 2) {
+        setStep('done');
+        return;
+      }
+      const match = features.find((f) => f.properties?.route_id === routeId);
+      if (!match) {
+        setStep('done');
+        return;
+      }
+      setRamalIdentity({
+        endpointZones: match.properties.endpoint_zones ?? [null, null],
+        streetSummary: match.properties.street_summary ?? [],
+      });
+      setStep('describing');
+    } catch {
+      // Best-effort: don't block the user if the lookup fails.
+      setStep('done');
+    }
+  };
+
   const handleClose = () => {
     // Reset state for next time
     setCurrentIndex(0);
     setVotes({});
-    setDone(false);
+    setStep('voting');
+    setRamalIdentity(null);
     onDone();
   };
 
+  // Auto-stay on 'voting' if the screen was reopened (defensive).
+  useEffect(() => {
+    if (!visible) {
+      setStep('voting');
+      setCurrentIndex(0);
+      setVotes({});
+      setRamalIdentity(null);
+    }
+  }, [visible]);
+
+  // Descriptor step — only reached when the line has ≥2 ramales.
+  if (step === 'describing' && ramalIdentity) {
+    return (
+      <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
+        <View className="flex-1 bg-white">
+          <View className="flex-row items-center border-b border-gray-100 px-4 pb-3 pt-14">
+            <View className="flex-1">
+              <Text className="text-lg font-bold text-gray-900">
+                Describí esta micro
+              </Text>
+              <Text className="text-sm text-gray-400">Línea {lineName}</Text>
+            </View>
+            <Pressable
+              className="rounded-md px-3 py-1.5"
+              onPress={() => setStep('done')}
+            >
+              <Text className="text-sm font-medium text-gray-500">Saltar</Text>
+            </Pressable>
+          </View>
+          <RamalDescriptorsScreen
+            routeId={routeId}
+            deviceId={getDeviceId()}
+            endpointZones={ramalIdentity.endpointZones}
+            streetSummary={ramalIdentity.streetSummary}
+          />
+          <View className="border-t border-gray-100 px-6 pb-10 pt-4">
+            <Pressable
+              className="w-full items-center rounded-xl bg-[#09A6F3] py-4"
+              onPress={() => setStep('done')}
+            >
+              <Text className="text-base font-semibold text-white">Listo</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
   // Summary screen
-  if (done) {
+  if (step === 'done') {
     const approved = Object.values(votes).filter((v) => v === 'approve').length;
     const rejected = Object.values(votes).filter((v) => v === 'reject').length;
 

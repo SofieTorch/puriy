@@ -1,0 +1,38 @@
+# Production cron schedule for the puriy pipeline (CU-11).
+#
+# Install on the deploy host with:
+#   crontab -u <deploy-user> infra/deploy/cron/crontab.example
+#
+# Each line invokes the `pipeline` one-shot service defined in
+# `infra/deploy/docker-compose.yml`. The service uses the same image
+# as the API server and exits when the command finishes, so there's no
+# long-running container to manage.
+#
+# Cadence rationale (see thesis Capítulo IV — Despliegue, sección
+# Programación del Pipeline):
+#   - clean_traces fires per-trip via FastAPI BackgroundTasks
+#     (`server/services/pipeline_trigger.py`), so the cron schedule
+#     here only covers the heavier per-line aggregation steps.
+#   - Reconstruct + vote-resolution every 6h: balances "fresh routes"
+#     against route-version churn.
+#   - Schedule inference once a day: trip timestamps don't change
+#     fast enough to need finer cadence.
+#   - Cleanup endpoints daily: enough to keep stale rows bounded
+#     without hammering the DB.
+
+# Path to the deploy directory (adjust for your install location).
+PUR_DEPLOY=/opt/puriy/infra/deploy
+
+# Reconstruct + resolve votes + rebuild graph (heavy aggregation, every 6 hours).
+0 */6 * * *  cd $PUR_DEPLOY && docker compose --profile jobs run --rm pipeline run --steps deduplicate_lines,reconstruct_routes,resolve_edge_votes,resolve_routes,resolve_line_votes,rebuild_graph >> /var/log/puriy-pipeline.log 2>&1
+
+# Schedule inference (once a day at 03:15 local time).
+15 3 * * *  cd $PUR_DEPLOY && docker compose --profile jobs run --rm pipeline run --steps infer_schedules >> /var/log/puriy-pipeline.log 2>&1
+
+# Housekeeping: stale TripSession + expired Detour cleanup (once a day at 04:00).
+0 4 * * *  cd $PUR_DEPLOY && docker compose --profile jobs run --rm pipeline run --steps cleanup >> /var/log/puriy-pipeline.log 2>&1
+
+# Server-side cleanup endpoints (covers transversal "cleanup endpoints
+# need a scheduler" finding from the gap analysis).
+30 4 * * *  curl -fsS -X POST http://localhost/api/detours/cleanup >> /var/log/puriy-pipeline.log 2>&1
+35 4 * * *  curl -fsS -X POST http://localhost/api/recordings/cleanup/stale >> /var/log/puriy-pipeline.log 2>&1

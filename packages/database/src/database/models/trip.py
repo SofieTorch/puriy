@@ -41,7 +41,9 @@ class TripSessionBase(SQLModel):
 
     line_id: Optional[UUID] = Field(default=None, foreign_key="lines.id", index=True)
     direction: Optional[str] = Field(default=None, max_length=100)
-    device_id: Optional[str] = Field(default=None, max_length=255, index=True)
+    device_id: Optional[str] = Field(
+        default=None, foreign_key="devices.id", max_length=255, index=True,
+    )
     device_model: Optional[str] = Field(default=None, max_length=100)
     os_version: Optional[str] = Field(default=None, max_length=50)
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
+from database.models.fare import FareSource
 from database.models.line import LineType
 from sqlmodel import Field, SQLModel
 
@@ -25,6 +26,24 @@ class FareReportCreate(SQLModel):
     boarding_longitude: float = Field(ge=-180, le=180)
     alighting_latitude: float = Field(ge=-90, le=90)
     alighting_longitude: float = Field(ge=-180, le=180)
+    source: FareSource = Field(default=FareSource.REGISTRATION)
+
+
+class ZoneResolveRequest(SQLModel):
+    """Body for the boarding/alighting zone preview endpoint."""
+
+    boarding_latitude: float = Field(ge=-90, le=90)
+    boarding_longitude: float = Field(ge=-180, le=180)
+    alighting_latitude: float = Field(ge=-90, le=90)
+    alighting_longitude: float = Field(ge=-180, le=180)
+
+
+class ZoneResolveResponse(SQLModel):
+    """Identified boarding/alighting zone names — either side may be
+    None if the GPS point fell outside any defined fare zone."""
+
+    boarding_zone: Optional[str] = None
+    alighting_zone: Optional[str] = None
 
 
 class FareReportRead(SQLModel):
@@ -41,6 +60,7 @@ class FareReportRead(SQLModel):
     alighting_longitude: float
     boarding_zone: Optional[str] = None
     alighting_zone: Optional[str] = None
+    source: FareSource = FareSource.REGISTRATION
     created_at: datetime
 
 
@@ -53,6 +73,17 @@ class ZoneFareRead(SQLModel):
     report_count: int
 
 
+class CommonAmountRead(SQLModel):
+    """A previously-reported amount for a line, with how often it appears.
+
+    Used by the app to show "tap to confirm" chips before falling back
+    to free amount entry (CU-09 / RF-26 / RF-28).
+    """
+
+    amount_bob: float
+    report_count: int
+
+
 class LineFareRead(SQLModel):
     """Fare summary for a line."""
 
@@ -61,6 +92,7 @@ class LineFareRead(SQLModel):
     line_type: Optional[LineType] = None
     flat_rate: Optional[float] = None
     zone_fares: list[ZoneFareRead] = []
+    common_amounts: list[CommonAmountRead] = []
 
 
 class FareEstimateRead(SQLModel):

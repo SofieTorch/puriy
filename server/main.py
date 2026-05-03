@@ -5,7 +5,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from database.connection import engine
-from routes import detours_router, directions_router, fares_router, lines_router, recordings_router, voting_router
+from routes import (
+    detours_router,
+    devices_router,
+    directions_router,
+    fares_router,
+    lines_router,
+    ramal_descriptors_router,
+    recordings_router,
+    voting_router,
+)
 from telemetry import init_tracing
 
 
@@ -40,9 +49,11 @@ app.add_middleware(
 
 # Include routers
 app.include_router(detours_router)
+app.include_router(devices_router)
 app.include_router(directions_router)
 app.include_router(fares_router)
 app.include_router(lines_router)
+app.include_router(ramal_descriptors_router)
 app.include_router(recordings_router)
 app.include_router(voting_router)
 

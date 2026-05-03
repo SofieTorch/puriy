@@ -77,16 +77,36 @@ def get_directions(
         )
 
         if leg["mode"] == "bus" and leg["line_id"]:
+            line_uuid = UUID(str(leg["line_id"]))
+
+            # Estimate fare for this leg using boarding/alighting endpoints
+            # of the leg geometry (lon, lat order in the graph).
+            from services.line_metadata import (
+                current_headway_min,
+                estimate_fare_bob,
+            )
+
+            if geometry and len(geometry) >= 2:
+                boarding_lon, boarding_lat = geometry[0][0], geometry[0][1]
+                alighting_lon, alighting_lat = geometry[-1][0], geometry[-1][1]
+                directions_leg.fare_bob = estimate_fare_bob(
+                    db, line_uuid,
+                    boarding_lat, boarding_lon,
+                    alighting_lat, alighting_lon,
+                )
+
+            directions_leg.frequency_min = current_headway_min(db, line_uuid)
+
             detour = db.execute(
                 select(Detour).where(
-                    Detour.line_id == UUID(str(leg["line_id"])),
+                    Detour.line_id == line_uuid,
                     Detour.status == DetourStatus.ACTIVE,
                 )
             ).scalars().first()
             if detour:
                 try:
                     from services.detour_analysis import analyze_detour
-                    analysis = analyze_detour(db, detour.path, UUID(str(leg["line_id"])))
+                    analysis = analyze_detour(db, detour.path, line_uuid)
                 except Exception:
                     analysis = None
                 directions_leg.detour_alert = DetourAlert.from_detour(detour, analysis)
@@ -96,10 +116,19 @@ def get_directions(
     total_distance_m = sum(leg.distance_m for leg in legs)
     total_duration_s = sum(leg.duration_s for leg in legs)
 
+    # RF-30: total fare is the sum across bus legs; None if *any* bus leg
+    # lacks a fare estimate (so we never under-promise the cost).
+    bus_legs = [leg for leg in legs if leg.mode == "bus"]
+    if bus_legs and all(leg.fare_bob is not None for leg in bus_legs):
+        total_fare_bob = round(sum(leg.fare_bob for leg in bus_legs), 2)
+    else:
+        total_fare_bob = None
+
     return DirectionsResponse(
         legs=legs,
         total_distance_m=total_distance_m,
         total_duration_s=total_duration_s,
+        total_fare_bob=total_fare_bob,
     )
 
 

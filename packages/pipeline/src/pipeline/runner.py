@@ -14,8 +14,14 @@ STEP_ORDER = [
     "clean_traces",
     "reconstruct_routes",
     "resolve_edge_votes",
+    # `resolve_routes` must come after `resolve_edge_votes` so route
+    # promotion sees the latest edge-confirmation state, and before
+    # `rebuild_graph` so the directions graph picks up newly-confirmed
+    # routes.
+    "resolve_routes",
     "resolve_line_votes",
     "rebuild_graph",
+    "infer_schedules",
 ]
 
 
@@ -67,19 +73,23 @@ def run_pipeline(
             stats = step_info["fn"](db, **params.get(step_name, {}))
             result.status = StepStatus.COMPLETED
             result.stats = stats
-        except Exception:
-            result.status = StepStatus.FAILED
-            result.error_message = traceback.format_exc()
-            has_failure = True
-            db.rollback()
-            if not continue_on_error:
-                result.ended_at = datetime.now(timezone.utc)
-                db.add(result)
-                break
-        finally:
             result.ended_at = datetime.now(timezone.utc)
-
-        db.commit()
+            db.commit()
+        except Exception:
+            error_text = traceback.format_exc()
+            # Roll back any partial writes the step left in the
+            # session, then re-attach the result and persist its
+            # FAILED status. Without this re-attach the rollback would
+            # also revert the in-memory status update we just made.
+            db.rollback()
+            result.status = StepStatus.FAILED
+            result.error_message = error_text
+            result.ended_at = datetime.now(timezone.utc)
+            db.add(result)
+            db.commit()
+            has_failure = True
+            if not continue_on_error:
+                break
 
     run.status = PipelineRunStatus.FAILED if has_failure else PipelineRunStatus.COMPLETED
     run.ended_at = datetime.now(timezone.utc)

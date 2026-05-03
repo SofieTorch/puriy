@@ -212,6 +212,7 @@ export default function ContributeScreen() {
         <SectionVoteScreen
           visible
           lineId={votingLineId}
+          routeId={votingSegment.route_id}
           lineName={votingLineName}
           routeGeojson={votingSegment.route_geojson}
           sections={votingSegment.sections}

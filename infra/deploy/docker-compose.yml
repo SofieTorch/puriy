@@ -45,6 +45,24 @@ services:
       db:
         condition: service_healthy
 
+  # One-shot pipeline runner. Not started by `docker compose up`; meant
+  # to be invoked via `docker compose run --rm pipeline ...` from the
+  # host cron (see `cron/crontab.example`). Reuses the server image so
+  # there's only one Python build to maintain.
+  pipeline:
+    profiles: ["jobs"]
+    build:
+      context: ../..
+      dockerfile: infra/deploy/Dockerfile.server
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      VALHALLA_URL: http://valhalla:8002
+      OTLP_ENDPOINT: http://otel-collector:4317
+    entrypoint: ["packages/pipeline/.venv/bin/pipeline"]
+    depends_on:
+      db:
+        condition: service_healthy
+
   valhalla:
     image: ghcr.io/gis-ops/docker-valhalla/valhalla:latest
     restart: unless-stopped

@@ -57,6 +57,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         isAndroidBackgroundLocationEnabled: true,
       },
     ],
+    [
+      'expo-notifications',
+      {
+        // Android-only fields; iOS uses the app icon by default.
+        color: '#09A6F3',
+      },
+    ],
     'expo-sqlite',
   ],
   experiments: {
@@ -64,7 +71,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     reactCompiler: true,
   },
   extra: {
-    apiBaseUrl: process.env.API_BASE_URL || 'http://10.165.187.148:8000',
+    apiBaseUrl: process.env.API_BASE_URL || 'http://172.27.25.135:8000',
     e2eDeviceId: process.env.EXPO_PUBLIC_E2E_DEVICE_ID || null,
   },
 });

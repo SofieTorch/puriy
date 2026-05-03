@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from geoalchemy2 import WKBElement
 from shapely import wkb
 
+from database import ensure_device
 from database.models import (
     EdgeVote,
     RouteEdge,
@@ -373,6 +374,8 @@ def _apply_vote(
     )
 
     new_count = 0
+    if edges:
+        ensure_device(db, voter_id)
     for edge in edges:
         if edge.id in existing_edge_ids:
             continue

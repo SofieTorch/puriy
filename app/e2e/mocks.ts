@@ -70,6 +70,8 @@ export const DIRECTIONS_RESPONSE = {
       ],
       distance_m: 2400,
       duration_s: 480,
+      fare_bob: 2.5,
+      frequency_min: 8,
       detour_alert: null,
     },
     {
@@ -87,6 +89,7 @@ export const DIRECTIONS_RESPONSE = {
   ],
   total_distance_m: 2600,
   total_duration_s: 630,
+  total_fare_bob: 2.5,
 };
 
 // ── Geocoding ────────────────────────────────────────────────────────────────
@@ -198,6 +201,87 @@ export const VOTEABLE_SEGMENT = {
   segment_geojson: null,
 };
 
+// ── Multi-ramal route (gap #7) ──────────────────────────────────────────────
+//
+// `GET /lines/{id}/route` returns a FeatureCollection with one Feature
+// per active ramal. The descriptor flow in `section-vote-screen.tsx`
+// only triggers when there are ≥2 features.
+
+export const LINE_ROUTE_MULTI_RAMAL = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      type: 'Feature',
+      properties: {
+        line_id: 'line-205',
+        line_name: '205',
+        route_id: 'route-205-1',
+        ramal_label: 'main',
+        street_summary: ['Av. Beijing', 'Av. América'],
+        endpoint_zones: ['Beijing', 'Sacaba'],
+        fragment_index: 0,
+        fragment_count: 1,
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates: [[-66.160, -17.392], [-66.150, -17.386]],
+      },
+    },
+    {
+      type: 'Feature',
+      properties: {
+        line_id: 'line-205',
+        line_name: '205',
+        route_id: 'route-205-2',
+        ramal_label: 'r2',
+        street_summary: ['Av. Simón Lopez', 'Av. Pacata'],
+        endpoint_zones: ['Beijing', 'Sacaba'],
+        fragment_index: 0,
+        fragment_count: 1,
+      },
+      geometry: {
+        type: 'LineString',
+        coordinates: [[-66.160, -17.395], [-66.150, -17.388]],
+      },
+    },
+  ],
+};
+
+// ── Ramal descriptors (gap #7) ──────────────────────────────────────────────
+//
+// In-memory store keyed by route_id so the test can verify list →
+// upvote → list and create → list interactions across calls.
+
+type Descriptor = {
+  id: string;
+  route_id: string;
+  text: string;
+  votes_count: number;
+  created_at: string;
+  voted_by_me: boolean;
+};
+
+export const DESCRIPTORS_STORE: Record<string, Descriptor[]> = {
+  'route-205-1': [
+    {
+      id: 'desc-1',
+      route_id: 'route-205-1',
+      text: 'lleva banderines naranjas en frente',
+      votes_count: 5,
+      created_at: '2026-04-30T10:00:00Z',
+      voted_by_me: false,
+    },
+    {
+      id: 'desc-2',
+      route_id: 'route-205-1',
+      text: 'letrero con logo de Univalle',
+      votes_count: 2,
+      created_at: '2026-05-01T10:00:00Z',
+      voted_by_me: false,
+    },
+  ],
+};
+
 // ── Lines list ───────────────────────────────────────────────────────────────
 
 export const LINES = [
@@ -257,6 +341,9 @@ export async function setupApiMocks(page: Page): Promise<void> {
     route.fulfill(json(DIRECTIONS_RESPONSE)),
   );
 
+  await page.route('**/lines/?**', (route) =>
+    route.fulfill(json(LINES)),
+  );
   await page.route('**/lines/', (route) =>
     route.fulfill(json(LINES)),
   );
@@ -289,14 +376,136 @@ export async function setupApiMocks(page: Page): Promise<void> {
     route.fulfill(json(NEARBY_VOTE_LINES)),
   );
 
-  // Fare reports
+  // GET /lines/{id}/route — used by the multi-ramal check at the end
+  // of section voting (gap #7).
+  await page.route('**/lines/*/route', (route) =>
+    route.fulfill(json(LINE_ROUTE_MULTI_RAMAL)),
+  );
+
+  // Descriptor endpoints (gap #7). The store lives in mocks.ts so a
+  // single test can interact with it across calls; tests should clear
+  // it in beforeEach if they need a clean slate.
+  await page.route('**/routes/*/descriptors/**', (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    // Path shape: /routes/{route_id}/descriptors[/{descriptor_id}/upvote]
+    const parts = url.pathname.split('/').filter(Boolean);
+    const routeId = parts[1];
+    const descriptorId = parts[3];
+
+    const list = DESCRIPTORS_STORE[routeId] ?? [];
+
+    if (parts.length === 3 && method === 'GET') {
+      const deviceId = url.searchParams.get('device_id') ?? '';
+      const ordered = [...list].sort(
+        (a, b) => b.votes_count - a.votes_count
+          || a.created_at.localeCompare(b.created_at),
+      );
+      return route.fulfill(json(ordered.map((d) => ({
+        ...d,
+        voted_by_me: d.voted_by_me && deviceId.length > 0,
+      }))));
+    }
+
+    if (parts.length === 3 && method === 'POST') {
+      const body = route.request().postDataJSON() as { text: string; device_id: string };
+      const normalised = body.text.toLowerCase().trim().replace(/\s+/g, ' ');
+      const existing = list.find(
+        (d) => d.text.toLowerCase().trim().replace(/\s+/g, ' ') === normalised,
+      );
+      if (existing) {
+        return route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          headers: CORS_HEADERS,
+          body: JSON.stringify({
+            detail: { message: 'duplicate', existing },
+          }),
+        });
+      }
+      const created: Descriptor = {
+        id: `desc-${list.length + 1}`,
+        route_id: routeId,
+        text: body.text.trim(),
+        votes_count: 1,
+        created_at: new Date().toISOString(),
+        voted_by_me: true,
+      };
+      DESCRIPTORS_STORE[routeId] = [...list, created];
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        headers: CORS_HEADERS,
+        body: JSON.stringify(created),
+      });
+    }
+
+    if (parts.length === 5 && parts[4] === 'upvote' && method === 'POST') {
+      const next = list.map((d) =>
+        d.id === descriptorId
+          ? { ...d, votes_count: d.voted_by_me ? d.votes_count : d.votes_count + 1, voted_by_me: true }
+          : d,
+      );
+      DESCRIPTORS_STORE[routeId] = next;
+      const updated = next.find((d) => d.id === descriptorId)!;
+      return route.fulfill(json(updated));
+    }
+
+    if (parts.length === 5 && parts[4] === 'upvote' && method === 'DELETE') {
+      const next = list.map((d) =>
+        d.id === descriptorId
+          ? { ...d, votes_count: d.voted_by_me ? Math.max(0, d.votes_count - 1) : d.votes_count, voted_by_me: false }
+          : d,
+      );
+      DESCRIPTORS_STORE[routeId] = next;
+      const updated = next.find((d) => d.id === descriptorId)!;
+      return route.fulfill(json(updated));
+    }
+
+    return route.fallback();
+  });
+
+  // CU-08 zone identification preview — used by save-record-modal to
+  // show the identified municipalities above the fare input.
+  await page.route('**/fares/zones/resolve', (route) => {
+    if (route.request().method() === 'POST') {
+      return route.fulfill(json({
+        boarding_zone: 'Cochabamba',
+        alighting_zone: 'Sacaba',
+      }));
+    }
+    return route.fallback();
+  });
+
+  // Per-line fare summary (chips of "tap to confirm" amounts).
+  await page.route('**/fares/lines/**', (route) =>
+    route.fulfill(json({
+      line_id: 'line-101',
+      line_name: '101',
+      line_type: 'micro',
+      flat_rate: 2.5,
+      zone_fares: [],
+      common_amounts: [
+        { amount_bob: 2.5, report_count: 12 },
+        { amount_bob: 3.0, report_count: 4 },
+      ],
+    })),
+  );
+
+  // Fare reports — echo back the source so e2e tests can assert it.
   await page.route('**/fares/reports', (route) => {
     if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { amount_bob?: number; source?: string } | null;
       return route.fulfill(json({
         id: 'fare-001',
         line_id: 'line-101',
         device_id: 'e2e-test-device',
-        amount_bob: 2.5,
+        amount_bob: body?.amount_bob ?? 2.5,
+        boarding_latitude: -17.39,
+        boarding_longitude: -66.16,
+        alighting_latitude: -17.40,
+        alighting_longitude: -66.17,
+        source: body?.source ?? 'registration',
         created_at: new Date().toISOString(),
       }));
     }

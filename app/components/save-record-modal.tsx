@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 
-import type { DetourInfo, Line } from '@/services/api';
+import type { CommonAmount, DetourInfo, Line, LineFare } from '@/services/api';
 import api from '@/services/api';
 import { getLines } from '@/services/line-cache';
 import { getDeviceId } from '@/services/device-id';
@@ -46,6 +46,11 @@ export default function SaveRecordModal({
   const [isSaving, setIsSaving] = useState(false);
 
   const [fareAmount, setFareAmount] = useState('');
+  const [fareOptions, setFareOptions] = useState<CommonAmount[]>([]);
+  /** Tracks how the user supplied `fareAmount`: 'chip' = picked an existing
+   * option (becomes a CONFIRMATION on the server), 'free' = typed into the
+   * input (becomes a REGISTRATION). */
+  const [fareSource, setFareSource] = useState<'chip' | 'free'>('free');
 
   const [isDetour, setIsDetour] = useState(false);
   const [detourReason, setDetourReason] = useState<DetourReason | null>(null);
@@ -55,6 +60,12 @@ export default function SaveRecordModal({
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [recordedPath, setRecordedPath] = useState<[number, number][]>([]);
   const [lineRouteCoords, setLineRouteCoords] = useState<[number, number][]>([]);
+  // Identified municipalities for the fare report (CU-08 transparency).
+  // null = not yet resolved; values inside may also be null when the
+  // GPS point falls outside any defined fare zone.
+  const [identifiedZones, setIdentifiedZones] = useState<{
+    boarding: string | null; alighting: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -82,6 +93,7 @@ export default function SaveRecordModal({
     setShowConfirmation(false);
     setRecordedPath([]);
     setLineRouteCoords([]);
+    setIdentifiedZones(null);
     fetchLines();
 
     return () => { mounted = false; };
@@ -97,6 +109,25 @@ export default function SaveRecordModal({
     api.getActiveDetour(selectedLine.id.toString()).then((detour) => {
       if (mounted) { setActiveDetour(detour); setDetourPromptDismissed(false); }
     });
+    return () => { mounted = false; };
+  }, [selectedLine]);
+
+  // Fare options to confirm — fetched whenever a line is picked. We
+  // ignore failures (best-effort): the user can still type freely.
+  useEffect(() => {
+    if (!selectedLine) {
+      setFareOptions([]);
+      return;
+    }
+    let mounted = true;
+    api
+      .getLineFares(selectedLine.id.toString())
+      .then((data: LineFare) => {
+        if (mounted) setFareOptions(data.common_amounts);
+      })
+      .catch(() => {
+        if (mounted) setFareOptions([]);
+      });
     return () => { mounted = false; };
   }, [selectedLine]);
 
@@ -139,6 +170,7 @@ export default function SaveRecordModal({
               boardingLon: first.longitude,
               alightingLat: last.latitude,
               alightingLon: last.longitude,
+              source: fareSource === 'chip' ? 'confirmation' : 'registration',
             });
           }
         } catch {
@@ -152,21 +184,52 @@ export default function SaveRecordModal({
 
   const prepareDetourConfirmation = async () => {
     // Load recorded path from local DB
+    let pathPoints: [number, number][] = [];
     if (recordingId) {
       const points = getDb()
         .select()
         .from(locationPoints)
         .where(eq(locationPoints.recordingId, recordingId))
         .all();
-      setRecordedPath(points.map((p) => [p.longitude, p.latitude] as [number, number]));
+      pathPoints = points.map((p) => [p.longitude, p.latitude] as [number, number]);
+      setRecordedPath(pathPoints);
     }
 
-    // Load line's normal route
+    // Identify boarding/alighting municipalities from the recorded
+    // GPS endpoints — surfaced to the user above the fare input so
+    // they can verify before submitting (CU-08 transparency).
+    if (pathPoints.length >= 2) {
+      const first = pathPoints[0];
+      const last = pathPoints[pathPoints.length - 1];
+      try {
+        const result = await api.resolveFareZones({
+          boardingLon: first[0], boardingLat: first[1],
+          alightingLon: last[0], alightingLat: last[1],
+        });
+        setIdentifiedZones({
+          boarding: result.boarding_zone,
+          alighting: result.alighting_zone,
+        });
+      } catch {
+        // Best-effort: if the resolver fails, just don't show the
+        // identification line — fare submission still works (the
+        // server re-resolves at submit time).
+        setIdentifiedZones(null);
+      }
+    }
+
+    // Load line's normal route — first ramal (alphabetical: "main" first
+    // when present). Multi-ramal display is handled elsewhere.
     const lineId = selectedLine?.id;
     if (lineId) {
-      const routeData = await api.getLineRoute(lineId.toString());
-      if (routeData?.geometry?.coordinates) {
-        setLineRouteCoords(routeData.geometry.coordinates);
+      try {
+        const collection = await api.getLineRoute(lineId.toString());
+        const first = collection.features?.[0];
+        if (first?.geometry?.coordinates) {
+          setLineRouteCoords(first.geometry.coordinates as [number, number][]);
+        }
+      } catch {
+        // Endpoint 404s when no active route — leave path empty.
       }
     }
 
@@ -302,6 +365,7 @@ export default function SaveRecordModal({
                       return (
                         <Pressable
                           key={item.id.toString()}
+                          testID={`modal-line-option-${item.id}`}
                           className={`flex-row items-center border-b border-gray-100 px-4 py-3 ${isSelected ? 'bg-sky-50' : ''}`}
                           onPress={() => { setSelectedLine(item); setCustomLineName(''); setDropdownOpen(false); }}
                         >
@@ -362,19 +426,79 @@ export default function SaveRecordModal({
             {/* Spacer when no suggestions */}
             {(customLineName.trim().length < 1 || selectedLine) && <View className="mb-4" />}
 
-            {/* Fare input (optional) */}
+            {/* Fare input (optional) — chips of previously-reported amounts
+                with a free-entry fallback below. CU-09 / RF-26 / RF-28. */}
             {(selectedLine || customLineName.trim()) && (
               <View className="mb-4">
-                <Text className="mb-2 text-[13px] font-medium text-gray-500">¿Cuánto pagaste? (opcional)</Text>
+                <Text className="mb-2 text-[13px] font-medium text-gray-500">¿Cuánto salió tu pasaje? (opcional)</Text>
+                {/* Identified municipalities (CU-08) — shown so the user
+                    can verify the system inferred the right zones before
+                    submitting the fare report. */}
+                {identifiedZones && (identifiedZones.boarding || identifiedZones.alighting) && (
+                  <Text className="mb-2 text-xs text-gray-400">
+                    Tarifa para{' '}
+                    <Text className="text-gray-600">
+                      {identifiedZones.boarding ?? 'zona desconocida'}
+                    </Text>
+                    {' → '}
+                    <Text className="text-gray-600">
+                      {identifiedZones.alighting ?? 'zona desconocida'}
+                    </Text>
+                  </Text>
+                )}
+
+                {fareOptions.length > 0 && (
+                  <View className="mb-2 flex-row flex-wrap gap-2" testID="modal-fare-chips">
+                    {fareOptions.map((opt) => {
+                      const selected =
+                        fareSource === 'chip' &&
+                        parseFloat(fareAmount) === opt.amount_bob;
+                      return (
+                        <Pressable
+                          key={opt.amount_bob}
+                          testID={`modal-fare-chip-${opt.amount_bob.toFixed(2)}`}
+                          onPress={() => {
+                            setFareAmount(opt.amount_bob.toFixed(2));
+                            setFareSource('chip');
+                          }}
+                          className={`flex-row items-center rounded-full border px-3 py-1.5 ${
+                            selected
+                              ? 'border-[#09A6F3] bg-[#DDF6FF]'
+                              : 'border-gray-200 bg-white'
+                          }`}
+                        >
+                          <Text
+                            className={`text-sm font-semibold ${
+                              selected ? 'text-[#09A6F3]' : 'text-gray-700'
+                            }`}
+                          >
+                            Bs {opt.amount_bob.toFixed(2)}
+                          </Text>
+                          <Text
+                            className={`ml-1.5 text-xs ${
+                              selected ? 'text-[#09A6F3] opacity-80' : 'text-gray-400'
+                            }`}
+                          >
+                            ({opt.report_count})
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+
                 <View className="flex-row items-center rounded-xl bg-gray-100 px-4 py-3.5">
                   <Text className="mr-2 text-base font-semibold text-gray-500">Bs</Text>
                   <TextInput
                     testID="modal-fare-input"
                     className="flex-1 text-base text-gray-900"
-                    placeholder="0.00"
+                    placeholder={fareOptions.length > 0 ? 'O ingresar otro monto' : '0.00'}
                     placeholderTextColor="#9CA3AF"
                     value={fareAmount}
-                    onChangeText={setFareAmount}
+                    onChangeText={(t) => {
+                      setFareAmount(t);
+                      setFareSource('free');
+                    }}
                     keyboardType="decimal-pad"
                   />
                 </View>

@@ -249,6 +249,12 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.48" },
 ]
 
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "ruff", specifier = ">=0.15.12" },
+]
+
 [[package]]
 name = "googleapis-common-protos"
 version = "1.73.0"
@@ -803,8 +809,13 @@ dependencies = [
 requires-dist = [
     { name = "database", editable = "../packages/database" },
     { name = "geodata", editable = "../packages/geodata" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
     { name = "sqlalchemy", specifier = ">=2.0.48" },
 ]
+provides-extras = ["test"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.15.12" }]
 
 [[package]]
 name = "plotly"

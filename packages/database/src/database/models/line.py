@@ -12,6 +12,7 @@ from .route import VoteChoice
 if TYPE_CHECKING:
     from .detour import Detour
     from .fare import FareReport
+    from .line_schedule import LineSchedule
     from .route import Route, Trip
     from .trip import TripSession
 
@@ -62,6 +63,7 @@ class Line(LineBase, table=True):
     line_votes: list["LineVote"] = Relationship(back_populates="line")
     detours: list["Detour"] = Relationship(back_populates="line")
     fare_reports: list["FareReport"] = Relationship(back_populates="line")
+    schedules: list["LineSchedule"] = Relationship(back_populates="line")
 
 
 class LineVote(SQLModel, table=True):
@@ -74,7 +76,7 @@ class LineVote(SQLModel, table=True):
 
     id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
     line_id: UUID = Field(foreign_key="lines.id", index=True)
-    device_id: str = Field(max_length=255, index=True)
+    device_id: str = Field(foreign_key="devices.id", max_length=255, index=True)
 
     vote: VoteChoice = Field()
     created_at: datetime = Field(default_factory=datetime.utcnow)

@@ -20,7 +20,8 @@ import api, { DirectionsLeg, DirectionsResponse, NearbyLineWithRoute } from '@/s
 import { getCurrentLocation, watchLocation } from '@/services/current-location';
 import { GeocodingResult, reverseGeocode, searchAddress } from '@/services/geocoding';
 import { includePendingLines, includePendingRoutes } from '@/services/preferences';
-import { saveTrip, TripType } from '@/services/saved-trips';
+import { saveTrip } from '@/services/saved-trips';
+import { SaveTripModal, SaveTripModalResult } from '@/components/save-trip-modal';
 import { addToHistory, filterHistory } from '@/services/search-history';
 import { SearchHistoryEntry } from '@/db/schema';
 
@@ -35,6 +36,16 @@ function formatDuration(s: number): string {
   return mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}min` : `${mins} min`;
 }
 
+function formatFareBob(b: number | null | undefined): string | null {
+  if (b == null) return null;
+  return `Bs. ${b.toFixed(2)}`;
+}
+
+function formatFrequency(min: number | null | undefined): string | null {
+  if (min == null) return null;
+  return `c/ ${min} min`;
+}
+
 function routeSummary(legs: DirectionsLeg[]) {
   const busLines: string[] = [];
   let walkSec = 0;
@@ -43,6 +54,15 @@ function routeSummary(legs: DirectionsLeg[]) {
     if (leg.mode === 'walk') walkSec += leg.duration_s;
   }
   return { busLines, transfers: Math.max(0, busLines.length - 1), walkMin: Math.round(walkSec / 60) };
+}
+
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6_371_000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 type ActiveField = 'origin' | 'destination' | null;
@@ -78,6 +98,7 @@ export default function ExploreScreen() {
   // Nearby lines
   const [nearbyLines, setNearbyLines] = useState<NearbyLineWithRoute[]>([]);
   const [selectedLine, setSelectedLine] = useState<NearbyLineWithRoute | null>(null);
+  const [lineDetailLoc, setLineDetailLoc] = useState<{ lon: number; lat: number } | null>(null);
   const [nearbyRadius, setNearbyRadius] = useState(2000);
   const [radiusExpanded, setRadiusExpanded] = useState(false);
 
@@ -119,6 +140,7 @@ export default function ExploreScreen() {
   }, [usingCurrentLoc]);
 
   // Watch location for real-time updates
+  const lastNearbyLoc = useRef<{ lon: number; lat: number } | null>(null);
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
 
@@ -127,11 +149,16 @@ export default function ExploreScreen() {
 
       unsubscribe = await watchLocation((newLoc) => {
         setUserLoc(newLoc);
-        setUserLon(newLoc.lon);
-        setUserLat(newLoc.lat);
         setLocationFailed(false);
         setLocationLoading(false);
         if (usingCurrentLoc) setOriginCoords([newLoc.lon, newLoc.lat]);
+        // Only update nearby-fetch coords when user moves >100m to avoid constant refetching
+        const prev = lastNearbyLoc.current;
+        if (!prev || haversineMeters(prev.lat, prev.lon, newLoc.lat, newLoc.lon) > 100) {
+          lastNearbyLoc.current = newLoc;
+          setUserLon(newLoc.lon);
+          setUserLat(newLoc.lat);
+        }
       });
     })();
 
@@ -239,7 +266,7 @@ export default function ExploreScreen() {
   }, [originCoords, destCoords]);
 
   const selectRoute = useCallback(async (route: DirectionsResponse) => {
-    setSelectedRoute(route); setLegNames({}); setView('detail');
+    setSelectedRoute(route); setLegNames({}); setLineDetailLoc(userLoc); setView('detail');
     stepsRef.current?.snapToIndex(0);
     const names: Record<number, { board: string; alight: string }> = {};
     for (let i = 0; i < route.legs.length; i++) {
@@ -255,19 +282,33 @@ export default function ExploreScreen() {
     }
   }, []);
 
-  const handleSaveTrip = useCallback((type: TripType) => {
+  const [saveTripModalVisible, setSaveTripModalVisible] = useState(false);
+
+  const handleSaveTrip = useCallback((result: SaveTripModalResult) => {
     if (!selectedRoute || !originCoords || !destCoords) return;
-    saveTrip({ originName: originText, destName: destText, originCoords, destCoords, type, route: selectedRoute });
-    Alert.alert('Ruta guardada', type === 'commute' ? 'Se mostrará todos los días.' : 'Se mostrará solo por hoy.');
+    saveTrip({
+      originName: originText,
+      destName: destText,
+      originCoords,
+      destCoords,
+      type: result.type,
+      route: selectedRoute,
+      departureTime: result.departureTime,
+    });
+    setSaveTripModalVisible(false);
+    const message =
+      result.type === 'commute'
+        ? 'Se mostrará todos los días.'
+        : 'Se mostrará solo por hoy.';
+    const withTime = result.departureTime
+      ? `${message} Te avisaremos a las ${result.departureTime}.`
+      : message;
+    Alert.alert('Ruta guardada', withTime);
   }, [selectedRoute, originCoords, destCoords, originText, destText]);
 
   const promptSaveTrip = useCallback(() => {
-    Alert.alert('Guardar ruta', '¿Cómo quieres guardar?', [
-      { text: 'Solo por hoy', onPress: () => handleSaveTrip('one_time') },
-      { text: 'Viaje recurrente', onPress: () => handleSaveTrip('commute') },
-      { text: 'Cancelar', style: 'cancel' },
-    ]);
-  }, [handleSaveTrip]);
+    setSaveTripModalVisible(true);
+  }, []);
 
   const mapLegs: Leg[] = selectedRoute?.legs.map(l => ({ mode: l.mode, geometry: l.geometry, line_name: l.line_name ?? undefined })) ?? [];
 
@@ -302,7 +343,7 @@ export default function ExploreScreen() {
         <RouteMap
           lineRoute={lr}
           detourPath={selectedLine.detour_alert?.detour_path ?? null}
-          currentLocation={userLoc}
+          currentLocation={lineDetailLoc}
           style={{ flex: 1 }}
         />
         <Pressable className="absolute left-4 rounded-full bg-white p-3 shadow-lg" style={{ top: insets.top + 8 }} onPress={() => { setSelectedLine(null); setView('search'); }}>
@@ -337,7 +378,7 @@ export default function ExploreScreen() {
   if (view === 'detail' && selectedRoute) {
     return (
       <View accessible={false} className="flex-1">
-        <RouteMap legs={mapLegs} currentLocation={userLoc} style={{ flex: 1 }} />
+        <RouteMap legs={mapLegs} currentLocation={lineDetailLoc} style={{ flex: 1 }} />
         <Pressable className="absolute left-4 rounded-full bg-white p-3 shadow-lg" style={{ top: insets.top + 8 }} onPress={() => setView('results')}>
           <Feather name="arrow-left" size={22} color="#333" />
         </Pressable>
@@ -345,6 +386,11 @@ export default function ExploreScreen() {
           <Feather name="bookmark" size={18} color={BLUE} />
           <Text className="ml-2 text-sm font-semibold text-[#09A6F3]">Guardar</Text>
         </Pressable>
+        <SaveTripModal
+          visible={saveTripModalVisible}
+          onCancel={() => setSaveTripModalVisible(false)}
+          onSave={handleSaveTrip}
+        />
         <View className="absolute left-4 right-4 items-center rounded-2xl bg-white px-5 py-3 shadow-lg" style={{ top: insets.top + 60 }}>
           <Text className="text-base font-bold text-[#09A6F3]">{formatDuration(selectedRoute.total_duration_s)} · {formatDistance(selectedRoute.total_distance_m)}</Text>
           <Text className="text-xs text-gray-400">{originText} → {destText}</Text>
@@ -366,13 +412,24 @@ export default function ExploreScreen() {
                 </View>
               );
               const names = legNames[index];
+              const fareText = formatFareBob(leg.fare_bob);
+              const freqText = formatFrequency(leg.frequency_min);
               return (
                 <View key={`b-${index}`}>
                   <View className="flex-row">
                     <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-[#DDF6FF]"><Feather name="log-in" size={14} color={BLUE} /></View><View className="w-0.5 flex-1 bg-[#09A6F3]" /></View>
                     <View className="flex-1 pb-2"><Text className="text-base font-semibold text-[#09A6F3]">Tomar Línea {leg.line_name ?? '?'}</Text><Text className="text-sm text-gray-500">{names ? `en ${names.board}` : 'Cargando...'}</Text></View>
                   </View>
-                  <View className="flex-row"><View className="mr-4 w-8 items-center"><View className="w-0.5 flex-1 bg-[#09A6F3]" /></View><View className="flex-1 py-1 pb-2"><Text className="text-xs text-gray-400">{formatDistance(leg.distance_m)} · {formatDuration(leg.duration_s)}</Text></View></View>
+                  <View className="flex-row"><View className="mr-4 w-8 items-center"><View className="w-0.5 flex-1 bg-[#09A6F3]" /></View>
+                    <View className="flex-1 py-1 pb-2">
+                      <Text className="text-xs text-gray-400">{formatDistance(leg.distance_m)} · {formatDuration(leg.duration_s)}</Text>
+                      {(fareText || freqText) && (
+                        <Text className="text-xs text-[#09A6F3]" testID={`leg-${index}-meta`}>
+                          {[fareText, freqText].filter(Boolean).join(' · ')}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
                   <View className="flex-row">
                     <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-[#DDF6FF]"><Feather name="log-out" size={14} color={BLUE} /></View>{!isLast && <View className="w-0.5 flex-1 bg-gray-200" />}</View>
                     <View className="flex-1 pb-5"><Text className="text-base font-semibold text-gray-800">Bajar</Text><Text className="text-sm text-gray-500">{names ? `en ${names.alight}` : 'Cargando...'}</Text></View>
@@ -441,13 +498,29 @@ export default function ExploreScreen() {
                   )}
                   <View className="mb-2 flex-row items-center justify-between">
                     <Text className="text-xl font-bold text-gray-800">{formatDuration(route.total_duration_s)}</Text>
-                    <Text className="text-sm text-gray-400">{formatDistance(route.total_distance_m)}</Text>
+                    <View className="flex-row items-center gap-2">
+                      {formatFareBob(route.total_fare_bob) && (
+                        <Text className="text-sm font-semibold text-[#09A6F3]" testID={`route-${idx}-total-fare`}>
+                          {formatFareBob(route.total_fare_bob)}
+                        </Text>
+                      )}
+                      <Text className="text-sm text-gray-400">{formatDistance(route.total_distance_m)}</Text>
+                    </View>
                   </View>
                   <View className="mb-3 flex-row items-center gap-1">
                     {route.legs.map((leg, i) => <View key={i} className={`h-2 rounded-full ${leg.mode === 'bus' ? 'bg-[#09A6F3]' : 'bg-gray-300'}`} style={{ flex: leg.distance_m, minWidth: 8 }} />)}
                   </View>
                   <View className="flex-row flex-wrap items-center gap-2">
-                    {s.busLines.map(name => <View key={name} className="flex-row items-center rounded-lg bg-[#DDF6FF] px-2.5 py-1"><Feather name="truck" size={12} color={BLUE} /><Text className="ml-1 text-sm font-semibold text-[#09A6F3]">{name}</Text></View>)}
+                    {route.legs.filter(l => l.mode === 'bus' && l.line_name).map((leg, i) => {
+                      const freq = formatFrequency(leg.frequency_min);
+                      return (
+                        <View key={`bus-${i}-${leg.line_name}`} className="flex-row items-center rounded-lg bg-[#DDF6FF] px-2.5 py-1">
+                          <Feather name="truck" size={12} color={BLUE} />
+                          <Text className="ml-1 text-sm font-semibold text-[#09A6F3]">{leg.line_name}</Text>
+                          {freq && <Text className="ml-1 text-xs text-[#09A6F3] opacity-80">{freq}</Text>}
+                        </View>
+                      );
+                    })}
                     {s.transfers > 0 && <Text className="text-xs text-gray-400">{s.transfers} transbordo{s.transfers > 1 ? 's' : ''}</Text>}
                     {s.walkMin > 0 && <Text className="text-xs text-gray-400">🚶 {s.walkMin} min</Text>}
                   </View>
@@ -590,7 +663,7 @@ export default function ExploreScreen() {
                 <Pressable
                   key={line.line_id}
                   className="mb-2 flex-row items-center rounded-xl border border-gray-200 bg-white px-4 py-3 active:bg-gray-50"
-                  onPress={() => { setSelectedLine(line); setView('line_detail'); }}
+                  onPress={() => { setSelectedLine(line); setLineDetailLoc(userLoc); setView('line_detail'); }}
                 >
                   <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-[#DDF6FF]">
                     <Feather name="truck" size={18} color={BLUE} />
@@ -605,7 +678,29 @@ export default function ExploreScreen() {
                         </View>
                       )}
                     </View>
-                    {line.line_description && <Text className="text-sm text-gray-500" numberOfLines={1}>{line.line_description}</Text>}
+                    {(() => {
+                      const ramal = line.ramales?.[0];
+                      const [start, end] = ramal?.endpoint_zones ?? [null, null];
+                      const endpointLabel = start && end ? `${start} → ${end}` : start || end || null;
+                      const streetsLabel = ramal?.street_summary?.slice(0, 4).join(' · ') || null;
+                      return (
+                        <>
+                          {endpointLabel ? (
+                            <Text className="text-sm font-medium text-gray-700" numberOfLines={1}>{endpointLabel}</Text>
+                          ) : line.line_description && (
+                            <Text className="text-sm text-gray-500" numberOfLines={1}>{line.line_description}</Text>
+                          )}
+                          {streetsLabel && (
+                            <Text className="text-xs text-gray-400" numberOfLines={1}>{streetsLabel}</Text>
+                          )}
+                          {line.ramales && line.ramales.length > 1 && (
+                            <Text className="mt-0.5 text-[10px] text-gray-400">
+                              {line.ramales.length} ramales
+                            </Text>
+                          )}
+                        </>
+                      );
+                    })()}
                     {line.detour_alert && (
                       <Text className="mt-0.5 text-xs text-orange-500">
                         {line.detour_alert.diverges_at && line.detour_alert.rejoins_at

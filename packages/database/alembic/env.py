@@ -9,8 +9,12 @@ from sqlmodel import SQLModel
 
 # Import all models so they're registered with SQLModel.metadata
 from database.models.detour import Detour  # noqa: F401
+from database.models.device import Device  # noqa: F401
 from database.models.fare import FareReport, FareZone  # noqa: F401
 from database.models.line import Line, LineVote  # noqa: F401
+from database.models.line_schedule import LineSchedule  # noqa: F401
+from database.models.notification_dispatch import NotificationDispatch  # noqa: F401
+from database.models.subscription import LineSubscription  # noqa: F401
 from database.models.trip import TripSession, TripSessionPoint, TripSensorReading  # noqa: F401
 from database.models.route import (  # noqa: F401
     Trip, TripMatchedEdge, TripPoint, Route, RouteEdge, EdgeVote, TravelTimeSample,
@@ -48,6 +52,10 @@ _APP_TABLES = {
     "fare_reports",
     "pipeline_runs",
     "pipeline_step_results",
+    "devices",
+    "line_subscriptions",
+    "line_schedules",
+    "notification_dispatches",
 }
 
 

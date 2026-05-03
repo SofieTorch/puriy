@@ -1,10 +1,12 @@
 """Tests for the lines API endpoints."""
+from datetime import time
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from database.models.line import Line, LineStatus
+from database.models.line_schedule import DayBucket, LineSchedule
 
 
 class TestCreateLine:
@@ -224,3 +226,104 @@ class TestMergeLine:
         
         assert response.status_code == 400
         assert "already merged" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Schedules (LineRead.schedules)
+# ---------------------------------------------------------------------------
+
+
+class TestLineSchedules:
+    """LineRead.schedules — inferred service hours and headway per day bucket."""
+
+    def test_get_line_includes_schedules_array(
+        self, client: TestClient, db: Session, approved_line: Line,
+    ):
+        for bucket, headway in [
+            (DayBucket.WEEKDAY, 8),
+            (DayBucket.SATURDAY, 12),
+            (DayBucket.SUNDAY, 20),
+        ]:
+            db.add(LineSchedule(
+                line_id=approved_line.id,
+                day_bucket=bucket,
+                service_start_at=time(6, 0),
+                service_end_at=time(22, 0),
+                headway_min=headway,
+            ))
+        db.commit()
+
+        resp = client.get(f"/lines/{approved_line.id}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "schedules" in body
+        assert len(body["schedules"]) == 3
+        by_bucket = {s["day_bucket"]: s for s in body["schedules"]}
+        assert by_bucket["weekday"]["headway_min"] == 8
+        assert by_bucket["saturday"]["headway_min"] == 12
+        assert by_bucket["sunday"]["headway_min"] == 20
+
+    def test_get_line_no_schedule_returns_empty_array(
+        self, client: TestClient, approved_line: Line,
+    ):
+        resp = client.get(f"/lines/{approved_line.id}")
+        assert resp.status_code == 200
+        assert resp.json()["schedules"] == []
+
+    def test_get_line_partial_schedules(
+        self, client: TestClient, db: Session, approved_line: Line,
+    ):
+        db.add(LineSchedule(
+            line_id=approved_line.id,
+            day_bucket=DayBucket.WEEKDAY,
+            service_start_at=time(6, 0),
+            service_end_at=time(22, 0),
+            headway_min=10,
+        ))
+        db.commit()
+
+        resp = client.get(f"/lines/{approved_line.id}")
+        assert resp.status_code == 200
+        schedules = resp.json()["schedules"]
+        assert len(schedules) == 1
+        assert schedules[0]["day_bucket"] == "weekday"
+
+    def test_list_lines_includes_schedules(
+        self, client: TestClient, db: Session, approved_line: Line,
+    ):
+        db.add(LineSchedule(
+            line_id=approved_line.id,
+            day_bucket=DayBucket.WEEKDAY,
+            service_start_at=time(6, 0),
+            service_end_at=time(22, 0),
+            headway_min=10,
+        ))
+        db.commit()
+
+        resp = client.get("/lines/")
+        assert resp.status_code == 200
+        # find ours and check schedules present
+        ours = [ln for ln in resp.json() if ln["id"] == str(approved_line.id)]
+        assert len(ours) == 1
+        assert len(ours[0]["schedules"]) == 1
+
+    def test_unreliable_headway_returns_null(
+        self, client: TestClient, db: Session, approved_line: Line,
+    ):
+        """RF-24: when cadence is unreliable, headway_min is null
+        but service hours are still present."""
+        db.add(LineSchedule(
+            line_id=approved_line.id,
+            day_bucket=DayBucket.SUNDAY,
+            service_start_at=time(8, 0),
+            service_end_at=time(18, 0),
+            headway_min=None,
+        ))
+        db.commit()
+
+        resp = client.get(f"/lines/{approved_line.id}")
+        assert resp.status_code == 200
+        schedules = resp.json()["schedules"]
+        sunday = next(s for s in schedules if s["day_bucket"] == "sunday")
+        assert sunday["headway_min"] is None
+        assert sunday["service_start_at"] == "08:00:00"

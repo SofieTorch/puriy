@@ -21,8 +21,11 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[project.scripts]
-geodata = "geodata.cli:main"
-
 [tool.uv.sources]
 database = {path = "../database", editable = true}
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.15.12",
+]

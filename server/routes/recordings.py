@@ -9,7 +9,7 @@ from database.models.trip import (
     SessionStatus,
     TripSensorReading,
 )
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -118,6 +118,7 @@ def assign_device(
 def end_recording(
     session_id: UUID,
     body: EndSessionRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> TripSessionRead:
     """
@@ -177,6 +178,7 @@ def end_recording(
 
     session.ended_at = datetime.utcnow()
 
+    new_detour_id: UUID | None = None
     if body.is_detour and session.line_id and session.computed_path is not None:
         from database.models.detour import Detour
 
@@ -205,9 +207,33 @@ def end_recording(
             path=snapped_path,
         )
         db.add(detour)
+        new_detour_id = detour.id
 
     db.commit()
     db.refresh(session)
+
+    # Notify commute subscribers in the background. The reporting device is
+    # excluded so it doesn't get notified about its own detour.
+    if new_detour_id is not None and session.line_id is not None:
+        from services.push import dispatch_detour_notifications
+        background_tasks.add_task(
+            dispatch_detour_notifications,
+            line_id=session.line_id,
+            detour_id=new_detour_id,
+            exclude_device_id=session.device_id,
+        )
+
+    # Per-trip event trigger for the pipeline (CU-11). Fires `clean_traces`
+    # for the just-ended session's line so the new trip becomes visible as
+    # a Trip[CLEAN] without waiting for the next cron tick. Heavier steps
+    # (reconstruct, resolve, infer_schedules) stay on the cron schedule.
+    if (
+        session.line_id is not None
+        and session.status == SessionStatus.COMPLETED
+    ):
+        from services.pipeline_trigger import run_clean_traces_for_line
+        background_tasks.add_task(run_clean_traces_for_line, session.line_id)
+
     return TripSessionRead.model_validate(session)
 
 

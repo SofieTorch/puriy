@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID
 
 from geoalchemy2 import Geometry
-from sqlalchemy import BigInteger, Column, Index, UniqueConstraint
+from sqlalchemy import BigInteger, Column, Index, UniqueConstraint, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship, SQLModel
 
 if TYPE_CHECKING:
@@ -122,6 +123,16 @@ class Route(SQLModel, table=True):
     """A versioned route for a line, composed of road-network edges."""
 
     __tablename__ = "routes"
+    __table_args__ = (
+        # One active route per (line, ramal). The partial WHERE clause
+        # excludes superseded rows so version chains can grow freely.
+        Index(
+            "uq_route_active_per_ramal",
+            "line_id", "ramal_label",
+            unique=True,
+            postgresql_where=text("status != 'SUPERSEDED'"),
+        ),
+    )
 
     id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
     line_id: UUID = Field(foreign_key="lines.id", index=True)
@@ -133,7 +144,34 @@ class Route(SQLModel, table=True):
     strategy_key: Optional[str] = Field(default=None, max_length=100)
     fragment_index: int = Field(default=0)
     fragment_count: int = Field(default=1)
+    # Internal grouping key: distinguishes ramales (variants) of the same
+    # line. "main" for the first ramal a line gets; auto-detected
+    # additional ramales get "r2", "r3", … assigned by the pipeline. Never
+    # rendered to users — UIs identify ramales by geometry + endpoint
+    # zones + street summary instead.
+    ramal_label: str = Field(default="main", max_length=64, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Last time this route was compared against a freshly reconstructed
+    # candidate and deemed close enough to keep (RF-19). Updated by the
+    # `reconstruct_routes` pipeline step. None means it was never compared
+    # after initial creation.
+    last_compared_at: Optional[datetime] = Field(default=None)
+
+    # Human-readable street/avenue names the route runs along, in order
+    # (e.g. ["Av. Beijing", "Av. América", "Av. Pacata"]). Populated from
+    # Valhalla `trace_match` edge names, filtered by minimum run length
+    # so cross-streets don't appear. Also serves RF-07 ("show destinations
+    # textually") on the line cards.
+    street_summary: Optional[list[str]] = Field(
+        default=None, sa_column=Column(JSONB, nullable=True),
+    )
+    # `[start_zone, end_zone]` neighbourhood/zone names for the first
+    # and last polyline points (e.g. ["Beijing", "Sacaba"]). Reverse-
+    # geocoded via Nominatim. Either side may be None if geocoding
+    # didn't return a usable admin level.
+    endpoint_zones: Optional[list[Optional[str]]] = Field(
+        default=None, sa_column=Column(JSONB, nullable=True),
+    )
 
     line: Optional["Line"] = Relationship(back_populates="routes")
     edges: list["RouteEdge"] = Relationship(back_populates="route")
@@ -202,7 +240,7 @@ class EdgeVote(SQLModel, table=True):
 
     id: Optional[UUID] = Field(default_factory=_uuid.uuid4, primary_key=True)
     edge_id: UUID = Field(foreign_key="route_edges.id", index=True)
-    device_id: str = Field(max_length=255, index=True)
+    device_id: str = Field(foreign_key="devices.id", max_length=255, index=True)
 
     vote: VoteChoice
     created_at: datetime = Field(default_factory=datetime.utcnow)

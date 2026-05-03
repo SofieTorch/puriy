@@ -5,8 +5,10 @@ from .clean_traces import execute as clean_traces
 from .reconstruct_routes import execute as reconstruct_routes
 from .resolve_edge_votes import execute as resolve_edge_votes
 from .resolve_line_votes import execute as resolve_line_votes
+from .resolve_routes import execute as resolve_routes
 from .rebuild_graph import execute as rebuild_graph
 from .cleanup import execute as cleanup
+from .infer_schedules import execute as infer_schedules
 
 STEPS: dict[str, dict] = {
     "cleanup": {
@@ -34,6 +36,11 @@ STEPS: dict[str, dict] = {
         "label": "Resolve edge votes",
         "description": "Accept or reject route edges based on community votes",
     },
+    "resolve_routes": {
+        "fn": resolve_routes,
+        "label": "Resolve routes",
+        "description": "Promote PENDING routes to CONFIRMED once a quorum of edges are confirmed",
+    },
     "resolve_line_votes": {
         "fn": resolve_line_votes,
         "label": "Resolve line votes",
@@ -43,5 +50,10 @@ STEPS: dict[str, dict] = {
         "fn": rebuild_graph,
         "label": "Rebuild graph",
         "description": "Rebuild the transit directions graph from confirmed routes",
+    },
+    "infer_schedules": {
+        "fn": infer_schedules,
+        "label": "Infer schedules",
+        "description": "Infer service hours and headway per line, bucketed by day type",
     },
 }
