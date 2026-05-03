@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
-from typing import Sequence
+from typing import Optional, Sequence
 from uuid import UUID
 
+from database.devices import ensure_device
 from database.models.line import Line, LineStatus
 from database.models.trip import (
     TripSessionPoint,
@@ -9,7 +10,7 @@ from database.models.trip import (
     SessionStatus,
     TripSensorReading,
 )
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -38,17 +39,28 @@ router = APIRouter(prefix="/recordings", tags=["recordings"])
 @router.post("/", response_model=TripSessionRead, status_code=201)
 def start_recording(
     session_data: TripSessionCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    x_device_id: Optional[str] = Header(default=None, alias="X-Device-Id"),
 ) -> TripSessionRead:
     """
     Start a new trip session.
 
-    The line is not required at start; it will be assigned when the session ends.
+    The line is not required at start; it will be assigned when the
+    session ends. `device_id` is read from the `X-Device-Id` header
+    that the mobile client attaches to every request; the body field
+    is honoured as a fallback for older clients and tooling that posts
+    against this endpoint manually. Whichever source provides the id,
+    we ensure a `devices` row exists before insert so the FK to
+    `trip_sessions.device_id` doesn't violate.
     """
+    device_id = x_device_id or session_data.device_id
+    if device_id:
+        ensure_device(db, device_id)
+
     session = TripSession(
         line_id=None,
         direction=session_data.direction,
-        device_id=session_data.device_id,
+        device_id=device_id,
         device_model=session_data.device_model,
         os_version=session_data.os_version,
         notes=session_data.notes,

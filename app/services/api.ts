@@ -230,10 +230,20 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+    // Attach the device id on every request as `X-Device-Id`. This is
+    // the canonical way for the server to know who's calling — the
+    // older pattern of repeating `device_id` in every body / query
+    // string is preserved for now for endpoints that consume it
+    // explicitly, but new endpoints (and `start_recording`) read from
+    // the header so a missed-parameter bug like the one in v1 can't
+    // recur. Imported lazily to avoid touching the local DB before
+    // DatabaseProvider has mounted (some module-level callers race).
+    const { getDeviceId } = require('@/services/device-id');
     const response = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        'X-Device-Id': getDeviceId(),
         ...options.headers,
       },
     });
@@ -273,6 +283,8 @@ class ApiClient {
     deviceModel?: string,
     osVersion?: string
   ): Promise<RecordingSession> {
+    // device_id is read from the `X-Device-Id` header by the server
+    // (see `request()` above) — no need to thread it through here.
     return this.request<RecordingSession>('/recordings/', {
       method: 'POST',
       body: JSON.stringify({
