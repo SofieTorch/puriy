@@ -687,3 +687,709 @@
       dashed: true)
   })
 })
+
+
+// ============================================================
+// Activity-diagram primitives (mm coordinates, like arrow())
+// ============================================================
+//
+// All primitives place themselves at given (x, y) in mm. Designed to
+// be composed inside a fixed-size canvas via #place / #box, mirroring
+// the use case + sequence diagram conventions above.
+
+// Initial node — filled black circle.
+#let act-start(cx, cy, r: 1.6) = place(
+  top + left, dx: (cx - r) * 1mm, dy: (cy - r) * 1mm,
+  circle(radius: r * 1mm, fill: node-stroke, stroke: none),
+)
+
+// Final node — filled circle inside an open ring.
+#let act-end(cx, cy, r-outer: 2.4, r-inner: 1.4) = {
+  place(top + left, dx: (cx - r-outer) * 1mm, dy: (cy - r-outer) * 1mm,
+    circle(radius: r-outer * 1mm, fill: none, stroke: 0.8pt + node-stroke))
+  place(top + left, dx: (cx - r-inner) * 1mm, dy: (cy - r-inner) * 1mm,
+    circle(radius: r-inner * 1mm, fill: node-stroke, stroke: none))
+}
+
+// Action — rounded rectangle with text. cx/cy is the centre.
+#let act-action(cx, cy, w, h, label, fill: node-fill) = place(
+  top + left, dx: (cx - w / 2) * 1mm, dy: (cy - h / 2) * 1mm,
+  box(
+    width: w * 1mm, height: h * 1mm,
+    stroke: 0.8pt + node-stroke,
+    fill: fill,
+    radius: 2mm,
+    inset: (x: 2mm, y: 1.5mm),
+  )[
+    #set align(center + horizon)
+    #set text(size: 7pt, fill: node-stroke)
+    #label
+  ],
+)
+
+// Decision — diamond with question label. cx/cy is the centre.
+#let act-decision(cx, cy, w, h, label) = {
+  place(top + left, dx: 0mm, dy: 0mm, path(
+    closed: true,
+    stroke: 0.8pt + node-stroke,
+    fill: rgb("#fff8e1"),
+    ((cx) * 1mm, (cy - h / 2) * 1mm),
+    ((cx + w / 2) * 1mm, (cy) * 1mm),
+    ((cx) * 1mm, (cy + h / 2) * 1mm),
+    ((cx - w / 2) * 1mm, (cy) * 1mm),
+  ))
+  place(top + left, dx: (cx - w / 2 + 2) * 1mm, dy: (cy - h / 2 + 0.5) * 1mm,
+    box(width: (w - 4) * 1mm, height: (h - 1) * 1mm)[
+      #set align(center + horizon)
+      #set text(size: 6.5pt, fill: node-stroke)
+      #label
+    ])
+}
+
+// Fork/join bar — thick black horizontal bar.
+#let act-bar(cx, cy, w, thickness: 1.2) = place(
+  top + left, dx: (cx - w / 2) * 1mm, dy: (cy - thickness / 2) * 1mm,
+  rect(width: w * 1mm, height: thickness * 1mm, fill: node-stroke, stroke: none),
+)
+
+// Activity-flow edge — same as arrow() but shifts the optional label
+// closer to the line end (for branch labels like "Sí" / "No").
+#let act-edge(x1, y1, x2, y2, label: none, label-near: "mid") = {
+  arrow(x1 * 1mm, y1 * 1mm, x2 * 1mm, y2 * 1mm)
+  if label != none {
+    let f = if label-near == "start" { 0.18 }
+            else if label-near == "end" { 0.82 }
+            else { 0.5 }
+    let lx = x1 + (x2 - x1) * f
+    let ly = y1 + (y2 - y1) * f
+    place(top + left, dx: (lx + 1.5) * 1mm, dy: (ly - 3) * 1mm,
+      box(width: 20mm)[
+        #set text(size: 6.5pt, fill: gray, weight: "bold")
+        #label
+      ])
+  }
+}
+
+// Note attached to a node (yellow sticky).
+#let act-note(cx, cy, w, h, label) = place(
+  top + left, dx: (cx - w / 2) * 1mm, dy: (cy - h / 2) * 1mm,
+  box(
+    width: w * 1mm, height: h * 1mm,
+    stroke: 0.5pt + node-stroke,
+    fill: rgb("#fff8c4"),
+    inset: 1.5mm,
+  )[
+    #set align(center + horizon)
+    #set text(size: 6pt, fill: node-stroke, style: "italic")
+    #label
+  ],
+)
+
+
+// ============================================================
+// Activity diagram — Deduplicación de líneas (Fig. 14)
+// ============================================================
+
+#let dedup-activity = block(width: 100%, height: 165mm, {
+  // Canvas in mm. Centre column at 95mm, decisions branch left/right.
+  let cx = 95
+  let aw = 70    // action width
+  let ah = 9     // action height
+  let dw = 56    // decision width
+  let dh = 18    // decision height
+
+  act-start(cx, 5)
+  act-edge(cx, 6.6, cx, 12)
+
+  act-action(cx, 16, aw, ah, [Cargar todas las `Line[DRAFT]`])
+  act-edge(cx, 20.5, cx, 26)
+
+  act-decision(cx, 35, dw, dh, [¿Hay líneas DRAFT pendientes?])
+  act-edge(cx + dw / 2, 35, cx + dw / 2 + 12, 35,
+    label: [No], label-near: "start")
+  act-edge(cx + dw / 2 + 12, 35, cx + dw / 2 + 12, 158)  // jump to end
+  act-edge(cx, 44, cx, 50, label: [Sí], label-near: "end")
+
+  act-action(cx, 55, aw, ah, [Normalizar nombre por línea\
+    (lowercase + sin tildes + sin prefijos)])
+  act-edge(cx, 60, cx, 65)
+
+  act-action(cx, 70, aw, ah * 1.4,
+    [Fusionar grupos con mismo nombre normalizado\
+     (conserva la `Line` más antigua, marca el resto como `MERGED`)])
+  act-edge(cx, 76.5, cx, 82)
+
+  act-action(cx, 87, aw, ah * 1.4,
+    [Para cada DRAFT restante:\
+     ¿coincide con APPROVED/PENDING por nombre? → fusionar])
+  act-edge(cx, 93.5, cx, 99)
+
+  act-action(cx, 104, aw, ah * 1.6,
+    [`_find_overlapping_line_pairs`:\
+     `ST_Envelope(ST_Collect(computed_path))` por línea →\
+     self-join con `ST_Intersects` + ratio área común])
+  act-edge(cx, 112, cx, 118)
+
+  act-decision(cx, 127, dw, dh, [¿Algún par con ratio ≥ 0.7?])
+  act-edge(cx + dw / 2, 127, cx + 50, 127, label: [No], label-near: "start")
+  act-edge(cx + 50, 127, cx + 50, 145)
+  act-edge(cx, 136, cx, 141, label: [Sí], label-near: "end")
+
+  act-action(cx, 146, aw, ah * 1.2,
+    [Fusionar más reciente en más antigua\
+     (`_merge_line` mueve TripSession + Trip)])
+  act-edge(cx, 151, cx, 156)
+
+  act-action(cx, 161, aw, ah,
+    [Promover DRAFT no fusionadas a `PENDING`])
+  act-edge(cx, 165.5, cx, 171)
+
+  act-end(cx, 173)
+})
+
+
+// ============================================================
+// Activity diagram — Pipeline completo (Fig. 15)
+// ============================================================
+
+#let pipeline-activity = block(width: 100%, height: 200mm, {
+  let cx = 95
+  let aw = 110
+  let ah = 9
+  let dy = 18
+
+  act-start(cx, 5)
+  act-edge(cx, 6.6, cx, 12)
+
+  act-action(cx, 12 + dy * 0,    aw, ah,
+    [`cleanup` — abandona sesiones colgadas, expira desvíos > 7 días])
+  act-edge(cx, 17 + dy * 0, cx, 12 + dy * 0 - 6 + dy)
+
+  act-action(cx, 12 + dy * 1,    aw, ah,
+    [`deduplicate_lines` — colapsa DRAFT por nombre + bbox, promueve a PENDING])
+  act-edge(cx, 17 + dy * 1, cx, 12 + dy * 1 - 6 + dy)
+
+  act-action(cx, 12 + dy * 2,    aw, ah,
+    [`clean_traces` — Valhalla map-match (HMM), 6 hilos paralelos])
+  act-edge(cx, 17 + dy * 2, cx, 12 + dy * 2 - 6 + dy)
+
+  act-action(cx, 12 + dy * 3,    aw, ah,
+    [`reconstruct_routes` — clustering en ramales + estrategia por cluster])
+  act-edge(cx, 17 + dy * 3, cx, 12 + dy * 3 - 6 + dy)
+
+  act-action(cx, 12 + dy * 4,    aw, ah,
+    [`resolve_edge_votes` — promueve aristas con ≥3 votos y ≥60 % a favor])
+  act-edge(cx, 17 + dy * 4, cx, 12 + dy * 4 - 6 + dy)
+
+  act-action(cx, 12 + dy * 5,    aw, ah,
+    [`resolve_routes` — promueve `Route` con ≥80 % de aristas confirmadas])
+  act-edge(cx, 17 + dy * 5, cx, 12 + dy * 5 - 6 + dy)
+
+  act-action(cx, 12 + dy * 6,    aw, ah,
+    [`resolve_line_votes` — promueve `Line` con ≥3 votos y ≥60 % a favor])
+  act-edge(cx, 17 + dy * 6, cx, 12 + dy * 6 - 6 + dy)
+
+  act-action(cx, 12 + dy * 7,    aw, ah,
+    [`rebuild_graph` — reconstruye grafo de tránsito (bus + transferencias)])
+  act-edge(cx, 17 + dy * 7, cx, 12 + dy * 7 - 6 + dy)
+
+  act-action(cx, 12 + dy * 8,    aw, ah,
+    [`infer_schedules` — frecuencias por línea, banda horaria + día])
+  act-edge(cx, 17 + dy * 8, cx, 187)
+
+  act-end(cx, 189)
+
+  // Side note: tracking
+  act-note(cx + 80, 100, 36, 28,
+    [Cada paso registra\
+     `PipelineStepResult`\
+     (status, stats, error)\
+     dentro del `PipelineRun`\
+     padre.])
+})
+
+
+// ============================================================
+// Activity diagram — Reconstrucción por ramal (Fig. 16)
+// ============================================================
+
+#let ramal-reconstruct-activity = block(width: 100%, height: 220mm, {
+  let cx = 95
+  let aw = 100
+  let ah = 9
+  let dw = 70
+  let dh = 18
+
+  act-start(cx, 5)
+  act-edge(cx, 6.6, cx, 12)
+
+  act-action(cx, 16, aw, ah,
+    [Cargar `Trip[CLEAN]` de la línea (`load_reconstruction_traces_from_db`)])
+  act-edge(cx, 20.5, cx, 26)
+
+  act-decision(cx, 35, dw, dh, [`len(traces) ≥ min_trips`?])
+  act-edge(cx + dw / 2, 35, cx + 60, 35, label: [No], label-near: "start")
+  act-edge(cx + 60, 35, cx + 60, 215)
+  act-edge(cx, 44, cx, 49, label: [Sí], label-near: "end")
+
+  act-action(cx, 54, aw, ah,
+    [Cargar ramales activos existentes
+    (keyed por `ramal_label`)])
+  act-edge(cx, 58.5, cx, 64)
+
+  act-action(cx, 70, aw, ah * 1.6,
+    [`cluster_traces_into_ramales`:\
+     resamplear a 25m → matriz de Fréchet (con bbox prefiltro) →\
+     clustering complete-linkage al threshold (200m) → asignar etiquetas])
+  act-edge(cx, 78, cx, 84)
+
+  // Per-cluster loop annotation
+  act-note(cx + 80, 90, 32, 14,
+    [Para cada cluster\
+     (loop por ramal)])
+
+  act-action(cx, 90, aw, ah,
+    [`strategy.reconstruct(traces_del_cluster)`])
+  act-edge(cx, 94.5, cx, 100)
+
+  act-decision(cx, 109, dw, dh, [¿geojson tiene exactamente 1 feature?])
+  act-edge(cx - dw / 2, 109, cx - 60, 109, label: [No], label-near: "start")
+  act-edge(cx - 60, 109, cx - 60, 217)  // skip to end
+  act-edge(cx, 118, cx, 124, label: [Sí], label-near: "end")
+
+  act-decision(cx, 134, dw, dh, [¿Existe Route con esta `ramal_label`?])
+  act-edge(cx + dw / 2, 134, cx + 50, 134, label: [No], label-near: "start")
+  act-action(cx + 50, 152, 50, ah * 1.4,
+    [`_save_reconstruction`\
+     (Route v1 PENDING)])
+  act-edge(cx + 50, 142, cx + 50, 145)
+  act-edge(cx + 50, 159, cx + 50, 200)
+
+  act-edge(cx, 143, cx, 150, label: [Sí], label-near: "end")
+  act-action(cx, 156, aw, ah,
+    [`discrete_frechet_distance_m(existing, candidate)`])
+  act-edge(cx, 160.5, cx, 166)
+
+  act-decision(cx, 175, dw, dh, [Fréchet < 50m?])
+  act-edge(cx - dw / 2, 175, cx - 60 + 5, 175,
+    label: [Sí (unchanged)], label-near: "start")
+  act-action(cx - 50, 192, 50, ah * 1.4,
+    [Bumpear `existing.last_compared_at`])
+  act-edge(cx - 50, 175, cx - 50, 187)
+  act-edge(cx - 50, 199, cx - 50, 215)
+
+  act-edge(cx, 184, cx, 188,
+    label: [No (≥50m)], label-near: "end")
+  act-action(cx, 195, aw, ah * 1.4,
+    [`_save_reconstruction`\
+     (supersede + nueva versión)])
+  act-edge(cx, 202, cx, 215)
+
+  act-end(cx, 217)
+})
+
+
+// ============================================================
+// Activity diagram — Cálculo de confidence_pct (Fig. 18)
+// ============================================================
+
+#let confidence-activity = block(width: 100%, height: 145mm, {
+  let cx = 95
+  let aw = 100
+  let ah = 9
+  let dw = 60
+  let dh = 18
+
+  act-start(cx, 5)
+  act-edge(cx, 6.6, cx, 12)
+
+  act-action(cx, 16, aw, ah,
+    [Recibir `Detour` activo])
+  act-edge(cx, 20.5, cx, 26)
+
+  act-action(cx, 31, aw, ah,
+    [`days = (now - last_confirmed_at).days`])
+  act-edge(cx, 35.5, cx, 41)
+
+  act-action(cx, 46, aw, ah * 1.2,
+    [`time_factor = max(0, min(1, 1 - days / 14))`])
+  act-edge(cx, 51, cx, 57)
+
+  act-decision(cx, 66, dw, dh, [`time_factor == 0`?])
+  act-edge(cx + dw / 2, 66, cx + 50, 66,
+    label: [Sí], label-near: "start")
+  act-action(cx + 50, 82, 40, ah, [Retornar 0])
+  act-edge(cx + 50, 66, cx + 50, 78)
+  act-edge(cx + 50, 87, cx + 50, 138)
+
+  act-edge(cx, 75, cx, 81, label: [No], label-near: "end")
+  act-action(cx, 87, aw, ah * 1.6,
+    [`log_boost = log1p(max(0, count - 1)) / log1p(20)`\
+     `corroboration_factor = min(1.0, 0.5 + 0.5 * log_boost)`])
+  act-edge(cx, 95, cx, 101)
+
+  act-action(cx, 107, aw, ah * 1.4,
+    [`confidence = round(100 * time_factor * corroboration_factor)`\
+     clamp a `[0, 100]`])
+  act-edge(cx, 114, cx, 121)
+
+  act-action(cx, 127, aw, ah, [Retornar `confidence_pct`])
+  act-edge(cx, 131.5, cx, 138)
+
+  act-end(cx, 140)
+})
+
+
+// ============================================================
+// Activity diagram — Construcción del transit_graph (Fig. 21)
+// ============================================================
+
+#let transit-graph-activity = block(width: 100%, height: 175mm, {
+  let cx = 95
+  let aw = 110
+  let ah = 9
+
+  act-start(cx, 5)
+  act-edge(cx, 6.6, cx, 12)
+
+  act-action(cx, 16, aw, ah,
+    [`invalidate_graph()` — descartar caché previo en memoria])
+  act-edge(cx, 20.5, cx, 26)
+
+  act-action(cx, 32, aw, ah * 1.6,
+    [SELECT `Line + Route + RouteEdge`
+    WHERE `Line.status IN {APPROVED, PENDING}`
+    AND `Route.status != SUPERSEDED`])
+  act-edge(cx, 39, cx, 45)
+
+  // Per-line loop bar
+  act-bar(cx, 51, 80)
+  place(top + left, dx: (cx + 45) * 1mm, dy: 49 * 1mm,
+    text(size: 6.5pt, fill: gray, weight: "bold")[loop por línea])
+  act-edge(cx, 52.5, cx, 58)
+
+  act-action(cx, 64, aw, ah * 1.4,
+    [Por cada `Route` no superseded:\
+     `is_confirmed = (route.status == CONFIRMED)`])
+  act-edge(cx, 71, cx, 77)
+
+  act-action(cx, 83, aw, ah * 1.6,
+    [Por cada `RouteEdge` ordenado por `sequence`:\
+     crear/recuperar nodos por endpoints,\
+     agregar arista de bus `(line_id, route_id, is_confirmed, forward)`])
+  act-edge(cx, 91, cx, 96)
+
+  act-bar(cx, 100, 80)
+  act-edge(cx, 101.5, cx, 107)
+
+  act-action(cx, 113, aw, ah * 1.6,
+    [Computar transferencias: para cada par de nodos
+    cuya distancia ≤ `walking_threshold` (m), agregar arista
+    `transfer` con costo derivado del tiempo de caminata])
+  act-edge(cx, 121, cx, 127)
+
+  act-action(cx, 133, aw, ah * 1.4,
+    [Cachear grafo en memoria a nivel módulo
+    (`transit_graph._cached_graph`)])
+  act-edge(cx, 140, cx, 146)
+
+  act-action(cx, 152, aw, ah * 1.4,
+    [Retornar `(nodes, bus_edges, transfer_edges)`
+    como estadísticas del paso])
+  act-edge(cx, 159, cx, 165)
+
+  act-end(cx, 167)
+})
+
+
+// ============================================================
+// Sequence-diagram helpers (canvas-relative version)
+// ============================================================
+//
+// Variant of the inline closures used inside the page-filling
+// `#layout(size => {...})` blocks above. These take a canvas size
+// and lifeline xs as parameters so the diagram can be used as an
+// importable block at fixed dimensions inside #figure(...).
+
+#let sd-participant(cx, label, w, hdr-h, actor: false) = place(
+  top + left, dx: (cx - w / 2) * 1mm, dy: 0pt,
+  box(
+    width: w * 1mm, height: hdr-h * 1mm,
+    stroke: 0.8pt + node-stroke,
+    fill: node-fill,
+    radius: 1pt,
+    inset: 1.5pt,
+  )[
+    #set align(center + horizon)
+    #if actor [
+      #text(size: 5.5pt, fill: gray, style: "italic")[«actor»] \
+    ]
+    #text(weight: "bold", size: 7pt)[#label]
+  ],
+)
+
+#let sd-lifeline(cx, hdr-h, h-total) = place(
+  top + left, dx: cx * 1mm, dy: hdr-h * 1mm,
+  line(
+    start: (0pt, 0pt), end: (0pt, (h-total - hdr-h) * 1mm),
+    stroke: (paint: bound-color, thickness: 0.5pt, dash: "dashed"),
+  ),
+)
+
+#let sd-msg(xa, xb, y, label, dashed: false) = {
+  arrow(xa * 1mm, y * 1mm, xb * 1mm, y * 1mm, dashed: dashed)
+  let mx = (xa + xb) / 2
+  let lw = calc.abs(xb - xa) * 0.95
+  place(top + left, dx: (mx - lw / 2) * 1mm, dy: (y - 4) * 1mm,
+    box(width: lw * 1mm)[
+      #set align(center)
+      #set text(size: 6.5pt, fill: node-stroke)
+      #label
+    ])
+}
+
+#let sd-self-msg(cx, y, label, w: 6, h: 4) = {
+  place(top + left, dx: cx * 1mm, dy: y * 1mm, line(
+    start: (0pt, 0pt), end: (w * 1mm, 0pt),
+    stroke: 0.9pt + edge-color,
+  ))
+  place(top + left, dx: (cx + w) * 1mm, dy: y * 1mm, line(
+    start: (0pt, 0pt), end: (0pt, h * 1mm),
+    stroke: 0.9pt + edge-color,
+  ))
+  arrow((cx + w) * 1mm, (y + h) * 1mm, cx * 1mm, (y + h) * 1mm)
+  place(top + left, dx: (cx + w + 1) * 1mm, dy: (y - 1) * 1mm,
+    box(width: 60mm)[
+      #set text(size: 6.5pt, fill: node-stroke)
+      #label
+    ])
+}
+
+#let sd-note(xa, xb, y, label, h: 6) = place(
+  top + left, dx: xa * 1mm, dy: y * 1mm, box(
+    width: (xb - xa) * 1mm, height: h * 1mm,
+    stroke: 0.5pt + node-stroke,
+    fill: rgb("#fff8c4"),
+    inset: 1.5pt,
+  )[
+    #set align(center + horizon)
+    #set text(size: 6pt, fill: node-stroke, style: "italic")
+    #label
+  ],
+)
+
+
+// ============================================================
+// Sequence diagram — Proponer nueva línea (Fig. 13, CU-06)
+// ============================================================
+
+#let proponer-linea-sequence = block(width: 100%, height: 95mm, {
+  let W = 165
+  let H = 95
+  let hdr-h = 8
+  // Lifelines: Usuario | App | Server | BaseDatos
+  let xUser = 18
+  let xApp  = 60
+  let xApi  = 105
+  let xDb   = 150
+
+  sd-participant(xUser, [Usuario], 30, hdr-h, actor: true)
+  sd-participant(xApp,  [App móvil], 38, hdr-h)
+  sd-participant(xApi,  [Server (FastAPI)], 38, hdr-h)
+  sd-participant(xDb,   [Base de datos], 30, hdr-h)
+
+  sd-lifeline(xUser, hdr-h, H)
+  sd-lifeline(xApp,  hdr-h, H)
+  sd-lifeline(xApi,  hdr-h, H)
+  sd-lifeline(xDb,   hdr-h, H)
+
+  // Inicio
+  sd-msg(xUser, xApp, 17, [cierra grabación, "proponer nueva línea"])
+  sd-self-msg(xApp, 24, [valida `customLineName`])
+
+  // Crear sesión + línea
+  sd-msg(xApp, xApi, 36, [`POST /recordings/\{id\}/end \{ line\_name \}`])
+  sd-msg(xApi, xDb,  44, [`INSERT Line(status=DRAFT)`])
+  sd-msg(xDb,  xApi, 52, [`line_id`], dashed: true)
+  sd-msg(xApi, xDb,  60, [`UPDATE TripSession SET line\_id = ...`])
+  sd-msg(xDb,  xApi, 68, [ok], dashed: true)
+  sd-msg(xApi, xApp, 76, [`200 OK \{ TripSession \}`], dashed: true)
+
+  // Confirmación + nota
+  sd-msg(xApp, xUser, 84,
+    [navegar a "Mis contribuciones"], dashed: true)
+  sd-note(xUser - 5, xDb + 3, 88,
+    [Línea aún en DRAFT — se promueve tras `deduplicate_lines` + `resolve_line_votes`])
+})
+
+
+// ============================================================
+// Sequence diagram — Reportar desvío activo (Fig. 17, CU-07)
+// ============================================================
+
+#let reportar-desvio-sequence = block(width: 100%, height: 130mm, {
+  let H = 130
+  let hdr-h = 8
+  // Lifelines: Usuario | App | Server | Valhalla | DB | BackgroundTasks
+  let xUser = 14
+  let xApp  = 46
+  let xApi  = 80
+  let xVal  = 110
+  let xDb   = 138
+  let xBg   = 168
+
+  sd-participant(xUser, [Usuario], 24, hdr-h, actor: true)
+  sd-participant(xApp,  [App móvil], 28, hdr-h)
+  sd-participant(xApi,  [Server], 25, hdr-h)
+  sd-participant(xVal,  [Valhalla], 23, hdr-h)
+  sd-participant(xDb,   [Base de datos], 26, hdr-h)
+  sd-participant(xBg,   [BackgroundTasks], 28, hdr-h)
+
+  sd-lifeline(xUser, hdr-h, H)
+  sd-lifeline(xApp,  hdr-h, H)
+  sd-lifeline(xApi,  hdr-h, H)
+  sd-lifeline(xVal,  hdr-h, H)
+  sd-lifeline(xDb,   hdr-h, H)
+  sd-lifeline(xBg,   hdr-h, H)
+
+  sd-msg(xUser, xApp, 17, [marca como desvío + motivo + descripción])
+  sd-msg(xApp,  xApi, 26,
+    [`POST /recordings/\{id\}/end \{ is\_detour, detour\_reason, ... \}`])
+
+  // Snap to road via Valhalla
+  sd-msg(xApi,  xDb,  35, [cargar `TripSession` + puntos])
+  sd-msg(xDb,   xApi, 43, [puntos], dashed: true)
+  sd-msg(xApi,  xVal, 51, [`trace_attributes` (snap polyline al callejero)])
+  sd-msg(xVal,  xApi, 59, [geometría snapped], dashed: true)
+
+  // Persist Detour
+  sd-msg(xApi,  xDb,  68,
+    [`INSERT Detour(line\_id, path, reason, status=ACTIVE)`])
+  sd-msg(xDb,   xApi, 76, [`detour_id`], dashed: true)
+
+  // Background notify
+  sd-msg(xApi,  xBg,  85,
+    [encolar `dispatch_detour_notifications` (excluye reportante)])
+  sd-msg(xApi,  xApp, 93, [`200 OK \{ TripSession \}`], dashed: true)
+
+  // Async branch
+  sd-note(xVal - 5, xBg + 3, 102,
+    [Asíncrono — no bloquea la respuesta])
+  sd-msg(xBg,   xDb, 113,
+    [`INSERT NotificationDispatch` por suscriptor con commute en la línea])
+  sd-msg(xBg,   xApp, 121,
+    [push (vía Expo) a dispositivos suscritos], dashed: true)
+})
+
+
+// ============================================================
+// Sequence diagram — Registrar tarifa con zonas (Fig. 19, CU-08)
+// ============================================================
+
+#let reportar-tarifa-sequence = block(width: 100%, height: 110mm, {
+  let H = 110
+  let hdr-h = 8
+  // Lifelines: Usuario | App | Server | DB
+  let xUser = 18
+  let xApp  = 60
+  let xApi  = 105
+  let xDb   = 150
+
+  sd-participant(xUser, [Usuario], 30, hdr-h, actor: true)
+  sd-participant(xApp,  [App móvil], 38, hdr-h)
+  sd-participant(xApi,  [Server (FastAPI)], 38, hdr-h)
+  sd-participant(xDb,   [Base de datos], 30, hdr-h)
+
+  sd-lifeline(xUser, hdr-h, H)
+  sd-lifeline(xApp,  hdr-h, H)
+  sd-lifeline(xApi,  hdr-h, H)
+  sd-lifeline(xDb,   hdr-h, H)
+
+  // Modal opens after recording
+  sd-msg(xUser, xApp, 17, [ingresa monto en el modal post-grabación])
+
+  // Preview zones
+  sd-msg(xApp, xApi, 26,
+    [`POST /fares/zones/resolve \{ boarding\_lat/lon, alighting\_lat/lon \}`])
+  sd-msg(xApi, xDb,  34,
+    [`ST_Contains(FareZone.boundary, ST_MakePoint(...))`])
+  sd-msg(xDb,  xApi, 42,
+    [`(boarding_zone_id, alighting_zone_id)`], dashed: true)
+  sd-msg(xApi, xApp, 50,
+    [`\{ boarding\_zone: "Cochabamba", alighting\_zone: "Sacaba" \}`], dashed: true)
+
+  // Display + confirm
+  sd-msg(xApp, xUser, 58,
+    [muestra "Tarifa para Cochabamba → Sacaba" sobre el input], dashed: true)
+  sd-msg(xUser, xApp, 67, [confirma monto])
+
+  // Submit
+  sd-msg(xApp, xApi, 76,
+    [`POST /fares/reports \{ line\_id, amount\_bob, lat/lon, source \}`])
+  sd-msg(xApi, xDb,  85,
+    [`INSERT FareReport` (zonas re-resueltas server-side)])
+  sd-msg(xDb,  xApi, 93, [`fare_report`], dashed: true)
+  sd-msg(xApi, xApp, 101,
+    [`201 Created \{ boarding_zone, alighting_zone, ... \}`], dashed: true)
+})
+
+
+// ============================================================
+// Sequence diagram — Búsqueda de itinerario multi-modal (Fig. 20, CU-01)
+// ============================================================
+
+#let directions-sequence = block(width: 100%, height: 130mm, {
+  let H = 130
+  let hdr-h = 8
+  // Lifelines: Usuario | App | Server | TransitGraph | DB
+  let xUser = 18
+  let xApp  = 56
+  let xApi  = 96
+  let xGr   = 136
+  let xDb   = 174
+
+  sd-participant(xUser, [Usuario], 26, hdr-h, actor: true)
+  sd-participant(xApp,  [App móvil], 34, hdr-h)
+  sd-participant(xApi,  [Server], 34, hdr-h)
+  sd-participant(xGr,   [TransitGraph (memoria)], 34, hdr-h)
+  sd-participant(xDb,   [Base de datos], 30, hdr-h)
+
+  sd-lifeline(xUser, hdr-h, H)
+  sd-lifeline(xApp,  hdr-h, H)
+  sd-lifeline(xApi,  hdr-h, H)
+  sd-lifeline(xGr,   hdr-h, H)
+  sd-lifeline(xDb,   hdr-h, H)
+
+  // Search
+  sd-msg(xUser, xApp, 17, [ingresa origen + destino])
+  sd-msg(xApp,  xApi, 26,
+    [`POST /directions/ \{ origin, destination, include\_pending\_* \}`])
+
+  // Find stops near endpoints
+  sd-msg(xApi,  xGr,  35, [paradas cercanas al origen y destino])
+  sd-msg(xGr,   xApi, 43, [`(origin_node, dest_node)`], dashed: true)
+
+  // Shortest path
+  sd-msg(xApi,  xGr,  52, [`shortest_path(origin_node, dest_node, costing)`])
+  sd-msg(xGr,   xApi, 60,
+    [secuencia de aristas (bus + walk + transfer)], dashed: true)
+
+  // Enrich each bus leg
+  sd-self-msg(xApi, 69, [partir aristas en `legs` por `(line_id, mode)`])
+  sd-msg(xApi,  xDb,  78,
+    [por cada bus leg: `fare_estimate` + `frequency_min` + `Detour[ACTIVE]`])
+  sd-msg(xDb,   xApi, 86, [datos enriquecidos], dashed: true)
+
+  // Build response
+  sd-self-msg(xApi, 94,
+    [montar `DirectionsResponse \{ legs[], totals \}`])
+  sd-msg(xApi,  xApp, 103, [`200 OK \{ legs[], total_fare_bob, total_duration_s \}`], dashed: true)
+
+  // Render
+  sd-msg(xApp,  xUser, 112,
+    [render mapa + lista de pasos con tarifa, frecuencia, alertas de desvío],
+    dashed: true)
+
+  sd-note(xUser - 5, xDb + 3, 121,
+    [Aristas con `is_confirmed=false` solo se incluyen si el usuario habilitó "rutas pendientes"])
+})
