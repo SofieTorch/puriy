@@ -44,6 +44,9 @@ services:
         condition: service_completed_successfully
       db:
         condition: service_healthy
+    networks:
+      - default
+      - www
 
   # One-shot pipeline runner. Not started by `docker compose up`; meant
   # to be invoked via `docker compose run --rm pipeline ...` from the
@@ -74,6 +77,9 @@ services:
       build_elevation: "False"
       build_admins: "False"
       build_time_zones: "False"
+    networks:
+      - default
+      - www
 
   marimo:
     build:
@@ -87,6 +93,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      - default
+      - www
 
   # --- Observability stack ---
   otel-collector:
@@ -134,22 +143,14 @@ services:
       - tempo
       - loki
       - prometheus
+    networks:
+      - default
+      - www
 
-  # --- Reverse proxy ---
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - server
-      - marimo
-      - grafana
+networks:
+  default:
+  www:
+    external: true
 
 volumes:
   db_data:
@@ -158,5 +159,3 @@ volumes:
   loki_data:
   prometheus_data:
   grafana_data:
-  caddy_data:
-  caddy_config:

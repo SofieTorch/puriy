@@ -13,6 +13,20 @@
   author: "Sofia Valeria Toro Chambi",
 )
 
+// Importable diagram blocks (sequence + activity) used in the
+// development-phase chapter. Definitions live in `figures.typ`.
+#import "figures.typ": (
+  proponer-linea-sequence,
+  reportar-desvio-sequence,
+  reportar-tarifa-sequence,
+  directions-sequence,
+  dedup-activity,
+  pipeline-activity,
+  ramal-reconstruct-activity,
+  confidence-activity,
+  transit-graph-activity,
+)
+
 #set page(
   paper: "us-letter",
   margin: (top: 2.5cm, bottom: 2.5cm, left: 3cm, right: 2.5cm),
@@ -2534,12 +2548,7 @@ servidor crea la `Line` con estado `DRAFT` y la asocia a la
   //   6. App: navegar a la pantalla de "Mis contribuciones".
   // Notas: incluir indicación de que la línea aún no es visible
   // para otros usuarios hasta resolver_line_votes.
-  rect(width: 100%, height: 70mm, stroke: 0.5pt + gray)[
-    #align(center + horizon)[#text(size: 8pt, fill: gray, style: "italic")[
-      Diagrama de secuencia — Proponer nueva línea (CU-06)\
-      Lifelines: Usuario, App, Server, BaseDatos
-    ]]
-  ],
+  proponer-linea-sequence,
   caption: [Diagrama de secuencia: Propuesta de una nueva línea por un usuario contribuidor (CU-06)],
   supplement: "Figura",
   kind: image,
@@ -2595,14 +2604,7 @@ recursos. La Figura 14 ilustra el flujo de decisión completo.
   // Promover a PENDING todas las DRAFT no fusionadas
   //   ↓
   // Fin
-  rect(width: 100%, height: 90mm, stroke: 0.5pt + gray)[
-    #align(center + horizon)[#text(size: 8pt, fill: gray, style: "italic")[
-      Diagrama de actividad — Deduplicación de líneas\
-      Nodos: cargar DRAFTs · normalizar nombres · fusionar por nombre ·\
-      fusionar contra APPROVED/PENDING · superposición de bboxes (≥70 %) ·\
-      promover supervivientes a PENDING
-    ]]
-  ],
+  dedup-activity,
   caption: [Diagrama de actividad: Estrategia de deduplicación textual y espacial de líneas DRAFT],
   supplement: "Figura",
   kind: image,
@@ -2660,12 +2662,7 @@ pipeline.
   // infer_schedules (frecuencias por banda horaria + día)
   //   ↓
   // Fin (PipelineRun con status COMPLETED/FAILED)
-  rect(width: 100%, height: 110mm, stroke: 0.5pt + gray)[
-    #align(center + horizon)[#text(size: 8pt, fill: gray, style: "italic")[
-      Diagrama de actividad — Flujo del pipeline\
-      9 pasos secuenciales con tracking de PipelineRun/PipelineStepResult
-    ]]
-  ],
+  pipeline-activity,
   caption: [Diagrama de actividad: Flujo completo del pipeline de procesamiento (CU-11 / RF-18)],
   supplement: "Figura",
   kind: image,
@@ -2736,12 +2733,7 @@ flujo por ramal.
   //   │     └─ ≥ 50m → _save_reconstruction (supersede + nueva versión)
   //   ↓
   // Fin
-  rect(width: 100%, height: 130mm, stroke: 0.5pt + gray)[
-    #align(center + horizon)[#text(size: 8pt, fill: gray, style: "italic")[
-      Diagrama de actividad — Reconstrucción por ramal (RF-18, RF-19)\
-      Clustering complete-linkage → estrategia por cluster → decisión RF-19 por ramal
-    ]]
-  ],
+  ramal-reconstruct-activity,
   caption: [Diagrama de actividad: Reconstrucción por ramal, incluyendo clustering, decisión RF-19 y persistencia],
   supplement: "Figura",
   kind: image,
@@ -2812,12 +2804,7 @@ HTTP.
   //   7. Server → BackgroundTasks: dispatch_detour_notifications(line_id, detour_id, exclude=device).
   //   8. Server → App: 200 OK (TripSession actualizada).
   //   9. BackgroundTasks → BaseDatos: insertar NotificationDispatch por suscriptor.
-  rect(width: 100%, height: 75mm, stroke: 0.5pt + gray)[
-    #align(center + horizon)[#text(size: 8pt, fill: gray, style: "italic")[
-      Diagrama de secuencia — Reportar desvío activo (CU-07)\
-      Lifelines: Usuario, App, Server, Valhalla, BaseDatos, BackgroundTasks
-    ]]
-  ],
+  reportar-desvio-sequence,
   caption: [Diagrama de secuencia: Reporte de un desvío activo durante el cierre de una grabación],
   supplement: "Figura",
   kind: image,
@@ -2859,12 +2846,7 @@ La Figura 18 detalla este cálculo.
   // clamp a [0, 100]
   //   ↓
   // Fin (retornar confidence_pct)
-  rect(width: 100%, height: 95mm, stroke: 0.5pt + gray)[
-    #align(center + horizon)[#text(size: 8pt, fill: gray, style: "italic")[
-      Diagrama de actividad — Cálculo de confidence_pct\
-      Producto de decaimiento por tiempo × refuerzo logarítmico por corroboraciones
-    ]]
-  ],
+  confidence-activity,
   caption: [Diagrama de actividad: Fórmula híbrida de confianza para desvíos activos (RF-12 / RF-13)],
   supplement: "Figura",
   kind: image,
@@ -2930,12 +2912,7 @@ datos manipulables.
   //   8. App: POST /fares/reports {line_id, device_id, amount_bob, lat/lon, source}
   //   9. Server → BaseDatos: insertar FareReport con zonas re-resueltas.
   //   10. Server → App: 201 Created (FareReportRead con boarding_zone, alighting_zone).
-  rect(width: 100%, height: 80mm, stroke: 0.5pt + gray)[
-    #align(center + horizon)[#text(size: 8pt, fill: gray, style: "italic")[
-      Diagrama de secuencia — Registrar tarifa con zonas identificadas (CU-08)\
-      Lifelines: Usuario, App, Server, BaseDatos
-    ]]
-  ],
+  reportar-tarifa-sequence,
   caption: [Diagrama de secuencia: Reporte de tarifa con identificación automática de municipios (CU-08 / RF-25 / RF-27)],
   supplement: "Figura",
   kind: image,
@@ -2983,12 +2960,7 @@ lista de pasos legibles.
   //   7. Server: enriquecer cada leg con fare_bob, frequency_min, detour_alert.
   //   8. Server → App: DirectionsResponse {legs[], total_distance_m, total_duration_s, total_fare_bob}.
   //   9. App: renderizar mapa con polylines por leg + lista de pasos.
-  rect(width: 100%, height: 80mm, stroke: 0.5pt + gray)[
-    #align(center + horizon)[#text(size: 8pt, fill: gray, style: "italic")[
-      Diagrama de secuencia — Búsqueda de itinerario multi-modal (CU-01)\
-      Lifelines: Usuario, App, Server, TransitGraph, BaseDatos
-    ]]
-  ],
+  directions-sequence,
   caption: [Diagrama de secuencia: Búsqueda de un itinerario combinando caminata y transporte público (CU-01)],
   supplement: "Figura",
   kind: image,
@@ -3031,12 +3003,7 @@ construcción.
   // Cachear grafo en memoria (módulo-level)
   //   ↓
   // Fin (estadísticas: nodes, bus_edges, transfer_edges)
-  rect(width: 100%, height: 105mm, stroke: 0.5pt + gray)[
-    #align(center + horizon)[#text(size: 8pt, fill: gray, style: "italic")[
-      Diagrama de actividad — Construcción del grafo de tránsito\
-      Aristas de bus desde RouteEdge + transferencias por proximidad
-    ]]
-  ],
+  transit-graph-activity,
   caption: [Diagrama de actividad: Reconstrucción del grafo de tránsito a partir de rutas confirmadas y pendientes],
   supplement: "Figura",
   kind: image,
