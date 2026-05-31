@@ -166,6 +166,9 @@ requires-dist = [
     { name = "sqlmodel", specifier = ">=0.0.22" },
 ]
 
+[package.metadata.requires-dev]
+dev = [{ name = "eralchemy2", specifier = ">=1.4.1" }]
+
 [[package]]
 name = "decorator"
 version = "5.2.1"
@@ -230,6 +233,7 @@ dependencies = [
     { name = "database" },
     { name = "geoalchemy2" },
     { name = "httpx" },
+    { name = "numpy" },
     { name = "opentelemetry-api" },
     { name = "psycopg2-binary" },
     { name = "scikit-learn" },
@@ -242,6 +246,7 @@ requires-dist = [
     { name = "database", editable = "../packages/database" },
     { name = "geoalchemy2", specifier = ">=0.18.4" },
     { name = "httpx", specifier = ">=0.28.0" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "opentelemetry-api", specifier = ">=1.20.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
     { name = "scikit-learn", specifier = ">=1.8.0" },

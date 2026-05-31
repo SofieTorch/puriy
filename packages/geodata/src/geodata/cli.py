@@ -173,6 +173,35 @@ def _cmd_match_line(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _cmd_fit_config(args: argparse.Namespace) -> int:
+    from .fit_config import fit_config_from_session
+
+    db = SessionLocal()
+    try:
+        config = fit_config_from_session(
+            db,
+            args.session_id,
+            costing=args.costing,
+            search_radius=args.search_radius,
+            gps_accuracy=args.gps_accuracy,
+            num_tracks=args.num_tracks,
+        )
+    except (ValueError, RuntimeError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        db.close()
+
+    text = json.dumps(config, indent=2)
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(text)
+        print(f"Wrote estimated config to {args.output}")
+    else:
+        print(text)
+    return 0
+
+
 def _cmd_generate(args: argparse.Namespace) -> int:
     from .geojson import parse_route_from_geojson
     from .simulate import generate_tracks
@@ -416,6 +445,26 @@ def main() -> int:
         "--gps-accuracy", type=int, default=20, help="Expected GPS accuracy in meters (default: 20)"
     )
     match_line_parser.set_defaults(handler=_cmd_match_line)
+
+    fit_config_parser = subparsers.add_parser(
+        "fit-config",
+        help="Estimate a simulator config from a real recorded trip session",
+    )
+    fit_config_parser.add_argument("session_id", type=UUID, help="TripSession UUID")
+    fit_config_parser.add_argument(
+        "--costing", default="bus", help="Valhalla costing model (default: bus)"
+    )
+    fit_config_parser.add_argument(
+        "--search-radius", type=int, default=60, help="Search radius in meters (default: 60)"
+    )
+    fit_config_parser.add_argument(
+        "--gps-accuracy", type=int, default=20, help="GPS accuracy in meters (default: 20)"
+    )
+    fit_config_parser.add_argument(
+        "--num-tracks", type=int, default=20, help="Number of tracks to write into the config (default: 20)"
+    )
+    fit_config_parser.add_argument("--output", "-o", help="Write the config JSON to a file")
+    fit_config_parser.set_defaults(handler=_cmd_fit_config)
 
     gen_parser = subparsers.add_parser(
         "generate", help="Generate simulated GPS tracks from a route + config"
