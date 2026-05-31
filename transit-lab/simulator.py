@@ -28,6 +28,21 @@ def _():
     return (db,)
 
 
+@app.cell
+def _(mo):
+    get_loaded_config, set_loaded_config = mo.state(None)
+    get_estimated_config, set_estimated_config = mo.state(None)
+    get_fit_message, set_fit_message = mo.state("")
+    return (
+        get_estimated_config,
+        get_fit_message,
+        get_loaded_config,
+        set_estimated_config,
+        set_fit_message,
+        set_loaded_config,
+    )
+
+
 @app.cell(hide_code=True)
 def _(mo):
     mo.md("""
@@ -122,15 +137,16 @@ def _(mo):
 
 
 @app.cell
-def _(mo):
+def _(get_loaded_config, mo):
+    _cfg = (get_loaded_config() or {}).get("sim_params", {})
     sim_params = mo.ui.dictionary(
         {
-            "Number of tracks": mo.ui.number(value=5, start=1, stop=50, step=1, label="Number of tracks"),
-            "Sampling rate (s)": mo.ui.number(value=2.0, start=0.5, stop=10.0, step=0.5, label="Sampling rate (s)"),
-            "Base speed (m/s)": mo.ui.number(value=8.0, start=1.0, stop=30.0, step=0.5, label="Base speed (m/s)"),
-            "Speed jitter (%)": mo.ui.number(value=12.0, start=0.0, stop=50.0, step=1.0, label="Speed jitter (%)"),
-            "Mean trace proportion (0-1)": mo.ui.number(value=1.0, start=0.1, stop=1.0, step=0.05, label="Mean trace proportion"),
-            "Stddev trace proportion": mo.ui.number(value=0.0, start=0.0, stop=0.5, step=0.05, label="Stddev trace proportion"),
+            "Number of tracks": mo.ui.number(value=_cfg.get("Number of tracks", 5), start=1, stop=500, step=1, label="Number of tracks"),
+            "Sampling rate (s)": mo.ui.number(value=_cfg.get("Sampling rate (s)", 2.0), start=0.2, step=0.5, label="Sampling rate (s)"),
+            "Base speed (m/s)": mo.ui.number(value=_cfg.get("Base speed (m/s)", 8.0), start=0.5, step=0.5, label="Base speed (m/s)"),
+            "Speed jitter (%)": mo.ui.number(value=_cfg.get("Speed jitter (%)", 12.0), start=0.0, step=1.0, label="Speed jitter (%)"),
+            "Mean trace proportion (0-1)": mo.ui.number(value=_cfg.get("Mean trace proportion (0-1)", 1.0), start=0.0, stop=1.0, step=0.05, label="Mean trace proportion"),
+            "Stddev trace proportion": mo.ui.number(value=_cfg.get("Stddev trace proportion", 0.0), start=0.0, step=0.05, label="Stddev trace proportion"),
         }
     )
     sim_params
@@ -138,29 +154,48 @@ def _(mo):
 
 
 @app.cell
-def _(mo):
+def _(get_loaded_config, mo):
+    _ncfg = (get_loaded_config() or {}).get("noise", {})
+
+    def _nval(key, param, default):
+        return _ncfg.get(key, {}).get(param, default)
+
     noise_config = mo.ui.dictionary(
         {
             "gaussian": mo.ui.dictionary({
-                "Enabled": mo.ui.switch(value=True, label="Enabled"),
-                "Sigma (m)": mo.ui.number(value=4.0, start=0.0, stop=20.0, step=0.5, label="Sigma (m)"),
+                "Enabled": mo.ui.switch(value=_nval("gaussian", "Enabled", True), label="Enabled"),
+                "Sigma (m)": mo.ui.number(value=_nval("gaussian", "Sigma (m)", 4.0), start=0.0, step=0.5, label="Sigma (m)"),
             }),
             "perpendicular": mo.ui.dictionary({
-                "Enabled": mo.ui.switch(value=True, label="Enabled"),
-                "Sigma (m)": mo.ui.number(value=3.0, start=0.0, stop=20.0, step=0.5, label="Sigma (m)"),
+                "Enabled": mo.ui.switch(value=_nval("perpendicular", "Enabled", True), label="Enabled"),
+                "Sigma (m)": mo.ui.number(value=_nval("perpendicular", "Sigma (m)", 3.0), start=0.0, step=0.5, label="Sigma (m)"),
             }),
-            "missing": mo.ui.dictionary({
-                "Enabled": mo.ui.switch(value=True, label="Enabled"),
-                "Probability": mo.ui.number(value=0.03, start=0.0, stop=0.3, step=0.01, label="Probability"),
+            "zigzag": mo.ui.dictionary({
+                "Enabled": mo.ui.switch(value=_nval("zigzag", "Enabled", False), label="Enabled"),
+                "Amplitude (m)": mo.ui.number(value=_nval("zigzag", "Amplitude (m)", 1.5), start=0.0, step=0.5, label="Amplitude (m)"),
+                "Period (points)": mo.ui.number(value=_nval("zigzag", "Period (points)", 8), start=2, step=1, label="Period (points)"),
             }),
             "jumps": mo.ui.dictionary({
-                "Enabled": mo.ui.switch(value=False, label="Enabled"),
-                "Probability": mo.ui.number(value=0.02, start=0.0, stop=0.1, step=0.01, label="Probability"),
-                "Distance (m)": mo.ui.number(value=40.0, start=5.0, stop=200.0, step=5.0, label="Distance (m)"),
+                "Enabled": mo.ui.switch(value=_nval("jumps", "Enabled", False), label="Enabled"),
+                "Probability": mo.ui.number(value=_nval("jumps", "Probability", 0.02), start=0.0, stop=1.0, step=0.01, label="Probability"),
+                "Distance (m)": mo.ui.number(value=_nval("jumps", "Distance (m)", 40.0), start=0.0, step=5.0, label="Distance (m)"),
+            }),
+            "missing": mo.ui.dictionary({
+                "Enabled": mo.ui.switch(value=_nval("missing", "Enabled", True), label="Enabled"),
+                "Probability": mo.ui.number(value=_nval("missing", "Probability", 0.03), start=0.0, stop=0.95, step=0.01, label="Probability"),
+            }),
+            "biased_drift": mo.ui.dictionary({
+                "Enabled": mo.ui.switch(value=_nval("biased_drift", "Enabled", False), label="Enabled"),
+                "Drift (m/pt)": mo.ui.number(value=_nval("biased_drift", "Drift (m/pt)", 0.05), start=0.0, step=0.01, label="Drift (m/pt)"),
+                "Bearing (deg)": mo.ui.number(value=_nval("biased_drift", "Bearing (deg)", 70.0), start=0.0, stop=360.0, step=5.0, label="Bearing (deg)"),
+            }),
+            "lateral_drift": mo.ui.dictionary({
+                "Enabled": mo.ui.switch(value=_nval("lateral_drift", "Enabled", False), label="Enabled"),
+                "Total (m)": mo.ui.number(value=_nval("lateral_drift", "Total (m)", 3.0), step=0.5, label="Total (m)"),
             }),
             "timestamp_jitter": mo.ui.dictionary({
-                "Enabled": mo.ui.switch(value=True, label="Enabled"),
-                "Sigma (s)": mo.ui.number(value=0.15, start=0.0, stop=2.0, step=0.05, label="Sigma (s)"),
+                "Enabled": mo.ui.switch(value=_nval("timestamp_jitter", "Enabled", True), label="Enabled"),
+                "Sigma (s)": mo.ui.number(value=_nval("timestamp_jitter", "Sigma (s)", 0.15), start=0.0, step=0.05, label="Sigma (s)"),
             }),
         }
     )
@@ -276,6 +311,154 @@ def _(base_route, generated_records, mo):
     )
 
     mo.vstack([mo.md("### Generated traces"), stats, sim_map])
+    return
+
+
+@app.cell
+def _(db, mo):
+    from database.models import Line as _Line
+    from database.models import TripSession as _TripSession
+    from database.models import TripSessionPoint as _TripSessionPoint
+    from sqlalchemy import func as _func
+    from sqlalchemy import select as _select
+
+    _counts = dict(
+        db.execute(
+            _select(_TripSessionPoint.session_id, _func.count(_TripSessionPoint.id))
+            .group_by(_TripSessionPoint.session_id)
+        ).all()
+    )
+    _rows = db.execute(
+        _select(_TripSession, _Line.name)
+        .join(_Line, _Line.id == _TripSession.line_id, isouter=True)
+        .order_by(_TripSession.started_at.desc())
+    ).all()
+
+    _trace_options = {}
+    for _sess, _line_name in _rows:
+        _n = _counts.get(_sess.id, 0)
+        _trace_options[f"{_line_name or 'no line'} — {str(_sess.id)[:8]} ({_n} pts)"] = _sess.id
+
+    trace_dropdown = mo.ui.dropdown(options=_trace_options, label="Recorded trace")
+    estimate_button = mo.ui.run_button(label="Estimate config from trace")
+    return estimate_button, trace_dropdown
+
+
+@app.cell
+def _(
+    db,
+    estimate_button,
+    set_estimated_config,
+    set_fit_message,
+    set_loaded_config,
+    trace_dropdown,
+):
+    from geodata.fit_config import fit_config_from_session
+
+    if estimate_button.value:
+        if not trace_dropdown.value:
+            set_fit_message("Select a recorded trace first.")
+        else:
+            try:
+                _cfg = fit_config_from_session(db, trace_dropdown.value)
+                set_estimated_config(_cfg)
+                set_loaded_config(_cfg)
+                set_fit_message(
+                    "Estimated config from the selected trace and applied it to the "
+                    "controls above. Download it below, or tweak the controls and save."
+                )
+            except Exception as _exc:
+                set_estimated_config(None)
+                set_fit_message(f"Could not estimate config: {_exc}")
+    return
+
+
+@app.cell
+def _(Path, mo):
+    _config_dir = Path(__file__).parent / "seed" / "config"
+    _config_dir.mkdir(parents=True, exist_ok=True)
+    config_filename = mo.ui.text(value="config.json", label="Filename")
+    save_config_button = mo.ui.run_button(label="Save config")
+    config_load_browser = mo.ui.file_browser(
+        initial_path=_config_dir,
+        filetypes=[".json"],
+        multiple=False,
+        label="Select a config file to load",
+    )
+    return config_filename, config_load_browser, save_config_button
+
+
+@app.cell
+def _(config_load_browser, set_loaded_config):
+    import json as _json
+
+    if config_load_browser.value:
+        with open(config_load_browser.path(0), encoding="utf-8") as _f:
+            set_loaded_config(_json.load(_f))
+    return
+
+
+@app.cell
+def _(
+    Path,
+    config_filename,
+    config_load_browser,
+    estimate_button,
+    get_estimated_config,
+    get_fit_message,
+    mo,
+    noise_config,
+    save_config_button,
+    sim_params,
+    trace_dropdown,
+):
+    import json as _json
+
+    _save_msg = ""
+    if save_config_button.value:
+        _cfg = {
+            "sim_params": {k: w.value for k, w in sim_params.items()},
+            "noise": {
+                k: {nk: nw.value for nk, nw in v.items()}
+                for k, v in noise_config.items()
+            },
+        }
+        _path = Path(__file__).parent / "seed" / "config" / (config_filename.value or "config.json")
+        with open(_path, "w", encoding="utf-8") as _f:
+            _json.dump(_cfg, _f, indent=2)
+        _save_msg = f"Saved to `{_path}`"
+
+    _estimated = get_estimated_config()
+    _download_el = (
+        mo.download(
+            data=_json.dumps(_estimated, indent=2).encode("utf-8"),
+            filename="estimated_config.json",
+            mimetype="application/json",
+            label="Download estimated config (JSON)",
+        )
+        if _estimated
+        else mo.md("")
+    )
+    _fit_msg = get_fit_message()
+
+    mo.vstack([
+        mo.md("### Configuration"),
+        mo.md(
+            "**Estimate from a recorded trace** — map-matches the selected real trace "
+            "with Valhalla, fits simulator parameters from how it deviates, and applies "
+            "them to the controls above so you can review, tweak, and download."
+        ),
+        mo.hstack([trace_dropdown, estimate_button], align="end", gap=1),
+        mo.md(_fit_msg) if _fit_msg else mo.md(""),
+        _download_el,
+        mo.md("---"),
+        mo.md("**Save current config**"),
+        mo.hstack([config_filename, save_config_button], align="end", gap=1),
+        mo.md(_save_msg) if _save_msg else mo.md(""),
+        mo.md("---"),
+        mo.md("**Load config from file**"),
+        config_load_browser,
+    ], gap=0.5)
     return
 
 
