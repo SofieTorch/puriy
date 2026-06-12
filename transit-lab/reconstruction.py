@@ -83,8 +83,11 @@ def _(strategy_selector, mo):
 def _(mo):
     run_button = mo.ui.run_button(label="Run reconstruction")
     show_traces = mo.ui.switch(value=True, label="Show input traces")
-    mo.hstack([run_button, show_traces], gap=2, align="end")
-    return run_button, show_traces
+    fit_view = mo.ui.switch(value=False, label="Fit to route")
+    line_width = mo.ui.slider(start=0.25, stop=3.0, step=0.25, value=1.0, label="Line thickness", show_value=True)
+    dot_size = mo.ui.slider(start=0.1, stop=2.0, step=0.1, value=0.5, label="Dot size", show_value=True)
+    mo.hstack([run_button, show_traces, fit_view, line_width, dot_size], gap=2, align="end")
+    return run_button, show_traces, fit_view, line_width, dot_size
 
 
 @app.cell
@@ -126,7 +129,7 @@ def _(run_button, strategy_selector, line_selector, params_form, traces, mo):
 
 
 @app.cell
-def _(reconstruction_result, show_traces, traces, mo):
+def _(reconstruction_result, show_traces, fit_view, line_width, dot_size, traces, mo):
     from geodata.match import trace_match as _trace_match
     from components.maps import path_layer, scatter_layer, deck, default_view_state
 
@@ -199,8 +202,12 @@ def _(reconstruction_result, show_traces, traces, mo):
 
     result_map = deck(
         layers,
-        view_state=_view,
-        height=500,
+        view_state=None if fit_view.value else _view,
+        fit=fit_view.value,
+        line_scale=line_width.value,
+        dot_scale=dot_size.value,
+        height=750,
+        fixed_height=True,
         tooltip_html="<b>{name}</b>",
     )
     result_map
@@ -229,17 +236,37 @@ def _(line_selector, reconstruction_result, strategy_selector, db, mo):
 @app.cell
 def _(save_button, reconstruction_result, line_selector, strategy_selector, db, traces, mo):
     from uuid import UUID as _UUID
-    from sqlalchemy import select as _select
+    from sqlalchemy import select as _select, update as _update
     from database.models import Route as _Route, RouteSource as _RouteSource, RouteStatus as _RouteStatus, RouteEdge as _RouteEdge
     from geodata.match import trace_match as _trace_match
     from geoalchemy2.shape import from_shape as _from_shape
     from shapely.geometry import LineString as _LineString
+    from components.formatting import path_length_m as _path_length_m
 
     mo.stop(not save_button.value)
 
     _line_id = _UUID(line_selector.value)
     _features = reconstruction_result.geojson.get("features", [])
-    mo.stop(not _features, mo.md("**Nothing to save.**"))
+
+    # A route may only have one active (non-superseded) row per ramal
+    # (uq_route_active_per_ramal), so we can't persist every fragment. Keep just
+    # the longest fragment — the best single estimate — and drop the rest.
+    _candidates = [
+        f for f in _features
+        if len(f.get("geometry", {}).get("coordinates", [])) >= 2
+    ]
+    mo.stop(not _candidates, mo.md("**Nothing to save.**"))
+
+    _total_fragments = len(_candidates)
+    _feature = max(
+        _candidates,
+        key=lambda f: _path_length_m(f["geometry"]["coordinates"]),
+    )
+    _coords = _feature["geometry"]["coordinates"]
+
+    shape = [{"lat": lat, "lon": lon} for lon, lat in _coords]
+    matched = _trace_match(shape, costing="bus", search_radius=60, gps_accuracy=20)
+    mo.stop(not matched.edges, mo.md("**Could not map-match the selected fragment.**"))
 
     max_version = db.execute(
         _select(_Route.version)
@@ -247,53 +274,54 @@ def _(save_button, reconstruction_result, line_selector, strategy_selector, db, 
         .order_by(_Route.version.desc())
     ).scalars().first()
     next_version = (max_version or 0) + 1
-    fragment_count = len(_features)
-    saved_routes = []
 
-    for _frag_idx, _feature in enumerate(_features):
-        _coords = _feature.get("geometry", {}).get("coordinates", [])
-        if len(_coords) < 2:
+    # Supersede existing active route(s) for this (line, ramal) so the
+    # partial unique index uq_route_active_per_ramal allows the new row.
+    db.execute(
+        _update(_Route)
+        .where(_Route.line_id == _line_id)
+        .where(_Route.ramal_label == "main")
+        .where(_Route.status != _RouteStatus.SUPERSEDED)
+        .values(status=_RouteStatus.SUPERSEDED)
+    )
+
+    route = _Route(
+        line_id=_line_id,
+        version=next_version,
+        source=_RouteSource.COMPUTED,
+        strategy_key=strategy_selector.value,
+        status=_RouteStatus.PENDING,
+        trip_count=len(traces),
+        fragment_index=0,
+        fragment_count=1,
+    )
+    db.add(route)
+    db.flush()
+
+    for seq, edge in enumerate(matched.edges):
+        begin_idx = edge.get("begin_shape_index", 0)
+        end_idx = edge.get("end_shape_index", begin_idx)
+        edge_coords = matched.shape_coords[begin_idx : end_idx + 1]
+        if len(edge_coords) < 2:
             continue
-
-        shape = [{"lat": lat, "lon": lon} for lon, lat in _coords]
-        matched = _trace_match(shape, costing="bus", search_radius=60, gps_accuracy=20)
-        if not matched.edges:
-            continue
-
-        route = _Route(
-            line_id=_line_id,
-            version=next_version,
-            source=_RouteSource.COMPUTED,
-            strategy_key=strategy_selector.value,
-            status=_RouteStatus.PENDING,
-            trip_count=len(traces),
-            fragment_index=_frag_idx,
-            fragment_count=fragment_count,
-        )
-        db.add(route)
-        db.flush()
-
-        for seq, edge in enumerate(matched.edges):
-            begin_idx = edge.get("begin_shape_index", 0)
-            end_idx = edge.get("end_shape_index", begin_idx)
-            edge_coords = matched.shape_coords[begin_idx : end_idx + 1]
-            if len(edge_coords) < 2:
-                continue
-            edge_ls = _LineString([(lon, lat) for lat, lon in edge_coords])
-            db.add(
-                _RouteEdge(
-                    route_id=route.id,
-                    sequence=seq,
-                    valhalla_edge_id=edge.get("id"),
-                    forward=edge.get("forward", True),
-                    path=_from_shape(edge_ls, srid=4326),
-                    confidence=1.0,
-                )
+        edge_ls = _LineString([(lon, lat) for lat, lon in edge_coords])
+        db.add(
+            _RouteEdge(
+                route_id=route.id,
+                sequence=seq,
+                valhalla_edge_id=edge.get("id"),
+                forward=edge.get("forward", True),
+                path=_from_shape(edge_ls, srid=4326),
+                confidence=1.0,
             )
-        saved_routes.append(route)
+        )
 
     db.commit()
-    mo.md(f"Saved **{len(saved_routes)}** route fragment(s) as version **{next_version}** with strategy `{strategy_selector.value}`.")
+
+    _msg = f"Saved route as version **{next_version}** with strategy `{strategy_selector.value}`."
+    if _total_fragments > 1:
+        _msg += f" Kept the longest of {_total_fragments} fragments (dropped {_total_fragments - 1})."
+    mo.md(_msg)
     return
 
 

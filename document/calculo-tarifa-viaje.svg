@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1290" height="1270" viewBox="0 0 1290 1270" font-family="Georgia, 'Times New Roman', serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#44566b"/>
+    </marker>
+    <style>
+      .act   { fill:#eef3f8; stroke:#466184; stroke-width:1.4; }
+      .dec   { fill:#fcf4e0; stroke:#b07d2b; stroke-width:1.4; }
+      .none  { fill:#f4eef0; stroke:#8a6a72; stroke-width:1.4; }
+      .pub   { fill:#e9f3ec; stroke:#4a7c59; stroke-width:1.4; }
+      .edge  { fill:none; stroke:#44566b; stroke-width:1.4; marker-end:url(#arrow); }
+      .t     { fill:#1f2d3d; font-size:14px; text-anchor:middle; }
+      .td    { fill:#5a4a1e; font-size:13.5px; text-anchor:middle; }
+      .tn    { fill:#5a3a44; font-size:14px; text-anchor:middle; }
+      .tnr   { fill:#7a5a64; font-size:12px; text-anchor:middle; font-style:italic; }
+      .tp    { fill:#2f5d3f; font-size:14px; text-anchor:middle; }
+      .br    { fill:#466184; font-size:14px; font-style:italic; text-anchor:middle; }
+      .note  { fill:#fffdf3; stroke:#9a8c5c; stroke-width:1; }
+      .ntit  { fill:#5a5230; font-size:14px; text-anchor:start; font-weight:bold; }
+      .ntxt  { fill:#5a5230; font-size:12.5px; text-anchor:start; }
+      .cap   { fill:#445; font-size:13px; font-style:italic; text-anchor:middle; }
+    </style>
+    <symbol id="fin" overflow="visible">
+      <circle r="11" fill="#ffffff" stroke="#2c3e50" stroke-width="1.6"/>
+      <circle r="6" fill="#2c3e50"/>
+    </symbol>
+  </defs>
+
+  <rect width="1290" height="1270" fill="#ffffff"/>
+
+  <!-- ===== Header ===== -->
+  <text x="645" y="46" text-anchor="middle" fill="#1f2d3d" font-size="24" font-weight="bold">Cálculo de la tarifa estimada de un viaje</text>
+  <text x="645" y="72" text-anchor="middle" fill="#5a6675" font-size="14.5" font-style="italic">Estimación por línea a partir de reportes ciudadanos de tarifas (montos en bolivianos, BOB)</text>
+  <line x1="150" y1="90" x2="1140" y2="90" stroke="#c9d2db" stroke-width="1"/>
+
+  <!-- ===== Initial node ===== -->
+  <circle cx="620" cy="118" r="11" fill="#2c3e50"/>
+  <path class="edge" d="M620,129 L620,148"/>
+
+  <!-- A1 -->
+  <rect class="act" x="460" y="150" width="320" height="54" rx="9"/>
+  <text class="t" x="620" y="182">Obtener la línea por su</text>
+  <text class="t" x="620" y="199">identificador (<tspan font-style="italic">line_id</tspan>)</text>
+  <path class="edge" d="M620,204 L620,230"/>
+
+  <!-- D1 ¿Existe la línea? -->
+  <path class="dec" d="M620,230 L712,280 L620,330 L528,280 Z"/>
+  <text class="t" x="620" y="285">¿Existe la línea?</text>
+
+  <!-- D1 No -> none_d1 -->
+  <text class="br" x="775" y="270">No</text>
+  <path class="edge" d="M712,280 L980,280"/>
+  <rect class="none" x="980" y="256" width="200" height="50" rx="9"/>
+  <text class="tn" x="1080" y="277">Retornar <tspan font-style="italic">None</tspan></text>
+  <text class="tnr" x="1080" y="295">(línea desconocida)</text>
+  <path class="edge" d="M1080,306 L1080,339"/>
+  <use href="#fin" x="1080" y="350"/>
+
+  <!-- D1 Si -> D2 -->
+  <text class="br" x="638" y="348">Sí</text>
+  <path class="edge" d="M620,330 L620,355"/>
+
+  <!-- D2 ¿Tipo de línea? -->
+  <path class="dec" d="M620,355 L732,407 L620,459 L508,407 Z"/>
+  <text class="t" x="620" y="412">¿Tipo de línea?</text>
+
+  <!-- D2 left MICRO -> A_micro -->
+  <text class="br" x="430" y="395">MICRO</text>
+  <text class="br" x="430" y="412" font-size="12">(tarifa plana)</text>
+  <path class="edge" d="M508,407 L320,407 L320,490"/>
+
+  <!-- D2 right TRUFI -> A_zone1 -->
+  <text class="br" x="840" y="395">TRUFI / TAXI_TRUFI</text>
+  <text class="br" x="840" y="412" font-size="12">(tarifa por zonas)</text>
+  <path class="edge" d="M732,407 L920,407 L920,475"/>
+
+  <!-- ============ LEFT BRANCH: MICRO ============ -->
+  <!-- A_micro -->
+  <rect class="act" x="170" y="490" width="300" height="62" rx="9"/>
+  <text class="t" x="320" y="516">Promediar <tspan font-style="italic">amount_bob</tspan> de todos</text>
+  <text class="t" x="320" y="534">los reportes de tarifa de la línea</text>
+  <path class="edge" d="M320,552 L320,579"/>
+
+  <!-- D_micro ¿Existen reportes? -->
+  <path class="dec" d="M320,579 L408,625 L320,671 L232,625 Z"/>
+  <text class="t" x="320" y="630">¿Existen reportes?</text>
+
+  <!-- D_micro No -> none_micro -->
+  <text class="br" x="250" y="612">No</text>
+  <path class="edge" d="M232,625 L222,625"/>
+  <rect class="none" x="62" y="601" width="160" height="48" rx="9"/>
+  <text class="tn" x="142" y="621">Retornar <tspan font-style="italic">None</tspan></text>
+  <text class="tnr" x="142" y="639">(sin reportes)</text>
+  <path class="edge" d="M142,649 L142,683"/>
+  <use href="#fin" x="142" y="694"/>
+
+  <!-- D_micro Si -> pub_micro -->
+  <text class="br" x="338" y="695">Sí</text>
+  <path class="edge" d="M320,671 L320,711"/>
+  <rect class="pub" x="170" y="711" width="300" height="60" rx="9"/>
+  <text class="tp" x="320" y="737">Retornar la tarifa plana</text>
+  <text class="tp" x="320" y="755">promedio (BOB)</text>
+  <path class="edge" d="M320,771 L320,804"/>
+  <use href="#fin" x="320" y="815"/>
+
+  <!-- ============ RIGHT BRANCH: TRUFI / TAXI_TRUFI ============ -->
+  <!-- A_zone1 -->
+  <rect class="act" x="760" y="475" width="320" height="60" rx="9"/>
+  <text class="t" x="920" y="500">Resolver la zona de abordaje</text>
+  <text class="t" x="920" y="518">(<tspan font-style="italic">ST_Contains</tspan>: punto en polígono)</text>
+  <path class="edge" d="M920,535 L920,562"/>
+
+  <!-- A_zone2 -->
+  <rect class="act" x="760" y="562" width="320" height="60" rx="9"/>
+  <text class="t" x="920" y="587">Resolver la zona de descenso</text>
+  <text class="t" x="920" y="605">(<tspan font-style="italic">ST_Contains</tspan>: punto en polígono)</text>
+  <path class="edge" d="M920,622 L920,650"/>
+
+  <!-- D_zones ¿Ambas zonas resueltas? -->
+  <path class="dec" d="M920,650 L1030,700 L920,750 L810,700 Z"/>
+  <text class="t" x="920" y="705">¿Ambas zonas resueltas?</text>
+
+  <!-- D_zones No -> none_zones -->
+  <text class="br" x="1012" y="688">No</text>
+  <path class="edge" d="M1030,700 L1045,700"/>
+  <rect class="none" x="1045" y="676" width="200" height="48" rx="9"/>
+  <text class="tn" x="1145" y="696">Retornar <tspan font-style="italic">None</tspan></text>
+  <text class="tnr" x="1145" y="714">(zonas no resolubles)</text>
+  <path class="edge" d="M1145,724 L1145,758"/>
+  <use href="#fin" x="1145" y="769"/>
+
+  <!-- D_zones Si -> A_zonefare -->
+  <text class="br" x="938" y="772">Sí</text>
+  <path class="edge" d="M920,750 L920,798"/>
+
+  <!-- A_zonefare -->
+  <rect class="act" x="745" y="798" width="350" height="64" rx="9"/>
+  <text class="t" x="920" y="824">Promediar <tspan font-style="italic">amount_bob</tspan> de los reportes</text>
+  <text class="t" x="920" y="842">del par de zonas (simétrico A↔B)</text>
+  <path class="edge" d="M920,862 L920,895"/>
+
+  <!-- D_zonefare ¿Existen reportes del par? -->
+  <path class="dec" d="M920,895 L1028,945 L920,995 L812,945 Z"/>
+  <text class="t" x="920" y="941">¿Existen reportes</text>
+  <text class="t" x="920" y="958">del par de zonas?</text>
+
+  <!-- D_zonefare No -> none_zonefare -->
+  <text class="br" x="1010" y="933">No</text>
+  <path class="edge" d="M1028,945 L1045,945"/>
+  <rect class="none" x="1045" y="921" width="200" height="48" rx="9"/>
+  <text class="tn" x="1145" y="941">Retornar <tspan font-style="italic">None</tspan></text>
+  <text class="tnr" x="1145" y="959">(sin reportes del par)</text>
+  <path class="edge" d="M1145,969 L1145,1003"/>
+  <use href="#fin" x="1145" y="1014"/>
+
+  <!-- D_zonefare Si -> pub_zone -->
+  <text class="br" x="938" y="1018">Sí</text>
+  <path class="edge" d="M920,995 L920,1045"/>
+  <rect class="pub" x="745" y="1045" width="350" height="60" rx="9"/>
+  <text class="tp" x="920" y="1071">Retornar la tarifa promedio</text>
+  <text class="tp" x="920" y="1089">del par de zonas (BOB)</text>
+  <path class="edge" d="M920,1105 L920,1139"/>
+  <use href="#fin" x="920" y="1150"/>
+
+  <!-- ===== Legend ===== -->
+  <rect x="110" y="880" width="430" height="172" rx="10" fill="#fbfcfd" stroke="#c9d2db" stroke-width="1.2"/>
+  <text x="130" y="908" fill="#1f2d3d" font-size="15" font-weight="bold">Leyenda</text>
+  <rect class="act" x="130" y="922" width="30" height="20" rx="5"/>
+  <text x="172" y="937" fill="#1f2d3d" font-size="13" text-anchor="start">Actividad / acción</text>
+  <path class="dec" d="M145,958 L165,970 L145,982 L125,970 Z" transform="translate(20,0)"/>
+  <text x="172" y="975" fill="#1f2d3d" font-size="13" text-anchor="start">Decisión (ramificación)</text>
+  <rect class="pub" x="130" y="996" width="30" height="20" rx="5"/>
+  <text x="172" y="1011" fill="#1f2d3d" font-size="13" text-anchor="start">Retorno de la tarifa estimada (BOB)</text>
+  <rect class="none" x="130" y="1024" width="30" height="20" rx="5"/>
+  <text x="172" y="1039" fill="#1f2d3d" font-size="13" text-anchor="start">Retorno de <tspan font-style="italic">None</tspan> (sin estimación)</text>
+  <use href="#fin" x="385" y="932"/>
+  <text x="405" y="937" fill="#1f2d3d" font-size="13" text-anchor="start">Nodo final</text>
+
+  <!-- ===== Note ===== -->
+  <rect class="note" x="110" y="1068" width="540" height="150" rx="10"/>
+  <text class="ntit" x="128" y="1093">Sobre las tarifas</text>
+  <text class="ntxt" x="128" y="1117">Las tarifas provienen de reportes ciudadanos (colaborativos). Cada</text>
+  <text class="ntxt" x="128" y="1136">estimación es el promedio de los montos reportados en BOB, redondeado</text>
+  <text class="ntxt" x="128" y="1155">a 2 decimales. Para líneas TRUFI/TAXI_TRUFI el par de zonas es simétrico:</text>
+  <text class="ntxt" x="128" y="1174">un reporte A→B también cubre el sentido B→A. Cualquier paso sin datos</text>
+  <text class="ntxt" x="128" y="1193">suficientes devuelve <tspan font-style="italic">None</tspan>, sin imponer un valor por defecto.</text>
+
+  <!-- ===== Caption ===== -->
+  <text class="cap" x="900" y="1245">Procedimiento correspondiente a la función <tspan font-style="italic">estimate_fare_bob</tspan> del servidor.</text>
+</svg>

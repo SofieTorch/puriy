@@ -1393,3 +1393,270 @@
   sd-note(xUser - 5, xDb + 3, 121,
     [Aristas con `is_confirmed=false` solo se incluyen si el usuario habilitó "rutas pendientes"])
 })
+
+
+// ============================================================
+// ER diagram — diseño lógico de la base de datos
+// ============================================================
+//
+// Modelo entidad-relación para el capítulo de diseño. Excluye
+// tablas de infraestructura (alembic_version, spatial_ref_sys).
+//
+// Convenciones:
+//   PK — subrayada en negrita
+//   FK — en cursiva
+//   Línea continua  — relación de propiedad (FK obligatoria)
+//   Línea discontinua — FK opcional o vínculo de auditoría (device_id)
+//   Cardinalidad anotada cerca de cada extremo (1 / N / 0..1 / 0..N)
+
+#let er-pk(name) = strong(underline[#name])
+#let er-fk(name) = emph[#name]
+
+// Caja de entidad: barra de título coloreada por dominio + lista de atributos.
+// (x, y) define la esquina superior izquierda en milímetros.
+#let er-entity(x, y, w, title, attrs, fill: rgb("#e0e7ec")) = {
+  let title-h = 4.5
+  let row-h = 3.4
+  let body-h = attrs.len() * row-h + 1.2
+
+  // Barra de título
+  place(top + left, dx: x * 1mm, dy: y * 1mm, box(
+    width: w * 1mm, height: title-h * 1mm,
+    stroke: 0.6pt + node-stroke,
+    fill: fill,
+    inset: (left: 3pt, right: 3pt, y: 0.5pt),
+  )[
+    #set align(left + horizon)
+    #text(size: 6.5pt, weight: "bold", fill: node-stroke)[#title]
+  ])
+
+  // Cuerpo (lista de atributos)
+  place(top + left, dx: x * 1mm, dy: (y + title-h) * 1mm, box(
+    width: w * 1mm, height: body-h * 1mm,
+    stroke: 0.6pt + node-stroke,
+    fill: node-fill,
+    inset: (x: 3pt, top: 1pt, bottom: 1pt),
+  )[
+    #set text(size: 5.5pt, fill: node-stroke)
+    #set par(leading: 0.45em)
+    #stack(spacing: 0.7mm, ..attrs.map(a => [#a]))
+  ])
+}
+
+// Vínculo ER: línea recta sin punta, con cardinalidades en ambos extremos.
+#let er-rel(x1, y1, x2, y2, card1: [1], card2: [N], dashed: false) = {
+  let stroke-style = if dashed {
+    (paint: ext-color, thickness: 0.5pt, dash: "dashed")
+  } else {
+    (paint: edge-color, thickness: 0.7pt)
+  }
+  place(top + left, dx: x1 * 1mm, dy: y1 * 1mm, line(
+    start: (0pt, 0pt),
+    end: ((x2 - x1) * 1mm, (y2 - y1) * 1mm),
+    stroke: stroke-style,
+  ))
+  // Vector unitario para colocar las etiquetas pegadas al extremo correcto.
+  let dx = x2 - x1
+  let dy = y2 - y1
+  let len = calc.sqrt(dx * dx + dy * dy)
+  let ux = dx / len
+  let uy = dy / len
+  let off = 3.2
+  // Desplazamiento perpendicular para que la etiqueta no se monte sobre la línea.
+  let perp-x = -uy * 1.2
+  let perp-y =  ux * 1.2
+  // Etiqueta cerca de (x1, y1)
+  place(top + left,
+    dx: (x1 + ux * off + perp-x - 3) * 1mm,
+    dy: (y1 + uy * off + perp-y - 1.8) * 1mm,
+    box(width: 6mm)[
+      #set align(center)
+      #set text(size: 5.5pt, fill: node-stroke, weight: "bold")
+      #card1
+    ])
+  // Etiqueta cerca de (x2, y2)
+  place(top + left,
+    dx: (x2 - ux * off + perp-x - 3) * 1mm,
+    dy: (y2 - uy * off + perp-y - 1.8) * 1mm,
+    box(width: 6mm)[
+      #set align(center)
+      #set text(size: 5.5pt, fill: node-stroke, weight: "bold")
+      #card2
+    ])
+}
+
+
+#let er-diagram = block(width: 100%, height: 190mm, {
+
+  // Paleta de barras de título por dominio (tonos suaves).
+  let c-capture = rgb("#dfe9ee")  // captura cruda (puntos, sensores)
+  let c-process = rgb("#cfddc8")  // sesiones y trayectorias procesadas
+  let c-id      = rgb("#fde9c4")  // dispositivos
+  let c-event   = rgb("#f1dfdf")  // desvíos, notificaciones, tarifas
+  let c-line    = rgb("#dbe7d4")  // líneas y rutas
+  let c-vote    = rgb("#e8dde9")  // votos y suscripciones
+  let c-ops     = rgb("#e2e2e2")  // pipeline (operaciones)
+
+  // -------------------------------------------------------------------
+  // Columna 1 — Captura cruda
+  // -------------------------------------------------------------------
+  er-entity(2, 4, 50, [trip_session_points], (
+    er-pk[id], er-fk[session_id], [latitude, longitude], [timestamp],
+  ), fill: c-capture)
+
+  er-entity(2, 32, 50, [trip_sensor_readings], (
+    er-pk[id], er-fk[session_id], [accel_x/y/z, gyro_x/y/z], [timestamp],
+  ), fill: c-capture)
+
+  er-entity(2, 60, 50, [trip_points], (
+    er-pk[id], er-fk[trip_id], [latitude, longitude], [point_index],
+  ), fill: c-capture)
+
+  er-entity(2, 88, 50, [trip_matched_edges], (
+    er-pk[id], er-fk[trip_id], [valhalla_edge_id], [sequence, forward],
+  ), fill: c-capture)
+
+  er-entity(2, 116, 50, [travel_time_samples], (
+    er-pk[id], er-fk[trip_id], er-fk[edge_id], [duration_seconds],
+  ), fill: c-capture)
+
+  // -------------------------------------------------------------------
+  // Columna 2 — Sesiones y trayectorias
+  // -------------------------------------------------------------------
+  er-entity(60, 4, 52, [trip_sessions], (
+    er-pk[id], er-fk[device_id], er-fk[line_id],
+    [status], [processing_status],
+  ), fill: c-process)
+
+  er-entity(60, 80, 52, [trips], (
+    er-pk[id], er-fk[session_id], er-fk[line_id],
+    [status], [frechet_distance],
+  ), fill: c-process)
+
+  // -------------------------------------------------------------------
+  // Columna 3 — Identidad y eventos
+  // -------------------------------------------------------------------
+  er-entity(120, 4, 50, [devices], (
+    er-pk[id], [platform], [locale], [expo_push_token],
+  ), fill: c-id)
+
+  er-entity(120, 32, 50, [detours], (
+    er-pk[id], er-fk[line_id], er-fk[session_id], [reason], [status],
+  ), fill: c-event)
+
+  er-entity(120, 64, 50, [notification_dispatches], (
+    er-pk[id], er-fk[line_id], er-fk[detour_id], er-fk[device_id],
+  ), fill: c-event)
+
+  er-entity(120, 92, 50, [fare_zones], (
+    er-pk[id], [name], [boundary],
+  ), fill: c-event)
+
+  er-entity(120, 116, 50, [fare_reports], (
+    er-pk[id], er-fk[line_id],
+    er-fk[boarding_zone_id], er-fk[alighting_zone_id], [amount_bob],
+  ), fill: c-event)
+
+  // -------------------------------------------------------------------
+  // Columna 4 — Líneas y rutas
+  // -------------------------------------------------------------------
+  er-entity(178, 4, 52, [lines], (
+    er-pk[id], [name], [line_type], [status], er-fk[merged_into_id],
+  ), fill: c-line)
+
+  er-entity(178, 36, 52, [routes], (
+    er-pk[id], er-fk[line_id], [ramal_label], [version], [source], [status],
+  ), fill: c-line)
+
+  er-entity(178, 72, 52, [route_edges], (
+    er-pk[id], er-fk[route_id], [sequence], [forward], [status], [confidence],
+  ), fill: c-line)
+
+  er-entity(178, 108, 52, [ramal_descriptors], (
+    er-pk[id], er-fk[route_id], [text], [votes_count],
+  ), fill: c-line)
+
+  // -------------------------------------------------------------------
+  // Columna 5 — Comunidad y operaciones
+  // -------------------------------------------------------------------
+  er-entity(238, 4, 46, [line_votes], (
+    er-pk[id], er-fk[line_id], er-fk[device_id], [vote],
+  ), fill: c-vote)
+
+  er-entity(238, 32, 46, [edge_votes], (
+    er-pk[id], er-fk[edge_id], er-fk[device_id], [vote],
+  ), fill: c-vote)
+
+  er-entity(238, 60, 46, [ramal_descriptor_votes], (
+    er-pk[id], er-fk[descriptor_id], er-fk[device_id],
+  ), fill: c-vote)
+
+  er-entity(238, 84, 46, [line_subscriptions], (
+    er-pk[id], er-fk[line_id], er-fk[device_id], [kind],
+  ), fill: c-vote)
+
+  er-entity(238, 112, 46, [line_schedules], (
+    er-fk[line_id], [day_bucket], [headway_min],
+    [service_start_at], [service_end_at],
+  ), fill: c-vote)
+
+  er-entity(238, 140, 46, [pipeline_runs], (
+    er-pk[id], [trigger], [status],
+  ), fill: c-ops)
+
+  er-entity(238, 162, 46, [pipeline_step_results], (
+    er-pk[id], er-fk[run_id], [step_name], [status], [stats],
+  ), fill: c-ops)
+
+  // -------------------------------------------------------------------
+  // Vínculos
+  // -------------------------------------------------------------------
+
+  // ---- Captura cruda → sesiones / trips (col 1 → col 2) ----
+  er-rel(52, 14, 60, 16, card1: [N], card2: [1])    // session_points → sessions
+  er-rel(52, 42, 60, 16, card1: [N], card2: [1])    // sensor_readings → sessions
+  er-rel(52, 70, 60, 92, card1: [N], card2: [1])    // trip_points → trips
+  er-rel(52, 98, 60, 92, card1: [N], card2: [1])    // matched_edges → trips
+  er-rel(52, 126, 60, 92, card1: [N], card2: [1])   // tt_samples → trips
+
+  // ---- Sesiones → trips (vertical en col 2) ----
+  er-rel(86, 28, 86, 80, card1: [1], card2: [N])
+
+  // ---- Sesiones / trips → devices y lines ----
+  er-rel(112, 16, 120, 14, card1: [N], card2: [0..1], dashed: true)  // sessions → devices
+  er-rel(112, 12, 178, 12, card1: [N], card2: [0..1], dashed: true)  // sessions → lines (opc.)
+  er-rel(112, 92, 178, 22, card1: [N], card2: [1])                   // trips → lines
+
+  // ---- travel_time_samples → route_edges (vínculo entre dominios) ----
+  er-rel(52, 130, 178, 86, card1: [N], card2: [1], dashed: true)
+
+  // ---- Desvíos ----
+  er-rel(120, 44, 112, 22, card1: [N], card2: [1])   // detours → trip_sessions
+  er-rel(170, 44, 178, 20, card1: [N], card2: [1])   // detours → lines
+
+  // ---- Notificaciones ----
+  er-rel(145, 64, 145, 56, card1: [N], card2: [0..1])  // notifications → detours
+  er-rel(170, 74, 178, 24, card1: [N], card2: [1])     // notifications → lines
+  er-rel(125, 64, 125, 24, card1: [N], card2: [1], dashed: true)  // notifications → devices
+
+  // ---- Tarifas (zonas) ----
+  er-rel(135, 116, 135, 108, card1: [N], card2: [0..1])  // fare_reports → fare_zones (boarding)
+  er-rel(155, 116, 155, 108, card1: [N], card2: [0..1])  // fare_reports → fare_zones (alighting)
+  er-rel(170, 128, 178, 26, card1: [N], card2: [1])      // fare_reports → lines
+  er-rel(120, 128, 112, 20, card1: [N], card2: [0..1], dashed: true)  // fare_reports → sessions
+
+  // ---- Jerarquía de líneas y rutas (col 4 vertical) ----
+  er-rel(204, 36, 204, 28, card1: [N], card2: [1])   // routes → lines
+  er-rel(204, 72, 204, 64, card1: [N], card2: [1])   // route_edges → routes
+  er-rel(228, 108, 228, 64, card1: [N], card2: [1])  // ramal_descriptors → routes (margen der.)
+
+  // ---- Comunidad / suscripciones → entidades padre ----
+  er-rel(238, 14, 230, 16, card1: [N], card2: [1])    // line_votes → lines
+  er-rel(238, 42, 230, 86, card1: [N], card2: [1])    // edge_votes → route_edges
+  er-rel(238, 68, 230, 118, card1: [N], card2: [1])   // ramal_descriptor_votes → ramal_descriptors
+  er-rel(238, 94, 230, 24, card1: [N], card2: [1])    // line_subscriptions → lines
+  er-rel(238, 124, 230, 26, card1: [N], card2: [1])   // line_schedules → lines
+
+  // ---- Pipeline ----
+  er-rel(260, 162, 260, 156, card1: [N], card2: [1])  // step_results → runs
+})

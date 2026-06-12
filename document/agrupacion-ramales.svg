@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 430" width="820" height="430" font-family="'Latin Modern Roman','Georgia','Times New Roman',serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <style>
+      .title { font-size:17px; font-weight:bold; fill:#1a1a1a; }
+      .step  { font-size:13px; font-weight:bold; fill:#1a1a1a; }
+      .lbl   { font-size:12px; fill:#333; }
+      .sub   { font-size:11px; fill:#666; font-style:italic; }
+      .den   { stroke:#555; stroke-width:1.5; fill:none; }
+    </style>
+    <!-- trace shapes (local frame); colored via <use> -->
+    <path id="a1" fill="none" d="M130,355 L128,300 L130,255 L110,190 L88,120 L72,62"/>
+    <path id="a2" fill="none" d="M137,356 L135,300 L137,256 L118,190 L96,121 L80,63"/>
+    <path id="a3" fill="none" d="M124,357 L122,301 L124,257 L104,191 L82,122 L66,64"/>
+    <path id="a4" fill="none" d="M143,355 L141,299 L143,254 L124,189 L102,119 L86,61"/>
+    <path id="b1" fill="none" d="M132,355 L130,300 L132,255 L160,195 L188,120 L200,60"/>
+    <path id="b2" fill="none" d="M126,356 L124,301 L126,256 L154,196 L182,121 L194,61"/>
+  </defs>
+
+  <text class="title" text-anchor="middle" x="410" y="26">Agrupamiento de trazas en ramales</text>
+
+  <!-- ===== Panel 1: mixed traces ===== -->
+  <text class="step" text-anchor="middle" x="150" y="58">Trazas de la línea (sin clasificar)</text>
+  <g transform="translate(20,38) scale(0.82)" stroke-linecap="round" stroke-width="1.9">
+    <use href="#a1" stroke="#9a9a9a"/><use href="#a2" stroke="#9a9a9a"/>
+    <use href="#a3" stroke="#9a9a9a"/><use href="#a4" stroke="#9a9a9a"/>
+    <use href="#b1" stroke="#9a9a9a"/><use href="#b2" stroke="#9a9a9a"/>
+  </g>
+
+  <!-- arrow 1 -->
+  <path class="den" stroke="#444" d="M278,205 L312,205" marker-end="url(#arrow)"/>
+  <text class="sub" text-anchor="middle" x="295" y="196">Fréchet</text>
+
+  <!-- ===== Panel 2: dendrogram ===== -->
+  <text class="step" text-anchor="middle" x="438" y="58">Agrupamiento jerárquico (enlace completo)</text>
+  <g class="den">
+    <!-- leaves up to first merges (y330 -> y300) -->
+    <path d="M345,330 L345,300"/><path d="M372,330 L372,300"/>
+    <path d="M399,330 L399,300"/><path d="M426,330 L426,300"/>
+    <path d="M466,330 L466,300"/><path d="M493,330 L493,300"/>
+    <!-- horizontals at y300 -->
+    <path d="M345,300 L372,300"/><path d="M399,300 L426,300"/><path d="M466,300 L493,300"/>
+    <!-- A subtree: stems up to y250 -->
+    <path d="M358.5,300 L358.5,250"/><path d="M412.5,300 L412.5,250"/>
+    <path d="M358.5,250 L412.5,250"/>
+    <!-- A stem up to root (y120) -->
+    <path d="M385.5,250 L385.5,120"/>
+    <!-- B stem up to root -->
+    <path d="M479.5,300 L479.5,120"/>
+    <!-- root horizontal -->
+    <path d="M385.5,120 L479.5,120"/>
+  </g>
+  <!-- cut line -->
+  <path d="M335,165 L545,165" stroke="#c0392b" stroke-width="1.4" stroke-dasharray="6 4" fill="none"/>
+  <text class="sub" x="548" y="169" fill="#c0392b">umbral 200 m</text>
+  <!-- leaf labels -->
+  <g class="sub" text-anchor="middle" fill="#777">
+    <text x="345" y="344">t1</text><text x="372" y="344">t2</text>
+    <text x="399" y="344">t3</text><text x="426" y="344">t4</text>
+    <text x="466" y="344">t5</text><text x="493" y="344">t6</text>
+  </g>
+  <!-- cluster labels under -->
+  <text class="lbl" text-anchor="middle" x="385" y="372" fill="#2f6fb0" font-weight="bold">main (n = 4)</text>
+  <text class="lbl" text-anchor="middle" x="479" y="372" fill="#c8772b" font-weight="bold">r2 (n = 2)</text>
+
+  <!-- arrow 2 -->
+  <path class="den" stroke="#444" d="M558,205 L592,205" marker-end="url(#arrow)"/>
+  <text class="sub" text-anchor="middle" x="575" y="196">corte</text>
+
+  <!-- ===== Panel 3: detected ramales ===== -->
+  <text class="step" text-anchor="middle" x="690" y="58">Ramales detectados</text>
+  <g transform="translate(560,38) scale(0.82)" stroke-linecap="round">
+    <use href="#a1" stroke="#2f6fb0" stroke-width="1.9"/>
+    <use href="#a3" stroke="#2f6fb0" stroke-width="1.9"/>
+    <use href="#a4" stroke="#2f6fb0" stroke-width="1.9"/>
+    <use href="#a2" stroke="#1c4f86" stroke-width="3.4"/>
+    <use href="#b2" stroke="#c8772b" stroke-width="1.9"/>
+    <use href="#b1" stroke="#9c5511" stroke-width="3.4"/>
+  </g>
+  <text class="sub" x="690" y="392" text-anchor="middle" fill="#444">trazo grueso = medoide del ramal</text>
+
+  <text class="sub" text-anchor="middle" x="410" y="416">Cada ramal se reconstruye de forma independiente con la estrategia de ensamblaje.</text>
+</svg>

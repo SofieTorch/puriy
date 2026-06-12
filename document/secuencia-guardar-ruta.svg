@@ -1,0 +1,155 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 870" width="1100" height="870" font-family="'Latin Modern Roman','Georgia','Times New Roman',serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="open" viewBox="0 0 12 12" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1,1 L9,5 L1,9" fill="none" stroke="#666" stroke-width="1.3"/>
+    </marker>
+    <style>
+      .title { font-size:18px; font-weight:bold; fill:#1a1a1a; }
+      .subt  { font-size:12px; fill:#555; font-style:italic; }
+      .head  { font-size:13px; font-weight:bold; fill:#1a1a1a; }
+      .actor { fill:#eef2f6; stroke:#5b7791; stroke-width:1.4; }
+      .comp  { fill:#ffffff; stroke:#444; stroke-width:1.4; }
+      .api   { fill:#e8f0f8; stroke:#2f6fb0; stroke-width:1.6; }
+      .store { fill:#eef5ee; stroke:#5f8a5f; stroke-width:1.4; }
+      .life  { stroke:#9a9a9a; stroke-width:1.2; stroke-dasharray:4 4; }
+      .actA  { fill:#eaf0f6; stroke:#9bb3c9; stroke-width:1.1; }
+      .actD  { fill:#f3efe6; stroke:#c2a98a; stroke-width:1.1; }
+      .actS  { fill:#eef5ee; stroke:#9cbf9c; stroke-width:1.1; }
+      .msg   { stroke:#444; stroke-width:1.4; fill:none; }
+      .ret   { stroke:#777; stroke-width:1.2; fill:none; stroke-dasharray:6 4; }
+      .lbl   { font-size:12px; fill:#222; }
+      .sub   { font-size:11px; fill:#666; font-style:italic; }
+      .div   { stroke:#dadada; stroke-width:1; stroke-dasharray:2 4; }
+      .phase { font-size:11px; fill:#9a9a9a; font-style:italic; }
+      .alt   { fill:none; stroke:#8a8a8a; stroke-width:1.2; }
+      .guard { font-size:11px; fill:#33414f; font-style:italic; }
+      .cap   { font-size:12px; fill:#555; font-style:italic; }
+      .self  { stroke:#444; stroke-width:1.3; fill:none; }
+    </style>
+  </defs>
+
+  <text class="title" text-anchor="middle" x="550" y="30">Secuencia: guardar una ruta favorita</text>
+  <text class="subt"  text-anchor="middle" x="550" y="50">Viaje recurrente (commute) o solo por hoy (one-time) &#183; persistencia local, suscripci&#243;n y aviso</text>
+
+  <!-- ===== lifelines ===== -->
+  <line class="life" x1="120"  y1="118" x2="120"  y2="708"/>
+  <line class="life" x1="360"  y1="118" x2="360"  y2="708"/>
+  <line class="life" x1="600"  y1="118" x2="600"  y2="708"/>
+  <line class="life" x1="820"  y1="118" x2="820"  y2="708"/>
+  <line class="life" x1="1020" y1="118" x2="1020" y2="708"/>
+
+  <!-- ===== phase dividers ===== -->
+  <line class="div" x1="40" y1="126" x2="1080" y2="126"/>
+  <text class="phase" text-anchor="start" x="44" y="122">1 &#183; selecci&#243;n de tipo y horario</text>
+  <line class="div" x1="40" y1="244" x2="1080" y2="244"/>
+  <text class="phase" text-anchor="start" x="44" y="240">2 &#183; persistencia local</text>
+  <line class="div" x1="40" y1="340" x2="1080" y2="340"/>
+  <text class="phase" text-anchor="start" x="44" y="336">3 &#183; comportamiento seg&#250;n el tipo</text>
+  <line class="div" x1="40" y1="664" x2="1080" y2="664"/>
+  <text class="phase" text-anchor="start" x="44" y="660">4 &#183; confirmaci&#243;n</text>
+
+  <!-- ===== participant headers ===== -->
+  <rect class="actor" x="48"  y="66" width="144" height="42" rx="8"/>
+  <text class="head" text-anchor="middle" x="120" y="92">Usuario</text>
+
+  <rect class="comp" x="288" y="66" width="144" height="42" rx="8"/>
+  <text class="head" text-anchor="middle" x="360" y="87">Aplicaci&#243;n m&#243;vil</text>
+  <text class="sub"  text-anchor="middle" x="360" y="101">Expo &#183; React Native</text>
+
+  <rect class="store" x="528" y="66" width="144" height="42" rx="8"/>
+  <text class="head" text-anchor="middle" x="600" y="87">SQLite local</text>
+  <text class="sub"  text-anchor="middle" x="600" y="101">Drizzle &#183; saved_trips</text>
+
+  <rect class="api"  x="748" y="66" width="144" height="42" rx="8"/>
+  <text class="head" text-anchor="middle" x="820" y="87">API REST</text>
+  <text class="sub"  text-anchor="middle" x="820" y="101">FastAPI &#183; /devices</text>
+
+  <!-- PostGIS as a database cylinder -->
+  <g>
+    <ellipse cx="1020" cy="70" rx="60" ry="7" fill="#f3efe6" stroke="#9a8b6e" stroke-width="1.4"/>
+    <path d="M960,70 L960,104 a60,7 0 0 0 120,0 L1080,70" fill="#f3efe6" stroke="#9a8b6e" stroke-width="1.4"/>
+    <text class="head" text-anchor="middle" x="1020" y="92">PostGIS</text>
+  </g>
+
+  <!-- ===== activation bars ===== -->
+  <rect class="actA" x="356" y="144" width="8" height="558"/>            <!-- app -->
+  <rect class="actS" x="596" y="268" width="8" height="48"/>             <!-- sqlite -->
+  <rect class="actA" x="816" y="392" width="8" height="106"/>            <!-- api -->
+  <rect class="actD" x="1016" y="430" width="8" height="36"/>            <!-- postgis -->
+
+  <!-- ================= PHASE 1 ================= -->
+  <path class="msg" d="M120,150 L356,150" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="238" y="145">Toca &#171;Guardar&#187; sobre la ruta encontrada</text>
+
+  <path class="ret" d="M356,182 L120,182" marker-end="url(#open)"/>
+  <text class="lbl" text-anchor="middle" x="238" y="177">Muestra el formulario &#171;Guardar viaje&#187;</text>
+  <text class="sub" text-anchor="middle" x="238" y="195">tipo &#183; horario opcional (HH:mm)</text>
+
+  <path class="msg" d="M120,216 L356,216" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="238" y="211">Elige el tipo y confirma &#171;Guardar&#187;</text>
+
+  <!-- ================= PHASE 2 ================= -->
+  <path class="msg" d="M364,274 L596,274" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="480" y="269">INSERT saved_trips</text>
+  <text class="sub" text-anchor="middle" x="480" y="287">type &#183; route_json &#183; departure_time &#183; created_at</text>
+
+  <path class="ret" d="M596,310 L364,310" marker-end="url(#open)"/>
+  <text class="sub" text-anchor="middle" x="480" y="305">fila local creada</text>
+
+  <!-- ================= PHASE 3: alt fragment ================= -->
+  <rect class="alt" x="300" y="356" width="772" height="288" rx="3"/>
+  <path d="M300,356 L358,356 L358,370 L350,378 L300,378 Z" fill="#eef2f6" stroke="#8a8a8a" stroke-width="1.2"/>
+  <text class="head" x="310" y="371" font-size="11">alt</text>
+  <text class="sub" x="366" y="371">seg&#250;n el tipo de viaje</text>
+
+  <!-- region 1: commute -->
+  <text class="guard" x="312" y="396">[ type = recurrente (commute) ]</text>
+
+  <path class="msg" d="M364,420 L816,420" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="590" y="415">PUT /devices/{id}/subscriptions</text>
+  <text class="sub" text-anchor="middle" x="590" y="433">line_ids de todas las rutas recurrentes (legs mode = bus)</text>
+
+  <path class="msg" d="M824,458 L1016,458" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="920" y="453">DELETE (kind=commute) + INSERT</text>
+  <text class="sub" text-anchor="middle" x="920" y="471">LineSubscription por l&#237;nea</text>
+
+  <path class="ret" d="M1016,486 L824,486" marker-end="url(#open)"/>
+  <text class="sub" text-anchor="middle" x="920" y="481">commit</text>
+
+  <path class="ret" d="M816,498 L364,498" marker-end="url(#open)"/>
+  <text class="sub" text-anchor="middle" x="590" y="493">line_ids suscritos</text>
+
+  <!-- self: schedule daily notification -->
+  <path class="self" d="M364,524 h46 v16 h-46" marker-end="url(#arrow)"/>
+  <text class="lbl" x="418" y="528">Programa notificaci&#243;n diaria &#160;[ con horario ]</text>
+  <text class="sub" x="418" y="544">expo-notifications &#183; trigger CALENDAR &#183; repeats = true</text>
+
+  <!-- region divider -->
+  <line x1="300" y1="560" x2="1072" y2="560" stroke="#b5b5b5" stroke-width="1" stroke-dasharray="5 4"/>
+
+  <!-- region 2: one-time -->
+  <text class="guard" x="312" y="582">[ type = solo por hoy (one_time) ]</text>
+
+  <path d="M470,596 L900,596 L900,614 L482,614 L470,605 Z" fill="#f7f5f0" stroke="#999" stroke-width="1.1"/>
+  <text class="sub" x="486" y="609">Sin suscripci&#243;n en el servidor &#183; visible solo el d&#237;a de creaci&#243;n</text>
+
+  <!-- self: schedule one-shot notification -->
+  <path class="self" d="M364,624 h46 v16 h-46" marker-end="url(#arrow)"/>
+  <text class="lbl" x="418" y="628">Programa notificaci&#243;n &#250;nica &#160;[ con horario ]</text>
+  <text class="sub" x="418" y="644">expo-notifications &#183; trigger DATE &#183; una vez</text>
+
+  <!-- ================= PHASE 4 ================= -->
+  <path class="ret" d="M356,692 L120,692" marker-end="url(#open)"/>
+  <text class="lbl" text-anchor="middle" x="238" y="687">Confirma: &#171;Se mostrar&#225; todos los d&#237;as&#187; / &#171;solo hoy&#187;</text>
+
+  <!-- ===== note: best effort ===== -->
+  <path d="M560,718 L1072,718 L1072,752 L572,752 L560,740 Z" fill="#f7f5f0" stroke="#999" stroke-width="1.2"/>
+  <text class="sub" x="574" y="735">La suscripci&#243;n y el aviso son &#171;best-effort&#187;: si la API o el permiso de</text>
+  <text class="sub" x="574" y="749">notificaciones fallan, el viaje queda igualmente guardado en SQLite.</text>
+
+  <text class="cap" text-anchor="middle" x="550" y="800">El tipo del viaje (one_time / commute) gobierna tres efectos: visibilidad en favoritos, suscripci&#243;n a desv&#237;os de l&#237;nea y</text>
+  <text class="cap" text-anchor="middle" x="550" y="818">la clase de notificaci&#243;n local. Las rutas recurrentes sincronizan la uni&#243;n de sus l&#237;neas hacia /devices/{id}/subscriptions.</text>
+</svg>

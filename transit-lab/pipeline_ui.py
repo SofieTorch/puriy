@@ -41,28 +41,26 @@ def _(mo):
 
 @app.cell
 def _(mo, STEPS, STEP_ORDER):
-    _checkboxes = []
-    for _n in STEP_ORDER:
-        _checkboxes.append(mo.ui.checkbox(value=True, label=STEPS[_n]["label"]))
-
-    cb_cleanup, cb_dedup, cb_clean, cb_reconstruct, cb_edge, cb_line, cb_graph = _checkboxes
+    # Keyed by step name so this stays correct no matter how many steps
+    # STEP_ORDER defines (unpacking a fixed number of names broke when steps
+    # were added).
+    run_all_checkboxes = {
+        _n: mo.ui.checkbox(value=True, label=STEPS[_n]["label"]) for _n in STEP_ORDER
+    }
     run_all_btn = mo.ui.run_button(label="Run selected steps", kind="success")
 
-    mo.hstack([
-        cb_cleanup, cb_dedup, cb_clean, cb_reconstruct, cb_edge, cb_line, cb_graph,
-        run_all_btn,
-    ], gap=1.5, justify="start", align="center")
-    return cb_cleanup, cb_dedup, cb_clean, cb_reconstruct, cb_edge, cb_line, cb_graph, run_all_btn
+    mo.hstack(
+        [*run_all_checkboxes.values(), run_all_btn],
+        gap=1.5, justify="start", align="center",
+    )
+    return run_all_checkboxes, run_all_btn
 
 
 @app.cell
-def _(mo, db, run_all_btn, run_pipeline, STEP_ORDER,
-      cb_cleanup, cb_dedup, cb_clean, cb_reconstruct, cb_edge, cb_line, cb_graph):
+def _(mo, db, run_all_btn, run_all_checkboxes, run_pipeline, STEP_ORDER):
     mo.stop(not run_all_btn.value)
 
-    _flags = [cb_cleanup.value, cb_dedup.value, cb_clean.value, cb_reconstruct.value,
-              cb_edge.value, cb_line.value, cb_graph.value]
-    _selected = [_n for _n, _on in zip(STEP_ORDER, _flags) if _on]
+    _selected = [_n for _n in STEP_ORDER if run_all_checkboxes[_n].value]
 
     if not _selected:
         mo.stop(True, mo.callout("No steps selected.", kind="warn"))
@@ -120,7 +118,7 @@ def _(mo, db, step_buttons, STEPS, STEP_ORDER, run_pipeline):
     _clicked = None
     for _n in STEP_ORDER:
         _b = step_buttons.get(_n)
-        if _b and _b.value:
+        if _b is not None and _b.value:
             _clicked = _n
             break
 

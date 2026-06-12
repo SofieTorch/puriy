@@ -77,12 +77,25 @@ def _(Path, mo):
 
 
 @app.cell
-def _(mo, seed_file_browser):
+def _(mo):
+    export_filename = mo.ui.text(
+        label="Export filename",
+        value="trajectory.geojson",
+        placeholder="my_route.geojson",
+    )
+    return (export_filename,)
+
+
+@app.cell
+def _(export_filename, mo, seed_file_browser):
     import folium
+    from branca.element import Element
     from folium.plugins import Draw
 
     m = folium.Map(location=[-17.3935, -66.1570], zoom_start=14, tiles="CartoDB positron")
     Draw(
+        export=True,
+        filename=export_filename.value or "trajectory.geojson",
         draw_options={
             "polyline": {"shapeOptions": {"color": "#3b82f6", "weight": 4}},
             "polygon": False,
@@ -94,7 +107,31 @@ def _(mo, seed_file_browser):
         edit_options={"edit": True, "remove": True},
     ).add_to(m)
 
+    # Style the Leaflet-draw export button (top-right, green).
+    m.get_root().html.add_child(Element("""<style>
+        #export {
+            background-color: #22c55e !important;
+            color: white !important;
+            padding: 6px 16px !important;
+            border-radius: 4px !important;
+            font-weight: 600 !important;
+            font-size: 13px !important;
+            text-decoration: none !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+            z-index: 1000 !important;
+            position: absolute !important;
+            top: 12px !important;
+            right: 12px !important;
+            left: auto !important;
+            bottom: auto !important;
+        }
+        #export:hover {
+            background-color: #16a34a !important;
+        }
+    </style>"""))
+
     # Overlay the selected seed-file route as a dashed reference line.
+    # (Added directly to the map, not to the draw layer, so Export ignores it.)
     if seed_file_browser.value:
         from geodata.geojson import parse_route_from_geojson as _parse
 
@@ -117,7 +154,19 @@ def _(mo, seed_file_browser):
             pass
 
     draw_map = mo.Html(m._repr_html_())
-    mo.hstack([draw_map, seed_file_browser], gap=1, align="start", widths=[3, 1])
+    mo.vstack(
+        [
+            mo.md(
+                "Draw a polyline, then click the green **Export** button (top-right of "
+                "the map) to download it as GeoJSON. A dashed line from a loaded file is "
+                "**not** exported — only the polyline you draw."
+            ),
+            mo.hstack([export_filename], align="center"),
+            mo.hstack([draw_map, seed_file_browser], gap=1, align="start", widths=[3, 1]),
+        ],
+        gap=0.5,
+        align="stretch",
+    )
     return
 
 
@@ -273,7 +322,14 @@ def _(
 
 
 @app.cell
-def _(base_route, generated_records, mo):
+def _(mo):
+    fit_view = mo.ui.switch(value=False, label="Fit to route")
+    line_width = mo.ui.slider(start=0.25, stop=3.0, step=0.25, value=1.0, label="Line thickness", show_value=True)
+    return fit_view, line_width
+
+
+@app.cell
+def _(base_route, fit_view, line_width, generated_records, mo):
     from components.maps import path_layer, deck, default_view_state
     from components.style import cycle_color
 
@@ -294,8 +350,10 @@ def _(base_route, generated_records, mo):
     _view = default_view_state(lat=base_route[mid][1], lon=base_route[mid][0], zoom=14)
 
     sim_map = deck(
-        [path_layer(paths, id="sim-traces")],
-        view_state=_view,
+        [path_layer(paths, id="sim-traces", width=1, width_min_pixels=1)],
+        view_state=None if fit_view.value else _view,
+        fit=fit_view.value,
+        line_scale=line_width.value,
         height=500,
         tooltip_html="<b>{name}</b>",
     )
@@ -310,7 +368,7 @@ def _(base_route, generated_records, mo):
         justify="start",
     )
 
-    mo.vstack([mo.md("### Generated traces"), stats, sim_map])
+    mo.vstack([mo.md("### Generated traces"), stats, mo.hstack([fit_view, line_width], gap=2, align="center"), sim_map])
     return
 
 
@@ -486,26 +544,20 @@ def _(db, mo):
 @app.cell
 def _(db, device_id_input, generated_records, mo, save_button, save_line):
     from uuid import UUID as _UUID
-    from database import ensure_device
     from geodata.persist import save_tracks_to_db
 
     mo.stop(not save_button.value)
     mo.stop(not save_line.value, mo.md("**Select a line to save traces to.**"))
 
+    # save_tracks_to_db registers the device row (FK-safe) before inserting.
+    _device = device_id_input.value.strip() or "simulator"
     sessions = save_tracks_to_db(
         db,
         generated_records,
         line_id=_UUID(save_line.value),
+        device_id=_device,
         notes="simulated",
     )
-
-    # Assign device to all sessions; ensure the Device row exists first
-    # since trip_sessions.device_id is now FK-constrained to devices.id.
-    _device = device_id_input.value.strip() or "simulator"
-    ensure_device(db, _device)
-    for session in sessions:
-        session.device_id = _device
-    db.commit()
 
     mo.md(f"Saved **{len(sessions)}** session(s) to line, assigned to device `{_device}`.")
     return

@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 970 860" width="970" height="860" font-family="'Latin Modern Roman','Georgia','Times New Roman',serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <marker id="open" viewBox="0 0 12 12" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1,1 L9,5 L1,9" fill="none" stroke="#666" stroke-width="1.3"/>
+    </marker>
+    <style>
+      .title { font-size:18px; font-weight:bold; fill:#1a1a1a; }
+      .subt  { font-size:12px; fill:#555; font-style:italic; }
+      .head  { font-size:13px; font-weight:bold; fill:#1a1a1a; }
+      .actor { fill:#eef2f6; stroke:#5b7791; stroke-width:1.4; }
+      .comp  { fill:#ffffff; stroke:#444; stroke-width:1.4; }
+      .api   { fill:#e8f0f8; stroke:#2f6fb0; stroke-width:1.6; }
+      .life  { stroke:#9a9a9a; stroke-width:1.2; stroke-dasharray:4 4; }
+      .actA  { fill:#eaf0f6; stroke:#9bb3c9; stroke-width:1.1; }
+      .actD  { fill:#f3efe6; stroke:#c2a98a; stroke-width:1.1; }
+      .msg   { stroke:#444; stroke-width:1.4; fill:none; }
+      .ret   { stroke:#777; stroke-width:1.2; fill:none; stroke-dasharray:6 4; }
+      .lbl   { font-size:12px; fill:#222; }
+      .sub   { font-size:11px; fill:#666; font-style:italic; }
+      .div   { stroke:#dadada; stroke-width:1; stroke-dasharray:2 4; }
+      .phase { font-size:11px; fill:#9a9a9a; font-style:italic; }
+      .alt   { fill:none; stroke:#8a8a8a; stroke-width:1.2; }
+      .guard { font-size:11px; fill:#33414f; font-style:italic; }
+      .cap   { font-size:12px; fill:#555; font-style:italic; }
+    </style>
+  </defs>
+
+  <text class="title" text-anchor="middle" x="485" y="30">Secuencia: registro y reporte de la tarifa de un viaje</text>
+  <text class="subt"  text-anchor="middle" x="485" y="50">Transparencia de zonas y env&#237;o del monto &#183; CU-08 / CU-09 &#8212; RF-26 / RF-28</text>
+
+  <!-- ===== lifelines (under everything) ===== -->
+  <line class="life" x1="120" y1="110" x2="120" y2="762"/>
+  <line class="life" x1="350" y1="110" x2="350" y2="762"/>
+  <line class="life" x1="600" y1="110" x2="600" y2="762"/>
+  <line class="life" x1="840" y1="110" x2="840" y2="762"/>
+
+  <!-- ===== phase dividers ===== -->
+  <line class="div" x1="40" y1="124" x2="930" y2="124"/>
+  <text class="phase" text-anchor="end" x="958" y="120">1 &#183; consulta de montos frecuentes</text>
+  <line class="div" x1="40" y1="288" x2="930" y2="288"/>
+  <text class="phase" text-anchor="end" x="958" y="284">2 &#183; transparencia de zonas</text>
+  <line class="div" x1="40" y1="412" x2="930" y2="412"/>
+  <text class="phase" text-anchor="end" x="958" y="408">3 &#183; ingreso del monto</text>
+  <line class="div" x1="40" y1="584" x2="930" y2="584"/>
+  <text class="phase" text-anchor="end" x="958" y="580">4 &#183; env&#237;o del reporte</text>
+
+  <!-- ===== participant headers ===== -->
+  <rect class="actor" x="48"  y="66" width="144" height="42" rx="8"/>
+  <text class="head" text-anchor="middle" x="120" y="92">Usuario</text>
+
+  <rect class="comp" x="278" y="66" width="144" height="42" rx="8"/>
+  <text class="head" text-anchor="middle" x="350" y="87">Aplicaci&#243;n m&#243;vil</text>
+  <text class="sub"  text-anchor="middle" x="350" y="101">Expo &#183; React Native</text>
+
+  <rect class="api"  x="528" y="66" width="144" height="42" rx="8"/>
+  <text class="head" text-anchor="middle" x="600" y="87">API REST</text>
+  <text class="sub"  text-anchor="middle" x="600" y="101">FastAPI &#183; /fares</text>
+
+  <!-- PostGIS as a database cylinder -->
+  <g>
+    <ellipse cx="840" cy="70" rx="62" ry="7" fill="#f3efe6" stroke="#9a8b6e" stroke-width="1.4"/>
+    <path d="M778,70 L778,104 a62,7 0 0 0 124,0 L902,70" fill="#f3efe6" stroke="#9a8b6e" stroke-width="1.4"/>
+    <text class="head" text-anchor="middle" x="840" y="92">PostGIS</text>
+  </g>
+
+  <!-- ===== activation bars ===== -->
+  <!-- app: active for the whole interaction -->
+  <rect class="actA" x="346" y="142" width="8" height="602"/>
+  <!-- api activations -->
+  <rect class="actA" x="596" y="176" width="8" height="88"/>
+  <rect class="actA" x="596" y="300" width="8" height="88"/>
+  <rect class="actA" x="596" y="626" width="8" height="86"/>
+  <!-- postgis activations -->
+  <rect class="actD" x="836" y="206" width="8" height="30"/>
+  <rect class="actD" x="836" y="330" width="8" height="30"/>
+  <rect class="actD" x="836" y="654" width="8" height="30"/>
+
+  <!-- ================= PHASE 1 ================= -->
+  <!-- A: user selects line -->
+  <path class="msg" d="M120,142 L346,142" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="233" y="137">Selecciona la l&#237;nea del viaje</text>
+
+  <!-- B: GET line fares -->
+  <path class="msg" d="M354,176 L596,176" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="475" y="171">GET /fares/lines/{id}</text>
+
+  <!-- C: aggregate query -->
+  <path class="msg" d="M604,206 L836,206" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="720" y="201">AVG(monto) + montos por frecuencia</text>
+
+  <!-- D: return aggregate -->
+  <path class="ret" d="M836,234 L604,234" marker-end="url(#open)"/>
+  <text class="sub" text-anchor="middle" x="720" y="229">tarifa agregada &#183; montos comunes</text>
+
+  <!-- E: return LineFareRead -->
+  <path class="ret" d="M596,262 L354,262" marker-end="url(#open)"/>
+  <text class="sub" text-anchor="middle" x="475" y="257">LineFareRead &#8212; chips de montos</text>
+
+  <!-- ================= PHASE 2 ================= -->
+  <!-- F: resolve zones -->
+  <path class="msg" d="M354,300 L596,300" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="475" y="295">POST /fares/zones/resolve</text>
+  <text class="sub" text-anchor="middle" x="475" y="312">origen y destino de la traza</text>
+
+  <!-- G: ST_Contains -->
+  <path class="msg" d="M604,330 L836,330" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="720" y="325">ST_Contains(boundary, punto)</text>
+
+  <!-- H: zones return -->
+  <path class="ret" d="M836,358 L604,358" marker-end="url(#open)"/>
+  <text class="sub" text-anchor="middle" x="720" y="353">zonas de abordaje y descenso</text>
+
+  <!-- I: ZoneResolveResponse -->
+  <path class="ret" d="M596,386 L354,386" marker-end="url(#open)"/>
+  <text class="sub" text-anchor="middle" x="475" y="381">ZoneResolveResponse &#8212; nombres de zona</text>
+
+  <!-- J: app shows to user -->
+  <path class="ret" d="M346,420 L120,420" marker-end="url(#open)"/>
+  <text class="lbl" text-anchor="middle" x="233" y="415">Muestra &#171;Tarifa: Zona A &#8594; Zona B&#187;</text>
+
+  <!-- ================= PHASE 3: alt fragment ================= -->
+  <rect class="alt" x="92" y="438" width="338" height="128" rx="3"/>
+  <path d="M92,438 L150,438 L150,452 L142,460 L92,460 Z" fill="#eef2f6" stroke="#8a8a8a" stroke-width="1.2"/>
+  <text class="head" x="102" y="453" font-size="11">alt</text>
+  <text class="sub" x="158" y="453">ingreso del monto</text>
+
+  <!-- region 1: chip -->
+  <text class="guard" x="100" y="478">[ toca un monto sugerido ]</text>
+  <path class="msg" d="M120,498 L346,498" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="233" y="493">fuente = confirmaci&#243;n</text>
+
+  <line x1="92" y1="514" x2="430" y2="514" stroke="#b5b5b5" stroke-width="1" stroke-dasharray="5 4"/>
+
+  <!-- region 2: free entry -->
+  <text class="guard" x="100" y="532">[ escribe el monto ]</text>
+  <path class="msg" d="M120,552 L346,552" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="233" y="547">fuente = registro</text>
+
+  <!-- ================= PHASE 4: submit ================= -->
+  <!-- M: save trip -->
+  <path class="msg" d="M120,602 L346,602" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="233" y="597">Guardar viaje</text>
+
+  <!-- N: POST reports -->
+  <path class="msg" d="M354,632 L596,632" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="475" y="627">POST /fares/reports</text>
+  <text class="sub" text-anchor="middle" x="475" y="644">monto &#183; origen &#183; destino &#183; fuente</text>
+
+  <!-- O: resolve + insert -->
+  <path class="msg" d="M604,660 L836,660" marker-end="url(#arrow)"/>
+  <text class="lbl" text-anchor="middle" x="720" y="655">resolver zonas + INSERT FareReport</text>
+
+  <!-- P: commit -->
+  <path class="ret" d="M836,688 L604,688" marker-end="url(#open)"/>
+  <text class="sub" text-anchor="middle" x="720" y="683">commit</text>
+
+  <!-- Q: 201 -->
+  <path class="ret" d="M596,716 L354,716" marker-end="url(#open)"/>
+  <text class="sub" text-anchor="middle" x="475" y="711">201 FareReportRead</text>
+
+  <!-- R: confirm to user -->
+  <path class="ret" d="M346,744 L120,744" marker-end="url(#open)"/>
+  <text class="lbl" text-anchor="middle" x="233" y="739">Viaje y tarifa guardados</text>
+
+  <!-- ===== note: best effort ===== -->
+  <path d="M470,762 L918,762 L918,796 L482,796 L470,784 Z" fill="#f7f5f0" stroke="#999" stroke-width="1.2"/>
+  <text class="sub" x="484" y="779">El reporte de tarifa es &#171;best-effort&#187;: si la API falla, el viaje</text>
+  <text class="sub" x="484" y="793">se guarda igual y solo se omite el monto (RF-26).</text>
+
+  <text class="cap" text-anchor="middle" x="485" y="830">Las zonas se resuelven con PostGIS (ST_Contains, SRID 4326); las l&#237;neas MICRO usan tarifa plana y las TRUFI tarifa por par de zonas.</text>
+</svg>

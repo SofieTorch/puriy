@@ -27,7 +27,14 @@ def _():
 
 
 @app.cell
-def _(db, mo):
+def _(mo):
+    fit_view = mo.ui.switch(value=False, label="Fit to zones")
+    line_width = mo.ui.slider(start=0.25, stop=3.0, step=0.25, value=1.0, label="Line thickness", show_value=True)
+    return fit_view, line_width
+
+
+@app.cell
+def _(db, fit_view, line_width, mo):
     from sqlalchemy import select as _select
     from database.models.fare import FareZone as _FareZone
     from geoalchemy2 import WKBElement
@@ -63,12 +70,15 @@ def _(db, mo):
         [polygon_layer(zone_data, id="fare-zones")] if zone_data else [],
         height=450,
         tooltip_html="<b>{name}</b>",
+        fit=fit_view.value,
+        line_scale=line_width.value,
     )
 
     zone_names = [z.name for z in zones]
     mo.vstack([
         mo.md(f"### Fare zones ({len(zones)})"),
         mo.md(", ".join(zone_names)) if zone_names else mo.md("*No fare zones imported yet. Run `geodata import-fare-zones`.*"),
+        mo.hstack([fit_view, line_width], gap=2, align="center"),
         zone_map,
     ])
     return

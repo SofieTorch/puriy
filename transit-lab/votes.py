@@ -265,12 +265,21 @@ def _(db, line_selector, preview_button, preview_device_input):
 
 
 @app.cell
+def _(mo):
+    fit_view = mo.ui.switch(value=False, label="Fit to route")
+    line_width = mo.ui.slider(start=0.25, stop=3.0, step=0.25, value=1.0, label="Line thickness", show_value=True)
+    return fit_view, line_width
+
+
+@app.cell
 def _(
     active_edges,
     active_route,
     color_mode,
     edge_voter_counts,
     events_table,
+    fit_view,
+    line_width,
     line_selector,
     mo,
     preview_result,
@@ -380,7 +389,9 @@ def _(
 
         route_map = deck(
             _layers,
-            view_state=_view,
+            view_state=None if fit_view.value else _view,
+            fit=fit_view.value,
+            line_scale=line_width.value,
             height=500,
             tooltip_html="<b>{name}</b>",
         )
@@ -423,10 +434,12 @@ def _(
 
 
 @app.cell
-def _(color_mode, mo, route_map, voter_cap):
+def _(color_mode, fit_view, line_width, mo, route_map, voter_cap):
     _controls = [color_mode]
     if voter_cap is not None and color_mode.value == "coverage":
         _controls.append(voter_cap)
+    _controls.append(fit_view)
+    _controls.append(line_width)
     mo.vstack(
         [mo.md("### Active route"), mo.hstack(_controls, gap=1, align="end"), route_map],
         gap=0.5,
