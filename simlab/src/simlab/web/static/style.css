@@ -233,3 +233,38 @@ details.run-group > li { margin-left: 10px; }
 }
 .pos-presets { display: flex; gap: 4px; flex-wrap: wrap; }
 .pos-presets button { flex: 1; font-size: 11px; padding: 2px 4px; min-width: 44px; }
+
+/* Database mode */
+#db-line-list { list-style: none; margin-top: 8px; }
+.db-line {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 8px; margin-bottom: 6px;
+}
+.db-line-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.db-line-name { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-line-actions { display: flex; gap: 4px; margin-top: 6px; }
+.db-line-actions button { flex: 1; }
+
+/* Scenario / Database mode toggle */
+#mode-toggle {
+  display: flex; gap: 0; margin-bottom: 14px;
+  border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+}
+.mode-btn {
+  flex: 1; margin: 0; border: none; border-radius: 0;
+  background: var(--bg); color: var(--muted); font-weight: 600;
+}
+.mode-btn.active { background: var(--accent); color: #fff; }
+.mode-btn:hover { border-color: transparent; }
+/* mode visibility (body carries the active mode) */
+body.mode-database .scenario-only { display: none; }
+body.mode-scenario .database-only { display: none; }
+
+/* Database mode: pipeline steps + layers */
+#db-steps-box h2, #db-layers-box h2 { margin-top: 14px; }
+#db-steps { list-style: none; }
+#db-steps li {
+  display: flex; justify-content: space-between; gap: 6px;
+  padding: 4px 6px; font-size: 12.5px; font-variant-numeric: tabular-nums;
+}
+#db-layers .layer-row { font-size: 12.5px; }

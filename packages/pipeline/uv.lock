@@ -78,6 +78,9 @@ requires-dist = [
     { name = "sqlmodel", specifier = ">=0.0.22" },
 ]
 
+[package.metadata.requires-dev]
+dev = [{ name = "eralchemy2", specifier = ">=1.4.1" }]
+
 [[package]]
 name = "geoalchemy2"
 version = "0.19.0"
@@ -99,6 +102,7 @@ dependencies = [
     { name = "database" },
     { name = "geoalchemy2" },
     { name = "httpx" },
+    { name = "numpy" },
     { name = "opentelemetry-api" },
     { name = "psycopg2-binary" },
     { name = "scikit-learn" },
@@ -111,6 +115,7 @@ requires-dist = [
     { name = "database", editable = "../database" },
     { name = "geoalchemy2", specifier = ">=0.18.4" },
     { name = "httpx", specifier = ">=0.28.0" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "opentelemetry-api", specifier = ">=1.20.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
@@ -323,6 +328,7 @@ source = { editable = "." }
 dependencies = [
     { name = "database" },
     { name = "geodata" },
+    { name = "routebuilder" },
     { name = "sqlalchemy" },
 ]
 
@@ -341,6 +347,7 @@ requires-dist = [
     { name = "database", editable = "../database" },
     { name = "geodata", editable = "../geodata" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
+    { name = "routebuilder", editable = "../routebuilder" },
     { name = "sqlalchemy", specifier = ">=2.0.48" },
 ]
 provides-extras = ["test"]
@@ -499,6 +506,37 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
+]
+
+[[package]]
+name = "routebuilder"
+version = "0.1.0"
+source = { editable = "../routebuilder" }
+dependencies = [
+    { name = "database" },
+    { name = "geoalchemy2" },
+    { name = "geodata" },
+    { name = "httpx" },
+    { name = "numpy" },
+    { name = "shapely" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "database", editable = "../database" },
+    { name = "geoalchemy2", specifier = ">=0.18.4" },
+    { name = "geodata", editable = "../geodata" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "shapely", specifier = ">=2.0.0" },
+    { name = "sqlalchemy", specifier = ">=2.0.48" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "ruff", specifier = ">=0.15.12" },
 ]
 
 [[package]]

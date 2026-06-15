@@ -51,6 +51,274 @@ async function init() {
   // Resume tracking a server-side batch across a page refresh.
   const activeBatch = localStorage.getItem("activeBatch");
   if (activeBatch) _pollBatch(activeBatch);
+
+  // Database mode: promote scenarios → DB, run the real pipeline, visualize.
+  document.getElementById("db-promote").onclick = () => promoteScenario();
+  document.getElementById("db-new-line").onclick = createDbLine;
+  document.getElementById("mode-scenario-btn").onclick = () => setMode("scenario");
+  document.getElementById("mode-database-btn").onclick = () => setMode("database");
+  setMode(localStorage.getItem("simlabMode") || "scenario");
+}
+
+/* ---------- database mode ---------- */
+
+function setMode(mode) {
+  const db = mode === "database";
+  document.body.classList.toggle("mode-database", db);
+  document.body.classList.toggle("mode-scenario", !db);
+  document.getElementById("mode-database-btn").classList.toggle("active", db);
+  document.getElementById("mode-scenario-btn").classList.toggle("active", !db);
+  localStorage.setItem("simlabMode", mode);
+  if (db) { loadDbLines(); } else { clearDbLayers(); }
+}
+
+function _dbStatus(text) {
+  document.getElementById("db-status").textContent = text;
+}
+
+async function promoteScenario(lineId) {
+  const id = document.getElementById("scenario-select").value;
+  if (!id) return;
+  _dbStatus(lineId ? `Adding "${id}" traces to the line…`
+                   : `Promoting "${id}" to a new line…`);
+  const resp = await fetch(`/api/scenarios/${encodeURIComponent(id)}/promote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(lineId ? { line_id: lineId } : { line_name: id }),
+  });
+  if (!resp.ok) { _dbStatus("Promote failed."); return; }
+  const r = await resp.json();
+  _dbStatus(`Line "${r.line_name}" now has +${r.sessions} traces, ${r.devices} ` +
+            `devices. Click ▶ Build to run the pipeline.`);
+  await loadDbLines();
+}
+
+async function createDbLine() {
+  const name = prompt("New line name:");
+  if (!name) return;
+  const resp = await fetch("/api/lines", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!resp.ok) { _dbStatus("Could not create line."); return; }
+  _dbStatus(`Created empty line "${name}". Use ⬆ on it to add a scenario's traces.`);
+  await loadDbLines();
+}
+
+async function renameDbLine(id, current) {
+  const name = prompt("Rename line:", current);
+  if (!name || name === current) return;
+  await fetch(`/api/lines/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  await loadDbLines();
+}
+
+async function loadDbLines() {
+  let lines;
+  try { lines = await api("/lines"); } catch { return; }
+  const list = document.getElementById("db-line-list");
+  list.innerHTML = "";
+  for (const ln of lines) {
+    const li = document.createElement("li");
+    li.className = "db-line";
+    li.innerHTML =
+      `<div class="db-line-head"><span class="db-line-name">${ln.name}</span>` +
+      `<span class="run-metric">${ln.sessions} sess · ${ln.trips} trips · ` +
+      `${ln.routes} routes</span></div>`;
+    const actions = document.createElement("div");
+    actions.className = "db-line-actions";
+    actions.appendChild(_dbBtn("▶ Build", () => reconstructLine(ln.id),
+      "Run the pipeline (clean + reconstruct) on this line"));
+    actions.appendChild(_dbBtn("👁 Show", () => showLine(ln.id),
+      "Show its route + traces on the map"));
+    actions.appendChild(_dbBtn("⬆", () => promoteScenario(ln.id),
+      "Add the selected scenario's traces to this line"));
+    actions.appendChild(_dbBtn("✎", () => renameDbLine(ln.id, ln.name),
+      "Rename this line"));
+    actions.appendChild(_dbBtn("🗑", () => deleteDbLine(ln.id, ln.name),
+      "Delete this line and all its data"));
+    li.appendChild(actions);
+    list.appendChild(li);
+  }
+}
+
+function _dbBtn(label, onclick, title) {
+  const b = document.createElement("button");
+  b.className = "small";
+  b.textContent = label;
+  if (title) b.title = title;
+  b.onclick = onclick;
+  return b;
+}
+
+async function reconstructLine(id) {
+  _dbStatus("Running the production pipeline (clean + build) — this calls " +
+            "Valhalla, may take a moment…");
+  renderDbSteps([
+    { name: "clean_traces", status: "running" },
+    { name: "reconstruct_routes", status: "pending" },
+  ]);
+  let resp;
+  try {
+    resp = await fetch(`/api/lines/${id}/reconstruct`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ strategy: "routebuilder_divergence", clean: true }),
+    });
+  } catch (e) {
+    _dbStatus("Build request failed: " + e);
+    renderDbSteps([{ name: "request", status: "failed", info: String(e) }]);
+    return;
+  }
+  if (!resp.ok) {
+    _dbStatus(`Build failed (HTTP ${resp.status}).`);
+    renderDbSteps([{ name: "reconstruct", status: "failed", info: `HTTP ${resp.status}` }]);
+    return;
+  }
+  const r = await resp.json();
+  const ct = r.clean_traces || {};
+  const rr = r.reconstruct_routes || {};
+  renderDbSteps([
+    { name: "clean_traces", status: "completed",
+      info: `${ct.sessions_matched ?? "?"} matched · ${ct.sessions_failed ?? 0} failed` },
+    { name: "reconstruct_routes", status: "completed",
+      info: `${rr.ramales_created ?? 0} ramal(es) · ${rr.strategy || ""}` },
+  ]);
+  const n = rr.ramales_created ?? 0;
+  _dbStatus(n > 0
+    ? `Built ${n} ramal(es). Showing on map.`
+    : "Built 0 routes — see Pipeline steps. (If clean_traces matched but 0 " +
+      "ramales: those trips predate the match-attributes change — promote a fresh line.)");
+  await loadDbLines();
+  await showLine(id);
+}
+
+function renderDbSteps(steps) {
+  document.getElementById("db-steps-box").hidden = false;
+  const ul = document.getElementById("db-steps");
+  ul.innerHTML = "";
+  for (const s of steps) {
+    const cls = { completed: "status-completed", failed: "status-failed",
+      running: "status-running" }[s.status] || "status-pending";
+    const icon = { completed: "✓", failed: "✗", running: "…" }[s.status] || "·";
+    const li = document.createElement("li");
+    li.innerHTML = `<span>${s.name}</span>` +
+      `<span class="${cls}">${icon} ${s.info || ""}</span>`;
+    ul.appendChild(li);
+  }
+}
+
+async function showLine(id) {
+  const [routes, traces] = await Promise.all([
+    api(`/lines/${id}/routes`),
+    api(`/lines/${id}/traces`),
+  ]);
+  setDbLayers(routes, traces);
+}
+
+async function deleteDbLine(id, name) {
+  if (!confirm(`Delete line "${name}" and all its data (sessions, trips, routes)?`))
+    return;
+  await fetch(`/api/lines/${id}`, { method: "DELETE" });
+  clearDbLayers();
+  await loadDbLines();
+}
+
+const _DB_PALETTE = ["#e3514f", "#2d9cdb", "#6fcf97", "#f2c94c", "#bb6bd9", "#f2994a"];
+let _dbLayerIds = [];   // every db map layer currently shown (for cleanup)
+
+function setDbLayers(routesFC, tracesFC) {
+  clearDbLayers();   // fresh start — no stale layers
+  const box = document.getElementById("db-layers");
+  document.getElementById("db-layers-box").hidden = false;
+  box.innerHTML = "";
+
+  // Raw traces: one faint grey layer.
+  const traces = tracesFC.features || [];
+  _setDbGeo("db-traces", tracesFC,
+    { "line-color": "#9aa0a8", "line-width": 1.5, "line-opacity": 0.4 });
+  box.appendChild(_dbLayerRow("Raw traces", "db-traces", "#9aa0a8", `${traces.length}`));
+
+  // One colored layer + toggle PER reconstructed ramal (added last → on top).
+  const routes = routesFC.features || [];
+  routes.forEach((f, i) => {
+    const label = (f.properties || {}).ramal_label ?? `ramal ${i}`;
+    const color = _DB_PALETTE[i % _DB_PALETTE.length];
+    const id = `db-ramal-${i}`;
+    _setDbGeo(id, { type: "FeatureCollection", features: [f] },
+      { "line-color": color, "line-width": 4, "line-opacity": 0.9 });
+    box.appendChild(_dbLayerRow(`Ramal ${label}`, id, color,
+      `${f.geometry.coordinates.length} pts`));
+  });
+  if (!routes.length) {
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "No reconstructed route on this line yet — click ▶ Build.";
+    box.appendChild(p);
+  }
+
+  let bounds = null;
+  for (const f of [...routes, ...traces]) {
+    for (const c of f.geometry.coordinates) {
+      bounds = bounds || new maplibregl.LngLatBounds(c, c);
+      bounds.extend(c);
+    }
+  }
+  if (bounds) map.fitBounds(bounds, { padding: 48, duration: 500 });
+}
+
+function _dbLayerRow(label, layerId, color, count) {
+  const row = document.createElement("label");
+  row.className = "layer-row";
+  row.innerHTML =
+    `<input type="checkbox" checked />` +
+    `<span class="swatch" style="background:${color}"></span>` +
+    `<span>${label}</span><span class="run-metric">${count}</span>`;
+  row.querySelector("input").onchange = (e) => {
+    if (map.getLayer(layerId)) {
+      map.setLayoutProperty(layerId, "visibility",
+        e.target.checked ? "visible" : "none");
+    }
+  };
+  return row;
+}
+
+function _setDbGeo(id, fc, paint) {
+  const src = `${id}-src`;
+  const apply = () => {
+    // Always remove + re-add — a leftover source without its layer (or vice
+    // versa) would otherwise leave the route present in data but not drawn.
+    if (map.getLayer(id)) map.removeLayer(id);
+    if (map.getSource(src)) map.removeSource(src);
+    map.addSource(src, { type: "geojson", data: fc });
+    map.addLayer({
+      id, type: "line", source: src,
+      layout: { "line-cap": "round", "line-join": "round" }, paint,
+    });
+    if (!_dbLayerIds.includes(id)) _dbLayerIds.push(id);
+  };
+  // Add directly when possible; on failure (style mid-update — common right
+  // after adding the previous layer) retry on "idle", which RE-fires — unlike
+  // "load", which only fires once and would never run after initial load.
+  try {
+    apply();
+  } catch (e) {
+    map.once("idle", apply);
+  }
+}
+
+function clearDbLayers() {
+  for (const id of _dbLayerIds) {
+    if (map.getLayer(id)) map.removeLayer(id);
+    if (map.getSource(`${id}-src`)) map.removeSource(`${id}-src`);
+  }
+  _dbLayerIds = [];
+  const layersBox = document.getElementById("db-layers-box");
+  if (layersBox) layersBox.hidden = true;
 }
 
 /* ---------- experiments ---------- */

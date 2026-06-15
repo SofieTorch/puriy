@@ -11,31 +11,38 @@
   <div id="sidebar">
     <h1>simlab</h1>
 
+    <div id="mode-toggle">
+      <button id="mode-scenario-btn" class="mode-btn active">Scenario</button>
+      <button id="mode-database-btn" class="mode-btn">Database</button>
+    </div>
+
     <section>
       <h2>Scenario</h2>
       <select id="scenario-select"></select>
       <p id="scenario-description" class="muted"></p>
-      <button id="run-button">▶ Run scenario</button>
-      <div class="button-row">
-        <button id="edit-scenario">✎ Edit</button>
-        <button id="duplicate-scenario">⧉ Duplicate</button>
-        <button id="new-scenario">+ New</button>
-      </div>
-      <div class="button-row">
-        <button id="experiments-scenario" title="Generate the A/B/C coverage sweep from this scenario">⚗ Generate experiments</button>
-        <button id="manage-scenarios">🗑 Manage…</button>
-      </div>
-      <div id="scenario-manage" hidden>
-        <p class="muted">Select scenarios to delete:</p>
-        <div id="scenario-manage-list"></div>
+      <div class="scenario-only">
+        <button id="run-button">▶ Run scenario</button>
         <div class="button-row">
-          <button id="manage-delete">Delete selected</button>
-          <button id="manage-close">Close</button>
+          <button id="edit-scenario">✎ Edit</button>
+          <button id="duplicate-scenario">⧉ Duplicate</button>
+          <button id="new-scenario">+ New</button>
+        </div>
+        <div class="button-row">
+          <button id="experiments-scenario" title="Generate the A/B/C coverage sweep from this scenario">⚗ Generate experiments</button>
+          <button id="manage-scenarios">🗑 Manage…</button>
+        </div>
+        <div id="scenario-manage" hidden>
+          <p class="muted">Select scenarios to delete:</p>
+          <div id="scenario-manage-list"></div>
+          <div class="button-row">
+            <button id="manage-delete">Delete selected</button>
+            <button id="manage-close">Close</button>
+          </div>
         </div>
       </div>
     </section>
 
-    <section id="experiments-section" hidden>
+    <section id="experiments-section" class="scenario-only" hidden>
       <h2>Experiments</h2>
       <label class="exp-label">Group
         <select id="exp-group-select"></select>
@@ -44,13 +51,32 @@
       <p id="exp-run-status" class="muted"></p>
     </section>
 
-    <section>
+    <section id="database-section" class="database-only">
+      <h2>Database (real pipeline)</h2>
+      <button id="db-promote">⬆ Promote scenario → new line</button>
+      <div class="button-row">
+        <button id="db-new-line">+ New line</button>
+      </div>
+      <p id="db-status" class="muted">Push the selected scenario's traces into the
+        DB as raw recordings, then build the route with the production pipeline.</p>
+      <ul id="db-line-list"></ul>
+      <div id="db-steps-box" hidden>
+        <h2>Pipeline steps</h2>
+        <ul id="db-steps"></ul>
+      </div>
+      <div id="db-layers-box" hidden>
+        <h2>Layers</h2>
+        <div id="db-layers"></div>
+      </div>
+    </section>
+
+    <section class="scenario-only">
       <h2>Runs</h2>
       <ul id="run-list"></ul>
       <button id="clear-runs" hidden>🗑 Delete all runs</button>
     </section>
 
-    <section>
+    <section class="scenario-only">
       <h2>Stages</h2>
       <ul id="stage-list"></ul>
     </section>

@@ -32,6 +32,10 @@ class ReconstructionTrace:
     trace_id: str
     points: list[ReconstructionPoint]
     matched_edges: list[MatchedEdgeRef] | None = None
+    # Raw Valhalla trace_attributes (shape_coords, edges, matched_points) from
+    # Trip.match_attributes, when persisted. Lets a strategy rebuild the exact
+    # routebuilder MatchedTrace without re-querying Valhalla. None = legacy.
+    match_attributes: dict | None = None
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database import Line, ProcessingStatus, SessionStatus, TripSession
@@ -16,6 +16,7 @@ def execute(
     costing: str = "bus",
     search_radius: int = 60,
     gps_accuracy: int = 20,
+    turn_penalty_factor: int = 300,
 ) -> dict:
     # Find lines with RAW sessions to process
     query = (
@@ -42,6 +43,7 @@ def execute(
             costing=costing,
             search_radius=search_radius,
             gps_accuracy=gps_accuracy,
+            turn_penalty_factor=turn_penalty_factor,
         )
         total_matched += len(result.matched)
         total_failed += len(result.failed)

@@ -49,6 +49,13 @@ class Trip(SQLModel, table=True):
         ),
     )
 
+    # Raw Valhalla trace_attributes needed to rebuild the exact routebuilder
+    # MatchedTrace at reconstruct time (shape, edges with shape indices, matched
+    # points) — so reconstruction reproduces simlab's matcher, including
+    # per-edge corner refinement, without re-querying Valhalla. Nullable:
+    # legacy rows predate it.
+    match_attributes: Any = Field(default=None, sa_column=Column(JSONB, nullable=True))
+
     processed_at: datetime = Field(default_factory=datetime.utcnow)
 
     session: Optional["TripSession"] = Relationship(back_populates="trips")

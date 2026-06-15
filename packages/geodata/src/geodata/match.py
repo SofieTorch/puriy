@@ -563,6 +563,7 @@ def match_session(
     costing: str = "bus",
     search_radius: int = 60,
     gps_accuracy: int = 20,
+    turn_penalty_factor: int = 300,
 ) -> MatchResult:
     """Map-match a TripSession and save the result as a Trip + TripPoints.
 
@@ -616,6 +617,7 @@ def match_session(
                 costing=costing,
                 search_radius=search_radius,
                 gps_accuracy=gps_accuracy,
+                turn_penalty_factor=turn_penalty_factor,
             )
         except httpx.HTTPStatusError as e:
             session.processing_status = ProcessingStatus.FAILED
@@ -649,6 +651,14 @@ def match_session(
             match_score=result.match_score,
             frechet_distance=filtered_mean_snap,
             computed_path=matched_path,
+            # Persist the raw Valhalla attributes so reconstruction can rebuild
+            # the exact routebuilder MatchedTrace (incl. corner refinement)
+            # without re-querying Valhalla.
+            match_attributes={
+                "shape_coords": [[lat, lon] for lat, lon in result.shape_coords],
+                "edges": result.edges,
+                "matched_points": result.matched_points,
+            },
         )
         db.add(trip)
         db.flush()
@@ -714,6 +724,7 @@ def _match_session_in_worker(
     costing: str,
     search_radius: int,
     gps_accuracy: int,
+    turn_penalty_factor: int = 300,
 ) -> tuple[UUID, MatchResult | None, str | None]:
     """ThreadPoolExecutor worker: opens its own DB session, matches one
     TripSession, returns `(session_id, result_or_None, error_or_None)`.
@@ -733,6 +744,7 @@ def _match_session_in_worker(
             costing=costing,
             search_radius=search_radius,
             gps_accuracy=gps_accuracy,
+            turn_penalty_factor=turn_penalty_factor,
         )
         return session_id, result, None
     except Exception as exc:
@@ -748,6 +760,7 @@ def match_line(
     costing: str = "bus",
     search_radius: int = 60,
     gps_accuracy: int = 20,
+    turn_penalty_factor: int = 300,
     concurrency: int = 6,
 ) -> BatchMatchResult:
     """Map-match all RAW trip sessions for a given line.
@@ -808,6 +821,7 @@ def match_line(
                         costing=costing,
                         search_radius=search_radius,
                         gps_accuracy=gps_accuracy,
+                        turn_penalty_factor=turn_penalty_factor,
                     )
                     matched.append(result)
                 except Exception as e:
@@ -824,6 +838,7 @@ def match_line(
                         costing=costing,
                         search_radius=search_radius,
                         gps_accuracy=gps_accuracy,
+                        turn_penalty_factor=turn_penalty_factor,
                     )
                     for sid in session_ids
                 ]

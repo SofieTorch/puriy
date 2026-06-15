@@ -371,6 +371,30 @@ wheels = [
 ]
 
 [[package]]
+name = "pipeline"
+version = "0.1.0"
+source = { editable = "../packages/pipeline" }
+dependencies = [
+    { name = "database" },
+    { name = "geodata" },
+    { name = "routebuilder" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "database", editable = "../packages/database" },
+    { name = "geodata", editable = "../packages/geodata" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0.0" },
+    { name = "routebuilder", editable = "../packages/routebuilder" },
+    { name = "sqlalchemy", specifier = ">=2.0.48" },
+]
+provides-extras = ["test"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.15.12" }]
+
+[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -699,6 +723,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "geodata" },
     { name = "httpx" },
+    { name = "pipeline" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "routebuilder" },
@@ -718,6 +743,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "geodata", editable = "../packages/geodata" },
     { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pipeline", editable = "../packages/pipeline" },
     { name = "pydantic", specifier = ">=2.9.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "routebuilder", editable = "../packages/routebuilder" },

@@ -34,7 +34,11 @@ from database import (
     TripStatus,
 )
 from geodata.ramales import RamalCluster
-from geodata.reconstruction.base import ReconstructionPoint, ReconstructionTrace
+from geodata.reconstruction.base import (
+    ReconstructionPoint,
+    ReconstructionResult,
+    ReconstructionTrace,
+)
 from geodata.simulate import generate_tracks
 from pipeline.steps.reconstruct_routes import (
     DEFAULT_CHANGE_THRESHOLD_M,
@@ -871,3 +875,90 @@ def test_street_summary_populated_when_valhalla_returns_edges(
         select(Route).where(Route.line_id == approved_line.id)
     ).scalars().one()
     assert route.street_summary == ["Av. América"]
+
+
+# ------------------------------------------------------------------
+# Self-clustering (line-level) strategy path — e.g. routebuilder
+# ------------------------------------------------------------------
+
+class _FakeSelfClusteringStrategy:
+    """Stands in for the routebuilder strategy: discovers ramales itself
+    (``clusters_internally``) and emits one feature per ramal over ALL the
+    line's traces, instead of one polyline per externally-clustered group."""
+
+    key = "fake_rb"
+    label = "fake self-clustering"
+    clusters_internally = True
+
+    def __init__(self, features: list[dict]):
+        self._features = features
+
+    def default_params(self) -> dict:
+        return {}
+
+    def reconstruct(self, line_id, traces, params=None) -> ReconstructionResult:
+        return ReconstructionResult(
+            strategy_name=self.key,
+            geojson={"type": "FeatureCollection", "features": self._features},
+            diagnostics={"ramales": len(self._features)},
+        )
+
+
+def _feature(ramal_label: str, coords: list[list[float]]) -> dict:
+    return {
+        "type": "Feature",
+        "geometry": {"type": "LineString", "coordinates": coords},
+        "properties": {"ramal_label": ramal_label},
+    }
+
+
+def test_self_clustering_strategy_creates_one_route_per_ramal(db, approved_line):
+    """A ``clusters_internally`` strategy bypasses geodata clustering, gets all
+    the line's traces, and each emitted ramal becomes its own Route."""
+    mock_traces = [
+        ReconstructionTrace(
+            trace_id=f"t{i}",
+            points=[
+                ReconstructionPoint(longitude=-66.16, latitude=-17.39, point_index=0),
+                ReconstructionPoint(longitude=-66.15, latitude=-17.39, point_index=1),
+            ],
+        )
+        for i in range(5)
+    ]
+    features = [
+        _feature("main", [[-66.16, -17.39], [-66.15, -17.39]]),
+        _feature("r2", [[-66.16, -17.40], [-66.15, -17.40]]),
+    ]
+    fake = _FakeSelfClusteringStrategy(features)
+    with (
+        patch(
+            "pipeline.steps.reconstruct_routes.get_reconstruction_strategies",
+            return_value={"fake_rb": fake},
+        ),
+        patch(
+            "pipeline.steps.reconstruct_routes.load_reconstruction_traces_from_db",
+            return_value=mock_traces,
+        ),
+        patch(
+            "pipeline.steps.reconstruct_routes.cluster_traces_into_ramales",
+        ) as mock_cluster,
+        patch("pipeline.steps.reconstruct_routes.trace_match", return_value=None),
+        patch(
+            "pipeline.steps.reconstruct_routes.resolve_endpoint_zones",
+            return_value=[None, None],
+        ),
+    ):
+        _seed_clean_trips(db, approved_line, 5)
+        result = execute(db, strategy_key="fake_rb", min_trips=3)
+
+    # Self-clustering must SKIP geodata's clustering entirely.
+    mock_cluster.assert_not_called()
+
+    routes = db.execute(
+        select(Route).where(
+            Route.line_id == approved_line.id,
+            Route.status != RouteStatus.SUPERSEDED,
+        )
+    ).scalars().all()
+    assert sorted(r.ramal_label for r in routes) == ["main", "r2"]
+    assert result["ramales_created"] == 2
