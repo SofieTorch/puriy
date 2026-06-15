@@ -1,11 +1,9 @@
 """Import fare zones from OpenStreetMap administrative boundaries via Overpass API."""
 
-import json
 from typing import Any
 
 import httpx
-from shapely.geometry import MultiPolygon, Polygon, shape
-from shapely.ops import unary_union
+from shapely.geometry import MultiPolygon, Polygon
 from geoalchemy2.shape import from_shape
 from sqlalchemy import select
 from sqlalchemy.orm import Session

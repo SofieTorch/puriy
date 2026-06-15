@@ -1,0 +1,847 @@
+/* simlab frontend: scenario picker, run list, stage layers, metrics. */
+
+const STAGE_LAYERS = [
+  { file: "00_ground_truth.geojson", label: "Ground truth", color: "data", fallback: "#9aa0a8", width: 5, opacity: 0.5 },
+  { file: "01_raw_traces.geojson", label: "Raw traces", color: "data", fallback: "#f2994a", width: 1.5, opacity: 0.5,
+    lineFilter: ["==", ["get", "kind"], "raw_trace"], pointsFilter: ["==", ["get", "kind"], "raw_points"] },
+  { file: "02_matched_traces.geojson", label: "Matched traces", color: "data", fallback: "#56ccf2", width: 1.5, opacity: 0.6 },
+  { file: "03_ramales.geojson", label: "Ramal clusters", color: "data", fallback: "#9aa0a8", width: 2.5, opacity: 0.8, off: true, ramalToggles: true },
+  { file: "04_consensus.geojson", label: "Consensus route", color: "confidence", width: 4, opacity: 0.9 },
+  { file: "05_votes.geojson", label: "Votes", color: "votes", width: 4, opacity: 0.9, off: true },
+  { file: "07_fares.geojson", label: "Fare reports", color: "#bb6bd9", width: 4, opacity: 0.8, off: true, circle: true },
+];
+
+let map;
+let currentRun = null;
+let pollTimer = null;
+
+init();
+
+async function init() {
+  map = new maplibregl.Map({
+    container: "map",
+    style: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
+    center: [-66.157, -17.3935],
+    zoom: 12,
+    preserveDrawingBuffer: true, // PNG export
+  });
+  map.addControl(new maplibregl.NavigationControl(), "top-right");
+  // The grid layout may settle after map init: keep the canvas synced.
+  map.on("load", () => map.resize());
+  new ResizeObserver(() => map.resize()).observe(document.getElementById("map"));
+
+  await loadScenarios();
+  await refreshRuns();
+
+  document.getElementById("run-button").onclick = startRun;
+  document.getElementById("export-png").onclick = exportPng;
+  document.getElementById("clear-runs").onclick = deleteAllRuns;
+  document.getElementById("measure-toggle").onclick = toggleMeasure;
+  document.getElementById("experiments-scenario").onclick = generateExperiments;
+  document.getElementById("manage-scenarios").onclick = openManageScenarios;
+  document.getElementById("manage-close").onclick = () =>
+    (document.getElementById("scenario-manage").hidden = true);
+  document.getElementById("manage-delete").onclick = deleteSelectedScenarios;
+  document.getElementById("exp-run-all").onclick = runAllInGroup;
+  await loadExperimentGroups();
+
+  // Auto-refresh the run list so new/in-progress runs appear without a manual
+  // reload (this is what used to require refreshing the page).
+  setInterval(() => refreshRuns(), 2500);
+  // Resume tracking a server-side batch across a page refresh.
+  const activeBatch = localStorage.getItem("activeBatch");
+  if (activeBatch) _pollBatch(activeBatch);
+}
+
+/* ---------- experiments ---------- */
+
+let _groups = [];
+
+async function loadExperimentGroups() {
+  _groups = await api("/scenario-groups");
+  const section = document.getElementById("experiments-section");
+  section.hidden = _groups.length === 0;
+  if (!_groups.length) return;
+  const sel = document.getElementById("exp-group-select");
+  const prev = sel.value;
+  sel.innerHTML = "";
+  for (const g of _groups) {
+    const o = document.createElement("option");
+    o.value = g.prefix;
+    o.textContent = `${g.prefix} (${g.all.length})`;
+    sel.appendChild(o);
+  }
+  if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+}
+
+function currentGroup() {
+  const prefix = document.getElementById("exp-group-select").value;
+  return _groups.find((g) => g.prefix === prefix);
+}
+
+const _sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function runAllInGroup() {
+  const g = currentGroup();
+  if (!g) return;
+  const ids = g.all;   // the whole factorial
+  if (!ids.length) return;
+  const resp = await fetch("/api/runs/batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scenario_ids: ids }),
+  });
+  if (!resp.ok) { _expStatus("Could not start the batch"); return; }
+  const batch = await resp.json();
+  // Persist so a page refresh keeps tracking it — the batch runs on the
+  // server now, so refreshing no longer cancels it.
+  localStorage.setItem("activeBatch", batch.id);
+  _pollBatch(batch.id);
+}
+
+function _expStatus(text) {
+  document.getElementById("exp-run-status").textContent = text;
+}
+
+async function _pollBatch(batchId) {
+  for (;;) {
+    let st;
+    try { st = await api(`/runs/batch/${batchId}`); }
+    catch { localStorage.removeItem("activeBatch"); return; }
+    await refreshRuns(true);
+    if (st.status === "done") {
+      _expStatus(`Done — ran ${st.total}. Read the response surface in Runs ` +
+                 `(cov % / ram per cell) to find the minimum.`);
+      localStorage.removeItem("activeBatch");
+      return;
+    }
+    _expStatus(`Running ${st.done + 1}/${st.total}${st.current ? ": " + st.current : ""} … (safe to refresh)`);
+    await _sleep(2000);
+  }
+}
+
+async function generateExperiments() {
+  const id = document.getElementById("scenario-select").value;
+  if (!id) return;
+  if (!confirm(`Generate the reconstruction factorial from "${id}"?\n` +
+               `Keeps your rider groups & ramales; sweeps the combination of ` +
+               `traces × mean distance × position shape (~56 scenarios). ` +
+               `Coverage & turnout are measured, not set.`))
+    return;
+  const resp = await fetch(
+    `/api/scenarios/${encodeURIComponent(id)}/generate-experiments`,
+    { method: "POST" });
+  if (!resp.ok) { alert("Could not generate experiments"); return; }
+  const { created } = await resp.json();
+  await loadScenarios();
+  await loadExperimentGroups();
+  alert(`Created ${created.length} experiment scenarios (prefix "${id}_").`);
+}
+
+async function openManageScenarios() {
+  const panel = document.getElementById("scenario-manage");
+  const list = document.getElementById("scenario-manage-list");
+  const scenarios = await api("/scenarios");
+  list.innerHTML = "";
+  for (const s of scenarios) {
+    const row = document.createElement("label");
+    row.className = "manage-row";
+    row.innerHTML =
+      `<input type="checkbox" value="${s.id}" /> <span>${s.name || s.id}</span>`;
+    list.appendChild(row);
+  }
+  panel.hidden = false;
+}
+
+async function deleteSelectedScenarios() {
+  const ids = [...document.querySelectorAll(
+    "#scenario-manage-list input:checked")].map((c) => c.value);
+  if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} scenario(s)? This cannot be undone.`)) return;
+  const resp = await fetch("/api/scenarios/batch-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!resp.ok) { alert("Could not delete scenarios"); return; }
+  await loadScenarios();
+  await loadExperimentGroups();
+  await openManageScenarios();   // refresh the checkbox list
+}
+
+/* ---------- measure tool: click points, read the distance ---------- */
+
+let measuring = false;
+const measurePoints = [];   // [lng, lat] in click order
+
+function haversineM(a, b) {
+  const R = 6371000, rad = Math.PI / 180;
+  const dLat = (b[1] - a[1]) * rad, dLon = (b[0] - a[0]) * rad;
+  const s = Math.sin(dLat / 2) ** 2 +
+    Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+function toggleMeasure() {
+  measuring ? stopMeasure() : startMeasure();
+}
+
+function startMeasure() {
+  measuring = true;
+  measurePoints.length = 0;
+  document.getElementById("measure-toggle").classList.add("active");
+  map.getCanvas().style.cursor = "crosshair";
+  map.on("click", measureClick);
+  document.addEventListener("keydown", measureKey);
+  renderMeasure();
+}
+
+function stopMeasure() {
+  measuring = false;
+  document.getElementById("measure-toggle").classList.remove("active");
+  map.getCanvas().style.cursor = "";
+  map.off("click", measureClick);
+  document.removeEventListener("keydown", measureKey);
+  if (map.getLayer("measure-line")) map.removeLayer("measure-line");
+  if (map.getLayer("measure-points")) map.removeLayer("measure-points");
+  if (map.getSource("measure-src")) map.removeSource("measure-src");
+  document.getElementById("measure-readout").hidden = true;
+}
+
+function measureKey(event) {
+  if (event.key === "Escape") stopMeasure();
+  else if (event.key === "Backspace") { measurePoints.pop(); renderMeasure(); event.preventDefault(); }
+}
+
+function measureClick(event) {
+  measurePoints.push([event.lngLat.lng, event.lngLat.lat]);
+  renderMeasure();
+}
+
+function renderMeasure() {
+  const features = [];
+  if (measurePoints.length >= 2) {
+    features.push({ type: "Feature", geometry: { type: "LineString", coordinates: measurePoints }, properties: {} });
+  }
+  for (const p of measurePoints) {
+    features.push({ type: "Feature", geometry: { type: "Point", coordinates: p }, properties: {} });
+  }
+  const data = { type: "FeatureCollection", features };
+  if (!map.getSource("measure-src")) {
+    map.addSource("measure-src", { type: "geojson", data });
+    map.addLayer({
+      id: "measure-line", type: "line", source: "measure-src",
+      filter: ["==", ["geometry-type"], "LineString"],
+      paint: { "line-color": "#e3514f", "line-width": 2, "line-dasharray": [2, 1] },
+    });
+    map.addLayer({
+      id: "measure-points", type: "circle", source: "measure-src",
+      filter: ["==", ["geometry-type"], "Point"],
+      paint: {
+        "circle-radius": 4, "circle-color": "#e3514f",
+        "circle-stroke-width": 1.5, "circle-stroke-color": "#ffffff",
+      },
+    });
+  } else {
+    map.getSource("measure-src").setData(data);
+  }
+
+  const readout = document.getElementById("measure-readout");
+  readout.hidden = false;
+  if (measurePoints.length < 2) {
+    readout.innerHTML = `<span class="hint">Click two points on the map to measure.` +
+      ` Backspace = undo · Esc = done</span>`;
+    return;
+  }
+  let total = 0;
+  for (let i = 1; i < measurePoints.length; i++) total += haversineM(measurePoints[i - 1], measurePoints[i]);
+  const last = haversineM(measurePoints[measurePoints.length - 2], measurePoints[measurePoints.length - 1]);
+  const fmt = (m) => m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${m.toFixed(1)} m`;
+  const segs = measurePoints.length - 1;
+  readout.innerHTML =
+    `<div class="total">${fmt(total)}</div>` +
+    (segs > 1 ? `<div class="hint">${segs} segments · last ${fmt(last)}</div>` : "") +
+    `<div class="hint">Backspace = undo · Esc = done</div>`;
+}
+
+async function api(path) {
+  const resp = await fetch(`/api${path}`);
+  if (!resp.ok) throw new Error(`${path}: ${resp.status}`);
+  return resp.json();
+}
+
+/* ---------- scenarios ---------- */
+
+async function loadScenarios() {
+  const scenarios = await api("/scenarios");
+  const select = document.getElementById("scenario-select");
+  select.innerHTML = "";
+  for (const s of scenarios) {
+    const option = document.createElement("option");
+    option.value = s.id;
+    option.textContent = s.name || s.id;
+    option.dataset.description = s.description || "";
+    select.appendChild(option);
+  }
+  const updateDescription = () => {
+    const opt = select.selectedOptions[0];
+    document.getElementById("scenario-description").textContent =
+      opt ? opt.dataset.description : "";
+  };
+  select.onchange = updateDescription;
+  updateDescription();
+}
+
+async function startRun() {
+  const scenario = document.getElementById("scenario-select").value;
+  const resp = await fetch("/api/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scenario }),
+  });
+  const { run_id } = await resp.json();
+  await refreshRuns();
+  selectRun(run_id);
+}
+
+/* ---------- runs ---------- */
+
+const _EXP_RUN = /^(.+?)_F\d+/;   // factorial cell: {base}_F001_…
+let _runsSig = "";
+
+function _runRow(run, base) {
+  const li = document.createElement("li");
+  li.dataset.runId = run.run_id;
+  const status = run.failed ? "✗" : run.finished
+    ? "✓" : `${run.completed_stages}/${run.total_stages}`;
+  const cls = run.failed ? "status-failed" : run.finished
+    ? "status-completed" : "status-running";
+  // experiment runs show the factor (A1_n1) + key metrics inline.
+  const label = base
+    ? (run.scenario || run.run_id).replace(`${base}_`, "")
+    : run.run_id;
+  let metric = "";
+  const s = run.summary;
+  if (s) {
+    const comp = s.completeness == null ? "—" : `${Math.round(s.completeness * 100)}%`;
+    metric = `<span class="run-metric">cov ${comp} · ram ${s.ramales_found}/${s.ramales_expected}</span>`;
+  }
+  li.innerHTML =
+    `<span class="run-name">${label}</span>${metric}<span class="${cls}">${status}</span>`;
+  const del = document.createElement("button");
+  del.className = "run-delete";
+  del.textContent = "🗑";
+  del.title = "Delete this run's data";
+  del.onclick = (e) => { e.stopPropagation(); deleteRun(run.run_id, run.finished || run.failed); };
+  li.appendChild(del);
+  li.onclick = () => selectRun(run.run_id);
+  if (run.run_id === currentRun) li.classList.add("active");
+  return li;
+}
+
+async function refreshRuns(force = false) {
+  const runs = await api("/runs");
+  // Only re-render when something actually changed (so the list doesn't
+  // flicker / collapse open groups while you read it).
+  const sig = runs.map((r) =>
+    `${r.run_id}:${r.completed_stages}:${r.finished}:${r.failed}`).join("|");
+  if (!force && sig === _runsSig) return;
+  _runsSig = sig;
+
+  const list = document.getElementById("run-list");
+  const openBases = new Set([...list.querySelectorAll("details.run-group[open]")]
+    .map((d) => d.dataset.base));
+
+  // Newest first. created_at is an ISO string → plain compare is chronological
+  // (locale-independent, no punctuation quirks).
+  const cmpDesc = (x, y) => (x < y ? 1 : x > y ? -1 : 0);
+  const tOf = (r) => r.created_at || "";
+  const latest = (g) => g.reduce((mx, r) => (tOf(r) > mx ? tOf(r) : mx), "");
+
+  const groups = {};
+  const standalone = [];
+  for (const run of runs) {
+    const m = (run.scenario || "").match(_EXP_RUN);
+    if (m) (groups[m[1]] ||= []).push(run);
+    else standalone.push(run);
+  }
+
+  // One timeline: each standalone run and each group is a block keyed by its
+  // newest run, so the most recent thing is always at the top regardless of
+  // whether it's a one-off run or part of a sweep.
+  const blocks = [];
+  standalone.sort((a, b) => cmpDesc(tOf(a), tOf(b)));
+  for (const run of standalone.slice(0, 15)) {
+    blocks.push({ time: tOf(run), el: _runRow(run) });
+  }
+  for (const [base, gruns] of Object.entries(groups)) {
+    gruns.sort((a, b) => cmpDesc(tOf(a), tOf(b)));
+    const det = document.createElement("details");
+    det.className = "run-group";
+    det.dataset.base = base;
+    const running = gruns.some((r) => !r.finished && !r.failed);
+    det.open = openBases.has(base) || running;
+    const done = gruns.filter((r) => r.finished).length;
+    const sum = document.createElement("summary");
+    sum.innerHTML = `⚗ ${base} <span class="muted">(${done}/${gruns.length})</span>`;
+    det.appendChild(sum);
+    for (const run of gruns) det.appendChild(_runRow(run, base));
+    blocks.push({ time: latest(gruns), el: det });
+  }
+
+  blocks.sort((a, b) => cmpDesc(a.time, b.time));
+  list.innerHTML = "";
+  for (const b of blocks) list.appendChild(b.el);
+  document.getElementById("clear-runs").hidden = runs.length === 0;
+}
+
+async function deleteRun(runId, done) {
+  const warning = done ? "" : "\nThis run looks unfinished — its process may still be writing.";
+  if (!confirm(`Delete run ${runId} and all its artifacts?${warning}`)) return;
+  await fetch(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+  if (runId === currentRun) clearCurrentRun();
+  await refreshRuns();
+}
+
+async function deleteAllRuns() {
+  if (!confirm("Delete ALL runs and their artifacts? Scenarios are kept.")) return;
+  await fetch("/api/runs", { method: "DELETE" });
+  clearCurrentRun();
+  await refreshRuns();
+}
+
+function clearCurrentRun() {
+  currentRun = null;
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  for (const spec of STAGE_LAYERS) {
+    for (const suffix of ["", "-inferred", "-points"]) {
+      const id = `layer-${spec.file}${suffix}`;
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
+    const sourceId = `stage-${spec.file}`;
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+  }
+  document.getElementById("stage-list").innerHTML = "";
+  document.getElementById("layer-toggles").innerHTML = "";
+  document.getElementById("metrics-content").innerHTML =
+    '<span class="muted">run a scenario to see metrics</span>';
+}
+
+async function selectRun(runId) {
+  currentRun = runId;
+  document.querySelectorAll("#run-list li").forEach((li) =>
+    li.classList.toggle("active", li.dataset.runId === runId));
+  document.getElementById("export-csv").href = `/api/runs/${runId}/export.csv`;
+  if (pollTimer) clearInterval(pollTimer);
+  await renderRun(runId);
+  // Poll while the run is still progressing.
+  pollTimer = setInterval(async () => {
+    const manifest = await api(`/runs/${runId}/manifest`).catch(() => null);
+    if (!manifest) return;
+    renderStages(manifest);
+    if (manifest.finished_at || manifest.stages.some((s) => s.status === "failed")) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      await renderRun(runId);
+      await refreshRuns();
+    }
+  }, 1500);
+}
+
+async function renderRun(runId) {
+  const manifest = await api(`/runs/${runId}/manifest`).catch(() => null);
+  if (!manifest) return;
+  renderStages(manifest);
+  await renderLayers(runId);
+  await renderMetrics(runId);
+}
+
+function renderStages(manifest) {
+  const list = document.getElementById("stage-list");
+  list.innerHTML = "";
+  for (const stage of manifest.stages) {
+    const li = document.createElement("li");
+    const fmt = (v) => Array.isArray(v) ? v.join(",")
+      : (v && typeof v === "object") ? Object.entries(v).map(([a, b]) => `${a}:${b}`).join(" ")
+      : v;
+    const stats = Object.entries(stage.stats || {})
+      .slice(0, 2).map(([k, v]) => `${k}=${fmt(v)}`).join(" ");
+    li.innerHTML = `<span>${stage.name}</span>
+      <span class="muted">${stats}</span>
+      <span class="status-${stage.status}">${stage.status}</span>`;
+    if (stage.error) li.title = stage.error;
+    list.appendChild(li);
+  }
+}
+
+/* ---------- map layers ---------- */
+
+function directionOffset() {
+  return [
+    "case",
+    ["==", ["coalesce", ["get", "direction_group"], 0], 1], 3,
+    -3,
+  ];
+}
+
+function layerPaint(spec) {
+  if (spec.color === "confidence") {
+    // line-dasharray is not data-driven in MapLibre: inferred edges
+    // get their own dashed layer (added in renderLayers).
+    return {
+      "line-color": [
+        "case",
+        ["==", ["get", "inferred"], true], "#f2c94c",
+        ["interpolate", ["linear"], ["coalesce", ["get", "confidence"], 1],
+          0, "#e3514f", 0.5, "#f2994a", 1, "#219653"],
+      ],
+      // Uniform width: route and edges draw at the same thickness so a
+      // bridged stretch (route line with no edge over it) does not look
+      // thinner. Bridges get their own optional dashed highlight layer.
+      "line-width": spec.width,
+      "line-opacity": spec.opacity,
+      // Opposite directions get opposite perpendicular offsets so
+      // they don't overpaint each other on shared streets.
+      "line-offset": directionOffset(),
+    };
+  }
+  if (spec.color === "votes") {
+    return {
+      "line-color": [
+        "case",
+        ["==", ["get", "status"], "CONFIRMED"], "#219653",
+        [">", ["get", "votes_against"], ["get", "votes_for"]], "#e3514f",
+        "#f2c94c",
+      ],
+      "line-width": spec.width,
+      "line-opacity": spec.opacity,
+    };
+  }
+  if (spec.color === "data") {
+    // The runner writes a per-feature `color` property (rider-group
+    // color on traces, per-ramal color on clusters, role color on
+    // ground truth).
+    return {
+      "line-color": ["coalesce", ["get", "color"], spec.fallback],
+      "line-width": spec.width,
+      "line-opacity": spec.opacity,
+    };
+  }
+  return { "line-color": spec.color, "line-width": spec.width, "line-opacity": spec.opacity };
+}
+
+async function renderLayers(runId) {
+  const toggles = document.getElementById("layer-toggles");
+  toggles.innerHTML = "";
+  let bounds = null;
+
+  for (const spec of STAGE_LAYERS) {
+    const sourceId = `stage-${spec.file}`;
+    const layerId = `layer-${spec.file}`;
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+    if (map.getLayer(`${layerId}-inferred`)) map.removeLayer(`${layerId}-inferred`);
+    if (map.getLayer(`${layerId}-bridge-halo`)) map.removeLayer(`${layerId}-bridge-halo`);
+    if (map.getLayer(`${layerId}-bridge`)) map.removeLayer(`${layerId}-bridge`);
+    if (map.getLayer(`${layerId}-points`)) map.removeLayer(`${layerId}-points`);
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+
+    let data;
+    try {
+      const resp = await fetch(`/api/runs/${runId}/artifacts/${spec.file}`);
+      if (!resp.ok) continue;
+      data = await resp.json();
+    } catch { continue; }
+    if (!data.features || data.features.length === 0) continue;
+
+    map.addSource(sourceId, { type: "geojson", data });
+    if (spec.circle) {
+      map.addLayer({
+        id: layerId, type: "circle", source: sourceId,
+        paint: {
+          "circle-radius": 4,
+          "circle-color": spec.color,
+          "circle-opacity": spec.opacity,
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#16181d",
+        },
+      });
+    } else {
+      const layer = {
+        id: layerId, type: "line", source: sourceId,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: layerPaint(spec),
+      };
+      if (spec.color === "confidence") {
+        // Main line draws real edges + the welded route, but not the
+        // bridge-highlight features (those have their own layer).
+        layer.filter = ["all",
+          ["!=", ["get", "inferred"], true],
+          ["!=", ["get", "kind"], "bridge"]];
+      }
+      if (spec.lineFilter) layer.filter = spec.lineFilter;
+      map.addLayer(layer);
+      if (spec.pointsFilter) {
+        // Companion dots: every GPS fix of every trace.
+        map.addLayer({
+          id: `${layerId}-points`, type: "circle", source: sourceId,
+          filter: spec.pointsFilter,
+          paint: {
+            "circle-radius": 2.5,
+            "circle-color": ["coalesce", ["get", "color"], spec.fallback || "#f2994a"],
+            "circle-opacity": Math.min(1, spec.opacity + 0.3),
+            "circle-stroke-width": 0.5,
+            "circle-stroke-color": "#ffffff",
+          },
+        });
+      }
+      if (spec.color === "confidence") {
+        // Companion dashed layer for inferred (gap-bridged) edges.
+        map.addLayer({
+          id: `${layerId}-inferred`, type: "line", source: sourceId,
+          filter: ["==", ["get", "inferred"], true],
+          paint: {
+            "line-color": "#f2c94c",
+            "line-width": spec.width,
+            "line-opacity": spec.opacity,
+            "line-dasharray": [2, 2],
+            "line-offset": directionOffset(),
+          },
+        });
+        // Optional bridge highlight (off by default): inferred connector
+        // stretches (weld / straight-bridge / trace-stitch / de-drift).
+        // A thick translucent halo makes the location obvious, with a
+        // crisp dashed line on top marking it as inferred.
+        map.addLayer({
+          id: `${layerId}-bridge-halo`, type: "line", source: sourceId,
+          filter: ["==", ["get", "kind"], "bridge"],
+          layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
+          paint: {
+            "line-color": "#2d9cdb",
+            "line-width": spec.width + 8,
+            "line-opacity": 0.25,
+            "line-offset": directionOffset(),
+          },
+        });
+        map.addLayer({
+          id: `${layerId}-bridge`, type: "line", source: sourceId,
+          filter: ["==", ["get", "kind"], "bridge"],
+          layout: { "line-cap": "round", "line-join": "round", visibility: "none" },
+          paint: {
+            "line-color": "#2d9cdb",
+            "line-width": spec.width + 1,
+            "line-opacity": 0.95,
+            "line-dasharray": [1.5, 1.5],
+            "line-offset": directionOffset(),
+          },
+        });
+      }
+    }
+    if (spec.off) {
+      for (const id of [layerId, `${layerId}-inferred`, `${layerId}-points`]) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
+      }
+    }
+
+    for (const f of data.features) {
+      const coords = f.geometry.type === "Point"
+        ? [f.geometry.coordinates]
+        : f.geometry.coordinates;
+      for (const c of coords) {
+        bounds = bounds || new maplibregl.LngLatBounds(c, c);
+        bounds.extend(c);
+      }
+    }
+
+    const row = document.createElement("div");
+    row.className = "layer-row";
+    const swatchColor = typeof spec.color === "string" && spec.color.startsWith("#")
+      ? spec.color : "#6fcf97";
+    row.innerHTML = `
+      <input type="checkbox" ${spec.off ? "" : "checked"} />
+      <span class="swatch" style="background:${swatchColor}"></span>
+      <span>${spec.label}</span>
+      <input type="range" min="0" max="100" value="${spec.opacity * 100}" />`;
+    const [checkbox, , , slider] = row.children;
+    const siblingIds = [layerId, `${layerId}-inferred`, `${layerId}-points`]
+      .filter((id) => map.getLayer(id));
+    checkbox.onchange = () => siblingIds.forEach((id) =>
+      map.setLayoutProperty(id, "visibility", checkbox.checked ? "visible" : "none"));
+    slider.oninput = () => {
+      siblingIds.forEach((id) => {
+        const prop = map.getLayer(id).type === "circle" ? "circle-opacity" : "line-opacity";
+        map.setPaintProperty(id, prop, Number(slider.value) / 100);
+      });
+    };
+    toggles.appendChild(row);
+
+    if (spec.color === "confidence") {
+      const hasBridges = data.features.some((f) => (f.properties || {}).kind === "bridge");
+      if (hasBridges && map.getLayer(`${layerId}-bridge`)) {
+        const brow = document.createElement("div");
+        brow.className = "layer-row ramal-row";
+        brow.innerHTML = `
+          <input type="checkbox" />
+          <span class="swatch" style="background:#2d9cdb"></span>
+          <span>Highlight bridges</span>`;
+        const bcheck = brow.children[0];
+        bcheck.onchange = () => {
+          const vis = bcheck.checked ? "visible" : "none";
+          for (const id of [`${layerId}-bridge-halo`, `${layerId}-bridge`]) {
+            if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
+          }
+        };
+        toggles.appendChild(brow);
+      }
+      const noBridge = ["all",
+        ["!=", ["get", "inferred"], true], ["!=", ["get", "kind"], "bridge"]];
+      renderRamalToggles(toggles, data, [
+        { id: layerId, baseFilter: noBridge },
+        { id: `${layerId}-inferred`, baseFilter: ["==", ["get", "inferred"], true] },
+        { id: `${layerId}-bridge-halo`, baseFilter: ["==", ["get", "kind"], "bridge"] },
+        { id: `${layerId}-bridge`, baseFilter: ["==", ["get", "kind"], "bridge"] },
+      ]);
+    } else if (spec.ramalToggles) {
+      renderRamalToggles(toggles, data, [{ id: layerId, baseFilter: null }]);
+    }
+  }
+
+  if (bounds) map.fitBounds(bounds, { padding: 48, duration: 600 });
+}
+
+/* Per-ramal visibility: one checkbox per reconstructed variant,
+   filtering the given layers (consensus edges/route, or the ramal
+   clusters). Each layerSpec is {id, baseFilter} — baseFilter is the
+   layer's own static filter (e.g. inferred vs not) to AND with. */
+function renderRamalToggles(container, data, layerSpecs) {
+  const ramals = new Map();   // key -> {label, dir}
+  for (const f of data.features) {
+    const p = f.properties || {};
+    if (p.ramal_label === undefined) continue;
+    const dir = p.direction_group ?? 0;
+    ramals.set(`${p.ramal_label}|${dir}`, { label: p.ramal_label, dir });
+  }
+  if (ramals.size <= 1) return;
+
+  const hidden = new Set();
+  const applyFilters = () => {
+    const visible = ["!", ["in",
+      ["concat", ["get", "ramal_label"], "|",
+        ["to-string", ["coalesce", ["get", "direction_group"], 0]]],
+      ["literal", Array.from(hidden)],
+    ]];
+    for (const { id, baseFilter } of layerSpecs) {
+      if (!map.getLayer(id)) continue;
+      map.setFilter(id, baseFilter ? ["all", baseFilter, visible] : visible);
+    }
+  };
+
+  for (const [key, info] of [...ramals.entries()].sort()) {
+    const row = document.createElement("div");
+    row.className = "layer-row ramal-row";
+    const dirLabel = info.label === "unassigned" ? "" : ` · dir ${info.dir}`;
+    row.innerHTML = `
+      <input type="checkbox" checked />
+      <span class="muted">↳</span>
+      <span>${info.label}${dirLabel}</span>`;
+    const checkbox = row.children[0];
+    checkbox.onchange = () => {
+      if (checkbox.checked) hidden.delete(key);
+      else hidden.add(key);
+      applyFilters();
+    };
+    container.appendChild(row);
+  }
+}
+
+/* ---------- metrics ---------- */
+
+const METRIC_ROWS = [
+  ["frechet_m", "Fréchet (strict)", "m", (v) => v < 60],
+  ["frechet_overlap_m", "Fréchet (overlap)", "m", (v) => v < 60],
+  ["start_truncation_m", "Start truncation", "m", (v) => v < 300],
+  ["end_truncation_m", "End truncation", "m", (v) => v < 300],
+  ["coverage", "Coverage", "", (v) => v > 0.9],
+  ["edge_precision", "Edge precision", "", (v) => v > 0.9],
+  ["edge_recall", "Edge recall", "", (v) => v > 0.85],
+  ["max_junction_gap_m", "Max junction gap", "m", (v) => v <= 15],
+  ["consensus_edges", "Edges", "", null],
+  ["inferred_edges", "Inferred edges", "", null],
+];
+
+async function renderMetrics(runId) {
+  const container = document.getElementById("metrics-content");
+  let metrics;
+  try {
+    metrics = await api(`/runs/${runId}/metrics`);
+  } catch {
+    container.textContent = "metrics not available yet";
+    return;
+  }
+  container.innerHTML = "";
+  // metrics.json is now {summary, routes, initial}; older runs are a bare array.
+  const routes = Array.isArray(metrics) ? metrics : (metrics.routes || []);
+  const summary = Array.isArray(metrics) ? null : metrics.summary;
+  const initial = Array.isArray(metrics) ? null : metrics.initial;
+
+  if (initial) {
+    const block = document.createElement("div");
+    block.className = "route-block";
+    const total = initial.traces_total || 0;
+    const matchPct = total ? Math.round((initial.traces_matched / total) * 100) : 0;
+    const rows = (initial.per_route || []).map((r) =>
+      `<tr><td>${r.route} <span class="muted">(${r.role})</span></td>` +
+      `<td>${r.matched} / ${r.traces}</td></tr>`).join("");
+    block.innerHTML = `<h3>Initial data</h3><table class="metrics">
+      <tr><td>Traces (matched / total)</td><td>${initial.traces_matched} / ${total} · ${matchPct}%</td></tr>
+      ${rows ? `<tr><td colspan="2" class="muted">Per ramal — matched / assigned</td></tr>${rows}` : ""}</table>`;
+    container.appendChild(block);
+  }
+  if (summary) {
+    const pct = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+    const m = (v) => (v == null ? "—" : `${Math.round(v)} m`);
+    const block = document.createElement("div");
+    block.className = "route-block";
+    const compCls = summary.completeness == null ? ""
+      : summary.completeness >= 0.95 ? "metric-good" : "metric-bad";
+    const ramCls = summary.ramales_found >= summary.ramales_expected
+      ? "metric-good" : "metric-bad";
+    block.innerHTML = `<h3>Summary</h3><table class="metrics">
+      <tr><td>Completeness (of rider envelope)</td><td class="${compCls}">${pct(summary.completeness)}</td></tr>
+      <tr><td>Coverage envelope (of full route)</td><td>${pct(summary.coverage_envelope)}</td></tr>
+      <tr><td>Per-trace distance (median / mean ± std)</td><td>${m(summary.trace_distance_median_m)} / ${m(summary.trace_distance_mean_m)} ± ${m(summary.trace_distance_std_m)}</td></tr>
+      <tr><td>Ramales found / expected</td><td class="${ramCls}">${summary.ramales_found} / ${summary.ramales_expected}</td></tr>
+      <tr><td>Reconstructed routes</td><td>${summary.reconstructed_routes}</td></tr>
+      ${summary.voters_requested ? `<tr><td>Voters (voted / requested) · turnout</td><td>${summary.voters_voted} / ${summary.voters_requested} · ${pct(summary.turnout)}</td></tr>` : ""}
+      ${summary.votes_total ? `<tr><td>Votes (for / against)</td><td>${summary.votes_total} · ${summary.votes_for} ✓ / ${summary.votes_against} ✗</td></tr>` : ""}</table>`;
+    container.appendChild(block);
+  }
+  for (const route of routes) {
+    const block = document.createElement("div");
+    block.className = "route-block";
+    const status = route.route_status || "PENDING";
+    const dir = route.direction_group !== undefined ? ` · dir ${route.direction_group}` : "";
+    block.innerHTML = `<h3>${route.ramal_label}<span class="muted">${dir}</span>
+      <span class="${status === "CONFIRMED" ? "metric-good" : "muted"}">${status}</span></h3>`;
+    const table = document.createElement("table");
+    table.className = "metrics";
+    for (const [key, label, unit, good] of METRIC_ROWS) {
+      const value = route[key];
+      if (value === null || value === undefined) continue;
+      const cls = good === null ? "" : good(value) ? "metric-good" : "metric-bad";
+      const text = typeof value === "number" && !Number.isInteger(value)
+        ? value.toFixed(unit === "m" ? 1 : 3) : value;
+      table.innerHTML += `<tr><td>${label}</td><td class="${cls}">${text}${unit}</td></tr>`;
+    }
+    block.appendChild(table);
+    container.appendChild(block);
+  }
+}
+
+/* ---------- export ---------- */
+
+function exportPng() {
+  const link = document.createElement("a");
+  link.download = `${currentRun || "simlab"}.png`;
+  link.href = map.getCanvas().toDataURL("image/png");
+  link.click();
+}

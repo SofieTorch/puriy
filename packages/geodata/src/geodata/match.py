@@ -3,7 +3,10 @@
 import json
 import math
 import os
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 from uuid import UUID
 
@@ -33,7 +36,42 @@ VALHALLA_URL = os.environ.get("VALHALLA_URL", "http://localhost:8002")
 VALHALLA_EDGE_ID_CACHE_ENV = "GEODATA_VALHALLA_EDGE_ID_CACHE"
 VALHALLA_EDGE_ID_CACHE_DEFAULT = Path.home() / ".cache" / "geodata" / "valhalla-edge-id-cache.json"
 
+# Bounds on the on-disk trace-match cache. Keys are content-hashed and
+# never reused, so without eviction the file grows without limit (one
+# observed real cache reached ~354 MB). Enforced oldest-first at write
+# time. Override via env; 0 disables a bound.
+TRACE_CACHE_MAX_ENTRIES_ENV = "GEODATA_TRACE_CACHE_MAX_ENTRIES"
+TRACE_CACHE_MAX_BYTES_ENV = "GEODATA_TRACE_CACHE_MAX_BYTES"
+TRACE_CACHE_MAX_ENTRIES_DEFAULT = 2000
+TRACE_CACHE_MAX_BYTES_DEFAULT = 128 * 1024 * 1024  # 128 MB
+
 _TRACE_MATCH_CACHE: dict[str, dict[str, object]] | None = None
+_TRACE_MATCH_CACHE_LOCK = threading.Lock()
+_DEFER_CACHE_WRITES = False
+
+
+@contextmanager
+def deferred_cache_writes():
+    """Batch trace-match cache writes for the duration of the block.
+
+    Normally ``trace_match`` rewrites the whole on-disk cache on every
+    miss. When matching many traces — especially in parallel — that is
+    both severe write-amplification and unsafe across threads (two
+    writers race the shared temp file and json.dumps can iterate the
+    dict mid-mutation). Inside this context misses only update the
+    in-memory cache; the file is written once on exit. Re-entrant.
+    """
+    global _DEFER_CACHE_WRITES
+    _load_trace_match_cache()  # pre-warm so worker threads don't race the first load
+    previously_deferred = _DEFER_CACHE_WRITES
+    _DEFER_CACHE_WRITES = True
+    try:
+        yield
+    finally:
+        _DEFER_CACHE_WRITES = previously_deferred
+        if not previously_deferred and _TRACE_MATCH_CACHE is not None:
+            with _TRACE_MATCH_CACHE_LOCK:
+                _write_trace_match_cache(_TRACE_MATCH_CACHE)
 
 
 @dataclass
@@ -91,14 +129,25 @@ def _trace_match_cache_path() -> Path:
     return VALHALLA_EDGE_ID_CACHE_DEFAULT
 
 
+# Bump when the matching pipeline changes in a way that alters cached
+# output (request shape, filtering, fields kept). Old entries then miss
+# the key and are re-matched instead of serving stale results forever —
+# the content hash in the trace_id only catches input changes, not code.
+_MATCH_CACHE_SCHEMA = "v2"
+
+
 def _trace_match_cache_key(
     trace_id: str,
     *,
     costing: str,
     search_radius: int,
     gps_accuracy: int,
+    turn_penalty_factor: int = 0,
 ) -> str:
-    return f"{trace_id}|{costing}|{search_radius}|{gps_accuracy}"
+    return (
+        f"{_MATCH_CACHE_SCHEMA}|{trace_id}|{costing}"
+        f"|{search_radius}|{gps_accuracy}|{turn_penalty_factor}"
+    )
 
 
 def _load_trace_match_cache() -> dict[str, dict[str, object]]:
@@ -127,13 +176,85 @@ def _load_trace_match_cache() -> dict[str, dict[str, object]]:
     return _TRACE_MATCH_CACHE
 
 
+def _cache_max_entries() -> int:
+    return int(os.environ.get(TRACE_CACHE_MAX_ENTRIES_ENV, TRACE_CACHE_MAX_ENTRIES_DEFAULT))
+
+
+def _cache_max_bytes() -> int:
+    return int(os.environ.get(TRACE_CACHE_MAX_BYTES_ENV, TRACE_CACHE_MAX_BYTES_DEFAULT))
+
+
+def _evict_oldest(cache: dict[str, dict[str, object]], count: int) -> int:
+    """Drop the ``count`` oldest-inserted entries (FIFO). Returns the
+    number actually removed."""
+    if count <= 0:
+        return 0
+    doomed = list(islice(cache, count))
+    for key in doomed:
+        del cache[key]
+    return len(doomed)
+
+
+def _serialize_within_limits(
+    cache: dict[str, dict[str, object]], max_entries: int, max_bytes: int
+) -> str:
+    """Evict oldest entries until the cache fits both bounds, then
+    return its compact JSON blob. Mutates ``cache`` in place."""
+    if max_entries > 0 and len(cache) > max_entries:
+        _evict_oldest(cache, len(cache) - max_entries)
+    blob = json.dumps({"version": 1, "traces": cache}, ensure_ascii=False)
+    if max_bytes <= 0:
+        return blob
+    # Entries vary in size, so trimming by the over-budget fraction can
+    # overshoot or undershoot; iterate (bounded) until actually under
+    # the cap. The 0.9 factor plus the progress guard converge in a
+    # couple of passes.
+    for _ in range(8):
+        size = len(blob.encode("utf-8"))
+        if size <= max_bytes or len(cache) <= 1:
+            break
+        keep = max(1, int(len(cache) * max_bytes / size * 0.9))
+        keep = min(keep, len(cache) - 1)  # always make progress
+        _evict_oldest(cache, len(cache) - keep)
+        blob = json.dumps({"version": 1, "traces": cache}, ensure_ascii=False)
+    return blob
+
+
 def _write_trace_match_cache(cache: dict[str, dict[str, object]]) -> None:
     cache_path = _trace_match_cache_path()
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"version": 1, "traces": cache}
+    blob = _serialize_within_limits(cache, _cache_max_entries(), _cache_max_bytes())
     tmp_path = cache_path.with_suffix(f"{cache_path.suffix}.tmp")
-    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path.write_text(blob, encoding="utf-8")
     tmp_path.replace(cache_path)
+
+
+def prune_trace_match_cache(
+    max_entries: int | None = None, max_bytes: int | None = None
+) -> dict[str, int]:
+    """Evict oldest entries from the on-disk trace-match cache and
+    rewrite it compactly. Defaults to the configured bounds; pass
+    explicit values (or 0 to disable a bound) to override.
+
+    Returns ``{"before", "after", "bytes"}``.
+    """
+    global _TRACE_MATCH_CACHE
+    cache = _load_trace_match_cache()
+    before = len(cache)
+    me = _cache_max_entries() if max_entries is None else max_entries
+    mb = _cache_max_bytes() if max_bytes is None else max_bytes
+    with _TRACE_MATCH_CACHE_LOCK:
+        cache_path = _trace_match_cache_path()
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        blob = _serialize_within_limits(cache, me, mb)
+        tmp_path = cache_path.with_suffix(f"{cache_path.suffix}.tmp")
+        tmp_path.write_text(blob, encoding="utf-8")
+        tmp_path.replace(cache_path)
+    return {
+        "before": before,
+        "after": len(cache),
+        "bytes": cache_path.stat().st_size,
+    }
 
 
 def _trace_output_to_cache_entry(
@@ -312,6 +433,7 @@ def trace_match(
     costing: str = "bus",
     search_radius: int = 60,
     gps_accuracy: int = 20,
+    turn_penalty_factor: int = 0,
 ) -> _TraceOutput:
     """Send raw GPS points to Valhalla trace_attributes and return match results.
 
@@ -325,6 +447,11 @@ def trace_match(
         Search radius in meters for candidate road matching.
     gps_accuracy : int
         Expected GPS accuracy in meters.
+    turn_penalty_factor : int
+        Valhalla HMM penalty for turning between candidate edges
+        (0 = Valhalla default). Values around 200-500 strongly
+        discourage the matcher from briefly snapping onto cross
+        streets at intersections and back.
 
     Returns
     -------
@@ -338,14 +465,18 @@ def trace_match(
             entry["time"] = p["time"]
         shape.append(entry)
 
+    trace_options: dict = {
+        "search_radius": search_radius,
+        "gps_accuracy": gps_accuracy,
+    }
+    if turn_penalty_factor > 0:
+        trace_options["turn_penalty_factor"] = turn_penalty_factor
+
     body = {
         "shape": shape,
         "costing": costing,
         "shape_match": "map_snap",
-        "trace_options": {
-            "search_radius": search_radius,
-            "gps_accuracy": gps_accuracy,
-        },
+        "trace_options": trace_options,
     }
 
     cache_key = (
@@ -354,6 +485,7 @@ def trace_match(
             costing=costing,
             search_radius=search_radius,
             gps_accuracy=gps_accuracy,
+            turn_penalty_factor=turn_penalty_factor,
         )
         if trace_id is not None
         else None
@@ -411,13 +543,15 @@ def trace_match(
 
     if cache_key is not None:
         cache = _load_trace_match_cache()
-        cache[cache_key] = _trace_output_to_cache_entry(
-            result,
-            costing=costing,
-            search_radius=search_radius,
-            gps_accuracy=gps_accuracy,
-        )
-        _write_trace_match_cache(cache)
+        with _TRACE_MATCH_CACHE_LOCK:
+            cache[cache_key] = _trace_output_to_cache_entry(
+                result,
+                costing=costing,
+                search_radius=search_radius,
+                gps_accuracy=gps_accuracy,
+            )
+            if not _DEFER_CACHE_WRITES:
+                _write_trace_match_cache(cache)
 
     return result
 

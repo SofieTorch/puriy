@@ -1,0 +1,39 @@
+name: 150_noisy_partial
+description: >
+  Line 150 (Blanco Galindo - Cuatro Esquinas) with realistic phone GPS
+  noise and partial trips: commuters board and alight mid-route.
+routes:
+  - name: main
+    path: transit-lab/seed/routes/150_blanco_galindo_cuatro_esquinas.geojson
+    role: main
+seed: 42
+sim_days: 21
+vote_day: 21
+personas:
+  - name: commuter
+    count: 4
+    trips_per_week: 5.0
+    partial_trip_prob: 0.5
+    travel_window: [0.0, 1.0]
+    min_trip_fraction: 0.4
+    noise_multiplier: 1.0
+    vote_propensity: 0.9
+    fare_report_prob: 0.3
+    sampling_rate_s: 2.0
+  - name: cheap_phone
+    count: 2
+    trips_per_week: 3.0
+    partial_trip_prob: 0.4
+    travel_window: [0.0, 1.0]
+    min_trip_fraction: 0.5
+    noise_multiplier: 1.8
+    vote_propensity: 0.6
+    fare_report_prob: 0.2
+    sampling_rate_s: 4.0
+noise:
+  gaussian_sigma_m: 4.0
+  perpendicular_sigma_m: 3.0
+  jump_probability: 0.02
+  jump_distance_m: 40.0
+  missing_probability: 0.03
+  timestamp_jitter_s: 0.15

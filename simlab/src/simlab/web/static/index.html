@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>simlab — puriy route reconstruction lab</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <link href="/static/style.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="sidebar">
+    <h1>simlab</h1>
+
+    <section>
+      <h2>Scenario</h2>
+      <select id="scenario-select"></select>
+      <p id="scenario-description" class="muted"></p>
+      <button id="run-button">▶ Run scenario</button>
+      <div class="button-row">
+        <button id="edit-scenario">✎ Edit</button>
+        <button id="duplicate-scenario">⧉ Duplicate</button>
+        <button id="new-scenario">+ New</button>
+      </div>
+      <div class="button-row">
+        <button id="experiments-scenario" title="Generate the A/B/C coverage sweep from this scenario">⚗ Generate experiments</button>
+        <button id="manage-scenarios">🗑 Manage…</button>
+      </div>
+      <div id="scenario-manage" hidden>
+        <p class="muted">Select scenarios to delete:</p>
+        <div id="scenario-manage-list"></div>
+        <div class="button-row">
+          <button id="manage-delete">Delete selected</button>
+          <button id="manage-close">Close</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="experiments-section" hidden>
+      <h2>Experiments</h2>
+      <label class="exp-label">Group
+        <select id="exp-group-select"></select>
+      </label>
+      <button id="exp-run-all">▶ Run whole factorial</button>
+      <p id="exp-run-status" class="muted"></p>
+    </section>
+
+    <section>
+      <h2>Runs</h2>
+      <ul id="run-list"></ul>
+      <button id="clear-runs" hidden>🗑 Delete all runs</button>
+    </section>
+
+    <section>
+      <h2>Stages</h2>
+      <ul id="stage-list"></ul>
+    </section>
+
+    <section>
+      <h2>Layers</h2>
+      <div id="layer-toggles"></div>
+    </section>
+
+    <section>
+      <button id="measure-toggle">📏 Measure distance</button>
+      <button id="export-png">⤓ Export map PNG</button>
+      <a id="export-csv" href="#" download>⤓ Metrics CSV</a>
+    </section>
+  </div>
+
+  <div id="map">
+    <div id="measure-readout" hidden></div>
+  </div>
+
+  <div id="metrics-panel">
+    <h2>Metrics <span class="muted">vs ground truth</span></h2>
+    <div id="metrics-content" class="muted">run a scenario to see metrics</div>
+  </div>
+
+  <div id="builder-panel" hidden>
+    <div class="builder-header">
+      <h2>Scenario builder</h2>
+      <button id="builder-close" class="small">✕</button>
+    </div>
+    <div id="builder-form"></div>
+    <p id="builder-error" class="error" hidden></p>
+    <div class="button-row">
+      <button id="builder-save">💾 Save scenario</button>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="/static/app.js"></script>
+  <script src="/static/builder.js"></script>
+</body>
+</html>

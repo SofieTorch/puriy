@@ -1,0 +1,468 @@
+name: 120_Tiquipaya_and_Univalle_to_UMSS_even_more_populated
+description: 'The return way from Tiquipaya (town) and Univalle to UMSS (in the city)
+
+
+  This version contains traces from Univalle to UMSS, which weren''t before.'
+routes:
+- name: 120 Univalle to UMSS
+  path: transit-lab/seed/routes/120_from_univalle_to_umss.geojson
+  role: main
+  from_day: 0
+  fraction_of_trips: 1.0
+- name: 120 Tiquipaya to UMSS
+  path: simlab/routes/120.geojson
+  role: ramal
+  from_day: 0
+  fraction_of_trips: 1.0
+seed: 42
+sim_days: 21
+vote_day: 21
+personas:
+- name: 1. Univalle Tiquipaya to Univalle America
+  traces: 5
+  route: 120 Univalle to UMSS
+  direction: forward
+  travel_window:
+  - 0.0
+  - 0.66
+  trip_distance_std_m: 0.0
+  trip_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  voters: 1
+  vote_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  noise_multiplier: 1.0
+  fare_report_prob: 0.3
+  sampling_rate_s: 2.0
+  fare_areas:
+  - name: area_1
+    start_fraction: 0.0
+    end_fraction: 0.66
+    amount_bob: 3.5
+  color: '#f2c94c'
+- name: "2. Tiquipaya to Cruce Taqui\xF1a"
+  traces: 5
+  route: 120 Tiquipaya to UMSS
+  direction: forward
+  travel_window:
+  - 0.14400000000000002
+  - 0.33299999999999996
+  trip_distance_std_m: 0.0
+  trip_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  voters: 1
+  vote_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  noise_multiplier: 1.0
+  fare_report_prob: 0.3
+  sampling_rate_s: 2.0
+  fare_areas:
+  - name: area_1
+    start_fraction: 0.14400000000000002
+    end_fraction: 0.33299999999999996
+    amount_bob: 3.0
+  color: '#d015dc'
+- name: 3. Final Tiquipaya to Tiquipaya Centro
+  traces: 5
+  route: 120 Tiquipaya to UMSS
+  direction: forward
+  travel_window:
+  - 0.0
+  - 0.185
+  trip_distance_std_m: 0.0
+  trip_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  voters: 1
+  vote_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  noise_multiplier: 1.0
+  fare_report_prob: 0.3
+  sampling_rate_s: 2.0
+  fare_areas:
+  - name: area_1
+    start_fraction: 0.0
+    end_fraction: 0.185
+    amount_bob: 3.0
+  color: '#6fcf97'
+- name: 4. Av Segunda to UMSS
+  traces: 5
+  route: 120 Univalle to UMSS
+  direction: forward
+  travel_window:
+  - 0.406
+  - 0.9059999999999999
+  trip_distance_std_m: 0.0
+  trip_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  voters: 1
+  vote_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  noise_multiplier: 1.0
+  fare_report_prob: 0.3
+  sampling_rate_s: 2.0
+  fare_areas:
+  - name: area_1
+    start_fraction: 0.406
+    end_fraction: 0.9059999999999999
+    amount_bob: 3.5
+  color: '#f2c94c'
+- name: 5. Plaza Colon to UMSS
+  traces: 5
+  route: 120 Tiquipaya to UMSS
+  direction: forward
+  travel_window:
+  - 0.8370000000000001
+  - 0.9059999999999999
+  trip_distance_std_m: 0.0
+  trip_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  voters: 1
+  vote_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  noise_multiplier: 1.0
+  fare_report_prob: 0.3
+  sampling_rate_s: 2.0
+  fare_areas:
+  - name: area_1
+    start_fraction: 0.8370000000000001
+    end_fraction: 0.9059999999999999
+    amount_bob: 3.0
+  color: '#bb6bd9'
+- name: 6. Heroinas to Republica
+  traces: 5
+  route: 120 Tiquipaya to UMSS
+  direction: forward
+  travel_window:
+  - 0.8809999999999999
+  - 1.0
+  trip_distance_std_m: 0.0
+  trip_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  voters: 1
+  vote_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  noise_multiplier: 1.0
+  fare_report_prob: 0.3
+  sampling_rate_s: 2.0
+  fare_areas:
+  - name: area_1
+    start_fraction: 0.88
+    end_fraction: 1.0
+    amount_bob: 3.0
+  color: '#f2994a'
+- name: 7. Cala Cala to Plaza Colon
+  traces: 5
+  route: 120 Univalle to UMSS
+  direction: forward
+  travel_window:
+  - 0.606
+  - 0.835
+  trip_distance_std_m: 0.0
+  trip_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  voters: 1
+  vote_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  noise_multiplier: 1.0
+  fare_report_prob: 0.3
+  sampling_rate_s: 2.0
+  fare_areas:
+  - name: area_1
+    start_fraction: 0.606
+    end_fraction: 0.835
+    amount_bob: 3.0
+  color: '#e3514f'
+- name: 8. Tiquipaya to Heroinas
+  traces: 5
+  route: 120 Tiquipaya to UMSS
+  direction: forward
+  travel_window:
+  - 0.17
+  - 0.89
+  trip_distance_std_m: 0.0
+  trip_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  voters: 1
+  vote_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  noise_multiplier: 1.0
+  fare_report_prob: 0.3
+  sampling_rate_s: 2.0
+  fare_areas:
+  - name: area_1
+    start_fraction: 0.17
+    end_fraction: 0.89
+    amount_bob: 3.5
+  color: '#691fde'
+- name: 9. Ramon Rivero to Republica
+  traces: 7
+  route: 120 Univalle to UMSS
+  direction: forward
+  travel_window:
+  - 0.769
+  - 1.0
+  trip_distance_std_m: 0.0
+  trip_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  voters: 0
+  vote_position_weights:
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  - 1.0
+  noise_multiplier: 1.0
+  fare_report_prob: 0.3
+  sampling_rate_s: 2.0
+  fare_areas:
+  - name: area_1
+    start_fraction: 0.769
+    end_fraction: 1.0
+    amount_bob: 3.0
+  color: '#6fcf97'
+speed:
+  base_speed_mps: 8.0
+  speed_stddev_mps: 2.2
+  min_speed_mps: 4.0
+  max_speed_mps: 14.0
+  stop_spacing_m: 1250.0
+  stop_dwell_min_s: 5.0
+  stop_dwell_max_s: 55.0
+  intersection_spacing_m: 700.0
+  intersection_dwell_max_s: 30.0
+noise:
+  gaussian_enabled: true
+  gaussian_sigma_m: 0.1
+  perpendicular_enabled: false
+  perpendicular_sigma_m: 3.0
+  gps_correlation_time_s: 20.0
+  zigzag_enabled: true
+  zigzag_amplitude_m: 6.0
+  zigzag_period_points: 12
+  jumps_enabled: false
+  jump_probability: 0.01
+  jump_distance_m: 5.0
+  missing_enabled: false
+  missing_probability: 0.02
+  biased_drift_enabled: false
+  biased_drift_m_per_point: 0.05
+  biased_drift_bearing_deg: 70.0
+  lateral_drift_enabled: false
+  lateral_drift_total_m: 3.0
+  timestamp_jitter_enabled: false
+  timestamp_jitter_s: 0.05
+votes:
+  eligibility_min_trips: 3
+  overlap_tolerance_m: 50.0
+  approve_prob_true_edge: 0.92
+  approve_prob_spurious_edge: 0.15
+  edge_min_votes: 3
+  edge_approval_threshold: 0.6
+  route_approval_threshold: 0.8
+fares:
+  base_fare_bob: 3.0
+  misreport_prob: 0.05
+search_radius_m: 8
+min_match_quality: 0.8
+gps_accuracy_m: 5.0
+weld_gap_m: 30.0
+stitch_gap_m: 150.0
+bridge_gaps: false
+strategy: support_graph
+reconstruct_per_route: false
+infer_direction: false
+ramal_discovery: divergence
