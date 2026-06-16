@@ -7,15 +7,29 @@
   --text: #e8eaed;
   --muted: #9aa0a8;
   --accent: #e3514f;
+  --sidebar-w: 300px;
 }
 
 html, body { height: 100%; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
 
 body {
   display: grid;
-  grid-template-columns: 300px 1fr 320px;
+  grid-template-columns: var(--sidebar-w) 1fr 320px;
   background: var(--bg);
   color: var(--text);
+}
+
+/* Drag handle on the sidebar's right edge (fixed → out of grid flow). */
+#sidebar-resizer {
+  position: fixed; top: 0; bottom: 0; left: var(--sidebar-w);
+  width: 8px; margin-left: -4px; cursor: col-resize; z-index: 60;
+}
+#sidebar-resizer::after {
+  content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 2px;
+  background: transparent; transition: background 0.12s;
+}
+#sidebar-resizer:hover::after, #sidebar-resizer.dragging::after {
+  background: var(--accent);
 }
 
 #sidebar, #metrics-panel {
@@ -117,6 +131,20 @@ ul { list-style: none; }
 .ramal-row { padding-left: 18px; font-size: 12px; }
 .swatch { width: 14px; height: 4px; border-radius: 2px; display: inline-block; }
 
+/* voteable-segments preview tree */
+.vseg-controls { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12.5px; }
+.vseg-controls input[type="number"] { width: 48px; }
+.vseg-user > summary {
+  display: flex; align-items: center; gap: 8px; padding: 5px 2px;
+  font-size: 13px; cursor: pointer; list-style: none;
+}
+.vseg-user > summary::-webkit-details-marker { display: none; }
+.vseg-user > summary::before { content: "▸"; color: var(--muted); font-size: 10px; }
+.vseg-user[open] > summary::before { content: "▾"; }
+.vseg-user-name { font-weight: 600; }
+.vseg-seg { padding-left: 22px; font-size: 12px; }
+.vseg-user .run-metric { margin-left: auto; }
+
 table.metrics { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
 table.metrics td { padding: 3px 4px; border-bottom: 1px solid var(--border); }
 table.metrics td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
@@ -187,6 +215,7 @@ button.small { width: auto; padding: 2px 8px; margin: 0; }
   body { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; }
   #sidebar, #metrics-panel { height: auto; max-height: 40vh; }
   #map { height: 60vh; }
+  #sidebar-resizer { display: none; }
 }
 
 /* Scenario manage (multi-select delete) panel */
@@ -257,8 +286,37 @@ details.run-group > li { margin-left: 10px; }
 .mode-btn.active { background: var(--accent); color: #fff; }
 .mode-btn:hover { border-color: transparent; }
 /* mode visibility (body carries the active mode) */
-body.mode-database .scenario-only { display: none; }
-body.mode-scenario .database-only { display: none; }
+body.mode-database .scenario-only,
+body.mode-inspect .scenario-only { display: none; }
+body.mode-scenario .database-only,
+body.mode-inspect .database-only { display: none; }
+body.mode-scenario .inspect-only,
+body.mode-database .inspect-only { display: none; }
+
+/* Database inspector */
+.inspect-filter { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; }
+.inspect-filter select { width: auto; font-size: 12px; padding: 2px 4px; margin: 0; }
+.insp-device.active > summary { background: rgba(45, 156, 219, 0.18); border-radius: 5px; }
+#inspect-devices { display: flex; flex-direction: column; gap: 2px; }
+.insp-device > summary {
+  display: flex; align-items: center; gap: 7px; padding: 5px 2px;
+  font-size: 12.5px; cursor: pointer; list-style: none;
+}
+.insp-device > summary::-webkit-details-marker { display: none; }
+.insp-star { color: #f2c94c; width: 12px; }
+.insp-star-empty { width: 12px; display: inline-block; }
+.insp-id {
+  font-family: ui-monospace, monospace; font-size: 11.5px; cursor: copy;
+  background: var(--bg); padding: 1px 5px; border-radius: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 0 1 auto; min-width: 0;   /* grow with the panel; ellipsis only if needed */
+}
+.insp-id:hover { background: var(--border); }
+.insp-device .run-metric { margin-left: auto; white-space: nowrap; }
+.insp-body { padding: 2px 0 6px 19px; font-size: 11.5px; }
+.insp-line { color: var(--muted); }
+.insp-line.elig { color: #27ae60; font-weight: 600; }
+.insp-sess { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
 
 /* Database mode: pipeline steps + layers */
 #db-steps-box h2, #db-layers-box h2 { margin-top: 14px; }

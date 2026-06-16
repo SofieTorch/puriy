@@ -79,11 +79,17 @@ function buildMapHtml(
     return `L.polyline([${coords}], {color:'${color}', weight:${weight}${dash}}).addTo(map);`;
   }).join('\n');
 
-  // Line route polyline (for nearby line view)
+  // When a section is highlighted (voting), the full route is drawn as muted
+  // context behind it; otherwise (nearby-line view) it's the primary line.
+  const hasHighlight = !!(highlightPath && highlightPath.length >= 2);
+
+  // Line route polyline (full route)
   let lineRouteJs = '';
   if (lineRoute && lineRoute.coordinates.length >= 2) {
     const coords = lineRoute.coordinates.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
-    lineRouteJs = `L.polyline([${coords}], {color:'#09A6F3', weight:5}).addTo(map);`;
+    lineRouteJs = hasHighlight
+      ? `L.polyline([${coords}], {color:'#6b7280', weight:5, opacity:0.45}).addTo(map);`
+      : `L.polyline([${coords}], {color:'#09A6F3', weight:5}).addTo(map);`;
   }
 
   // Detour path polyline (orange dashed, overlaid on normal route)
@@ -96,11 +102,18 @@ function buildMapHtml(
 
   // Highlighted section (bold blue, for voting)
   let highlightPathJs = '';
-  if (highlightPath && highlightPath.length >= 2) {
-    const coords = highlightPath.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
-    highlightPathJs = `L.polyline([${coords}], {color:'#09A6F3', weight:7, opacity:0.9}).addTo(map);`;
-    for (const [lng, lat] of highlightPath) addToBounds(lng, lat);
+  if (hasHighlight) {
+    const coords = highlightPath!.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
+    highlightPathJs = `L.polyline([${coords}], {color:'#09A6F3', weight:7, opacity:1}).addTo(map);`;
+    for (const [lng, lat] of highlightPath!) addToBounds(lng, lat);
   }
+
+  // Legend — only while voting (section highlighted over the full route).
+  const legendHtml = hasHighlight ? `
+<div id="legend">
+  <div class="legend-row"><span class="legend-line" style="background:#09A6F3"></span>Tu sección</div>
+  <div class="legend-row"><span class="legend-line" style="background:#6b7280;opacity:0.5"></span>Resto de la ruta</div>
+</div>` : '';
 
   // Markers
   const markers: string[] = [];
@@ -162,10 +175,20 @@ function buildMapHtml(
   }
   #recenter:active { background: #f3f4f6; }
   #recenter svg { width: 20px; height: 20px; }
+  #legend {
+    position: fixed; bottom: 12px; left: 12px; z-index: 9999;
+    background: rgba(255,255,255,0.92); border-radius: 10px; padding: 8px 10px;
+    font-family: -apple-system, system-ui, sans-serif; font-size: 12px; color: #374151;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.15);
+  }
+  .legend-row { display: flex; align-items: center; gap: 6px; }
+  .legend-row + .legend-row { margin-top: 4px; }
+  .legend-line { width: 16px; height: 4px; border-radius: 2px; display: inline-block; }
 </style>
 </head>
 <body>
 <div id="map"></div>
+${legendHtml}
 <button id="recenter" onclick="recenter()">
   <svg viewBox="0 0 24 24" fill="none" stroke="#09A6F3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
@@ -174,7 +197,7 @@ function buildMapHtml(
 <script>
   var bounds = ${hasCoords ? `[[${minLat},${minLng}],[${maxLat},${maxLng}]]` : 'null'};
   var map = L.map('map', {zoomControl: false, attributionControl: false}).setView([${centerLat}, ${centerLng}], 13);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19}).addTo(map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {maxZoom: 20, subdomains: 'abcd'}).addTo(map);
   ${polylines}
   ${lineRouteJs}
   ${detourPathJs}

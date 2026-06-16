@@ -10,6 +10,14 @@ if (process.env.EXPO_PUBLIC_E2E === 'true') {
   LogBox.ignoreAllLogs(true);
 }
 
+// Expo Go on Android (SDK 53+) prints this natively because remote push was
+// removed from Expo Go — it's harmless for local dev (we register tokenless and
+// use a development build for real push). Silence the noise so it stops nagging.
+LogBox.ignoreLogs([
+  /Android Push notifications.*removed from Expo Go/,
+  'expo-notifications',
+]);
+
 import { DatabaseProvider } from '@/components/DatabaseProvider';
 import { GluestackUIProvider } from '@/components/ui/gluestack-ui-provider';
 import { initPushNotifications } from '@/services/push';
@@ -31,20 +39,20 @@ export const unstable_settings = {
 
 /**
  * Effects that need the local DB to be initialized — mounted under
- * DatabaseProvider so `getDb()` works.
+ * DatabaseProvider so `getDb()` works. `SQLiteProvider` opens the database
+ * asynchronously, so anything that reaches `getDb()` (push registration reads
+ * the device id from SQLite) must run here, not in RootLayout's effect, or it
+ * fires before the db ref is set and throws "Database not initialized".
  */
 function PostBootEffects() {
   useEffect(() => {
     void rescheduleAllSavedTrips();
+    void initPushNotifications();
   }, []);
   return null;
 }
 
 export default function RootLayout() {
-  useEffect(() => {
-    void initPushNotifications();
-  }, []);
-
   return (
 
     <GluestackUIProvider mode="light">

@@ -55,21 +55,72 @@ async function init() {
   // Database mode: promote scenarios → DB, run the real pipeline, visualize.
   document.getElementById("db-promote").onclick = () => promoteScenario();
   document.getElementById("db-new-line").onclick = createDbLine;
+  document.getElementById("db-rebuild-graph").onclick = rebuildDirectionsGraph;
+  document.getElementById("db-vsegs-mintrips").onchange = () => {
+    if (_currentDbLine) renderVoteableSegments(_currentDbLine);
+  };
   document.getElementById("mode-scenario-btn").onclick = () => setMode("scenario");
   document.getElementById("mode-database-btn").onclick = () => setMode("database");
+  document.getElementById("mode-inspect-btn").onclick = () => setMode("inspect");
+  document.getElementById("inspect-refresh").onclick = loadInspector;
+  document.getElementById("inspect-eligible-only").onchange = renderInspector;
+  document.getElementById("inspect-line").onchange = renderInspector;
+  initSidebarResize();
   setMode(localStorage.getItem("simlabMode") || "scenario");
+}
+
+/* ---------- resizable sidebar ---------- */
+
+function initSidebarResize() {
+  const KEY = "simlabSidebarW";
+  const root = document.documentElement;
+  const MIN = 240, MAX = 760;
+  const saved = parseInt(localStorage.getItem(KEY), 10);
+  if (saved >= MIN && saved <= MAX) root.style.setProperty("--sidebar-w", saved + "px");
+
+  const handle = document.getElementById("sidebar-resizer");
+  let dragging = false;
+  const onMove = (e) => {
+    if (!dragging) return;
+    const w = Math.max(MIN, Math.min(MAX, e.clientX));
+    root.style.setProperty("--sidebar-w", w + "px");
+  };
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("dragging");
+    document.body.style.userSelect = "";
+    const w = parseInt(getComputedStyle(root).getPropertyValue("--sidebar-w"), 10);
+    if (w) localStorage.setItem(KEY, String(w));
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", stop);
+  };
+  handle.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    dragging = true;
+    handle.classList.add("dragging");
+    document.body.style.userSelect = "none";   // no text selection while dragging
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", stop);
+  });
+  // Double-click the handle to reset to the default width.
+  handle.addEventListener("dblclick", () => {
+    root.style.setProperty("--sidebar-w", "300px");
+    localStorage.removeItem(KEY);
+  });
 }
 
 /* ---------- database mode ---------- */
 
 function setMode(mode) {
-  const db = mode === "database";
-  document.body.classList.toggle("mode-database", db);
-  document.body.classList.toggle("mode-scenario", !db);
-  document.getElementById("mode-database-btn").classList.toggle("active", db);
-  document.getElementById("mode-scenario-btn").classList.toggle("active", !db);
+  for (const m of ["scenario", "database", "inspect"]) {
+    document.body.classList.toggle(`mode-${m}`, mode === m);
+    document.getElementById(`mode-${m}-btn`).classList.toggle("active", mode === m);
+  }
   localStorage.setItem("simlabMode", mode);
-  if (db) { loadDbLines(); } else { clearDbLayers(); }
+  if (mode === "database") loadDbLines();
+  else clearDbLayers();
+  if (mode === "inspect") loadInspector();
 }
 
 function _dbStatus(text) {
@@ -91,6 +142,25 @@ async function promoteScenario(lineId) {
   _dbStatus(`Line "${r.line_name}" now has +${r.sessions} traces, ${r.devices} ` +
             `devices. Click ▶ Build to run the pipeline.`);
   await loadDbLines();
+}
+
+async function rebuildDirectionsGraph() {
+  _dbStatus("Rebuilding the API server's directions graph…");
+  let j;
+  try {
+    const r = await fetch("/api/rebuild-graph", { method: "POST" });
+    j = await r.json();
+  } catch (e) {
+    _dbStatus("Rebuild request failed: " + e);
+    return;
+  }
+  if (j.ok) {
+    const g = j.result || {};
+    _dbStatus(`Directions graph rebuilt: ${g.lines} line(s) · ${g.bus_edges} ` +
+              `bus edges · ${g.transfer_edges} transfers. A→B routing is fresh.`);
+  } else {
+    _dbStatus(`Rebuild failed (${j.url}): ${j.error}. Is the API server running?`);
+  }
 }
 
 async function createDbLine() {
@@ -213,11 +283,13 @@ function renderDbSteps(steps) {
 }
 
 async function showLine(id) {
+  _currentDbLine = id;
   const [routes, traces] = await Promise.all([
     api(`/lines/${id}/routes`),
     api(`/lines/${id}/traces`),
   ]);
   setDbLayers(routes, traces);
+  await renderVoteableSegments(id);
 }
 
 async function deleteDbLine(id, name) {
@@ -319,6 +391,266 @@ function clearDbLayers() {
   _dbLayerIds = [];
   const layersBox = document.getElementById("db-layers-box");
   if (layersBox) layersBox.hidden = true;
+  clearVsegLayers();
+}
+
+/* ---------- voteable segments (preview of the per-rider vote UI) ---------- */
+
+// Leads with colors distinct from the route ramal layers (red/blue) so a
+// rider's voteable highlight pops against the route it overlays.
+const _VSEG_PALETTE = ["#27ae60", "#9b51e0", "#f2994a", "#e91e63", "#00bcd4",
+  "#7cb342", "#ff8f00", "#2f80ed", "#5c6bc0", "#eb5757"];
+let _currentDbLine = null;
+let _vsegLayerIds = [];   // every voteable-segment map layer currently shown
+
+function clearVsegLayers() {
+  for (const id of _vsegLayerIds) {
+    if (map.getLayer(id)) map.removeLayer(id);
+    if (map.getSource(`${id}-src`)) map.removeSource(`${id}-src`);
+  }
+  _vsegLayerIds = [];
+  const box = document.getElementById("db-vsegs-box");
+  if (box) box.hidden = true;
+}
+
+function _setVsegVisible(id, coords, color, visible) {
+  const src = `${id}-src`;
+  const fc = { type: "FeatureCollection", features: [
+    { type: "Feature", geometry: { type: "LineString", coordinates: coords } }] };
+  const apply = () => {
+    if (!map.getSource(src)) {
+      map.addSource(src, { type: "geojson", data: fc });
+      map.addLayer({
+        id, type: "line", source: src,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": color, "line-width": 6, "line-opacity": 0.85 },
+      });
+      if (!_vsegLayerIds.includes(id)) _vsegLayerIds.push(id);
+    }
+    map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+  };
+  try { apply(); } catch (e) { map.once("idle", apply); }
+}
+
+async function renderVoteableSegments(lineId) {
+  clearVsegLayers();
+  const box = document.getElementById("db-vsegs-box");
+  const tree = document.getElementById("db-vsegs");
+  const summary = document.getElementById("db-vsegs-summary");
+  tree.innerHTML = "";
+  box.hidden = false;
+
+  const minTrips = Math.max(1, parseInt(
+    document.getElementById("db-vsegs-mintrips").value, 10) || 1);
+  let data;
+  try {
+    data = await api(`/lines/${lineId}/voteable-segments?min_trips=${minTrips}`);
+  } catch (e) {
+    summary.textContent = "failed to load";
+    return;
+  }
+  const users = data.users || [];
+  const nSeg = users.reduce((a, u) => a + u.segments.length, 0);
+  summary.textContent =
+    `${users.length} rider(s) · ${nSeg} segment(s) · ${data.ramal_count} ramal(es)`;
+  if (!users.length) {
+    tree.innerHTML =
+      `<p class="muted">No rider has ≥${minTrips} trip(s) on this line. ` +
+      `Sim non-voters record a single trip; lower Min trips to 1 to see them.</p>`;
+    return;
+  }
+
+  users.forEach((u, ui) => {
+    const color = _VSEG_PALETTE[ui % _VSEG_PALETTE.length];
+    const persona = (u.device_id.split(":")[1] || u.device_id).trim();
+    const details = document.createElement("details");
+    details.className = "vseg-user";
+
+    const sum = document.createElement("summary");
+    sum.innerHTML =
+      `<input type="checkbox" class="vseg-user-cb" />` +
+      `<span class="swatch" style="background:${color}"></span>` +
+      `<span class="vseg-user-name">User ${ui + 1}</span>` +
+      `<span class="run-metric">${u.segments.length} seg · ${u.trip_count} trips</span>`;
+    sum.title = u.device_id;
+    details.appendChild(sum);
+
+    const kids = [];
+    u.segments.forEach((s, si) => {
+      const layerId = `db-vseg-${ui}-${si}`;
+      const row = document.createElement("label");
+      row.className = "vseg-seg layer-row";
+      const km = (s.length_m / 1000).toFixed(2);
+      row.innerHTML =
+        `<input type="checkbox" />` +
+        `<span class="swatch" style="background:${color}"></span>` +
+        `<span>Segment ${si + 1} <span class="muted">${s.ramal_label}</span></span>` +
+        `<span class="run-metric">${s.edge_count}e · ${km} km</span>`;
+      const cb = row.querySelector("input");
+      cb.onchange = () => {
+        _setVsegVisible(layerId, s.geometry, color, cb.checked);
+        syncUserCb();
+      };
+      kids.push({ cb, layerId, coords: s.geometry, color });
+      details.appendChild(row);
+    });
+
+    const userCb = sum.querySelector(".vseg-user-cb");
+    // Clicking the parent checkbox shouldn't also toggle the <details>.
+    userCb.onclick = (e) => e.stopPropagation();
+    userCb.onchange = () => {
+      kids.forEach((k) => {
+        k.cb.checked = userCb.checked;
+        _setVsegVisible(k.layerId, k.coords, k.color, userCb.checked);
+      });
+    };
+    function syncUserCb() {
+      const on = kids.filter((k) => k.cb.checked).length;
+      userCb.checked = on === kids.length;
+      userCb.indeterminate = on > 0 && on < kids.length;
+    }
+
+    tree.appendChild(details);
+  });
+}
+
+/* ---------- database inspector ---------- */
+
+let _inspectorDevices = [];
+let _inspectorMinTrips = 3;
+
+async function loadInspector() {
+  const summary = document.getElementById("inspect-summary");
+  summary.textContent = "loading…";
+  let data;
+  try { data = await api("/inspect/devices"); }
+  catch (e) { summary.textContent = "failed to load"; return; }
+  _inspectorDevices = data.devices || [];
+  _inspectorMinTrips = data.min_trips ?? 3;
+  _populateInspectLines();
+  renderInspector();
+}
+
+/** Fill the line dropdown from the lines present in the data, keeping the
+ * current selection if it still exists. */
+function _populateInspectLines() {
+  const sel = document.getElementById("inspect-line");
+  const prev = sel.value;
+  const names = [...new Set(
+    _inspectorDevices.flatMap((d) => d.lines.map((l) => l.line_name))
+  )].filter((n) => n && n !== "(no line)").sort();
+  sel.innerHTML = `<option value="">all lines</option>` +
+    names.map((n) => `<option value="${_esc(n)}">${_esc(n)}</option>`).join("");
+  if (names.includes(prev)) sel.value = prev;
+}
+
+/** A device can vote on `line` if it has >= min_trips clean trips there; with
+ * no line selected, "any line". */
+function _deviceEligible(dev, line) {
+  if (!line) return dev.eligible_any;
+  const l = dev.lines.find((x) => x.line_name === line);
+  return !!(l && l.eligible);
+}
+
+function renderInspector() {
+  const box = document.getElementById("inspect-devices");
+  const summary = document.getElementById("inspect-summary");
+  const eligibleOnly = document.getElementById("inspect-eligible-only").checked;
+  const line = document.getElementById("inspect-line").value;
+  box.innerHTML = "";
+
+  const totalElig = _inspectorDevices.filter((d) => _deviceEligible(d, line)).length;
+  summary.textContent =
+    `${_inspectorDevices.length} device(s) · ${totalElig} eligible to vote ` +
+    `${line ? `on ${line}` : "on any line"} (≥${_inspectorMinTrips} clean trips)`;
+
+  const devices = eligibleOnly
+    ? _inspectorDevices.filter((d) => _deviceEligible(d, line))
+    : _inspectorDevices;
+
+  for (const dev of devices) {
+    const details = document.createElement("details");
+    details.className = "insp-device";
+
+    const eligible = _deviceEligible(dev, line);
+    // When a line is selected, show that line's clean count; else the total.
+    const lineEntry = line && dev.lines.find((l) => l.line_name === line);
+    const cleanLabel = lineEntry
+      ? `${lineEntry.clean_trips} clean on ${line}`
+      : `${dev.clean_trip_count} clean`;
+
+    const sum = document.createElement("summary");
+    const star = eligible
+      ? `<span class="insp-star" title="enough clean trips to vote">★</span>`
+      : `<span class="insp-star-empty"></span>`;
+    sum.innerHTML =
+      star +
+      `<code class="insp-id" title="click to copy id">${_esc(dev.id)}</code>` +
+      `<span class="run-metric">${dev.session_count} sess · ${cleanLabel} · ` +
+      `${_fmtTime(dev.last_seen_at)}</span>`;
+    const idEl = sum.querySelector(".insp-id");
+    idEl.onclick = (e) => { e.preventDefault(); e.stopPropagation(); copyText(dev.id, idEl); };
+    // Click the row (not the id) → draw this device's traces on the map.
+    sum.addEventListener("click", () => showDeviceTraces(dev.id, details));
+    details.appendChild(sum);
+
+    const body = document.createElement("div");
+    body.className = "insp-body";
+    if (dev.lines.length) {
+      body.innerHTML = dev.lines.map((l) =>
+        `<div class="insp-line ${l.eligible ? "elig" : ""}">` +
+        `${_esc(l.line_name)}: ${l.clean_trips}/${l.sessions} clean` +
+        `${l.eligible ? " · ✓ can vote" : ""}</div>`).join("");
+    }
+    body.innerHTML += dev.sessions.length
+      ? dev.sessions.map((s) =>
+          `<div class="insp-sess"><span>${_esc(s.line_name || "(no line)")}</span>` +
+          `<span class="muted">${s.points} pts · ${s.clean ? "clean" : _esc(s.processing_status)}` +
+          `</span></div>`).join("")
+      : `<div class="muted insp-sess">no traces recorded</div>`;
+    details.appendChild(body);
+    box.appendChild(details);
+  }
+  if (!devices.length) {
+    box.innerHTML = `<p class="muted">No devices${eligibleOnly ? " eligible to vote" : ""}.</p>`;
+  }
+}
+
+async function showDeviceTraces(deviceId, rowEl) {
+  document.querySelectorAll(".insp-device.active")
+    .forEach((d) => d.classList.remove("active"));
+  if (rowEl) rowEl.classList.add("active");
+  let fc;
+  try { fc = await api(`/inspect/device-traces?device_id=${encodeURIComponent(deviceId)}`); }
+  catch (e) { return; }
+  _setDbGeo("insp-traces", fc,
+    { "line-color": "#2d9cdb", "line-width": 3, "line-opacity": 0.9 });
+  let bounds = null;
+  for (const f of fc.features || []) {
+    for (const c of f.geometry.coordinates) {
+      bounds = bounds || new maplibregl.LngLatBounds(c, c);
+      bounds.extend(c);
+    }
+  }
+  if (bounds) map.fitBounds(bounds, { padding: 60, duration: 500 });
+}
+
+async function copyText(text, el) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const prev = el.textContent;
+    el.textContent = "copied!";
+    setTimeout(() => { el.textContent = prev; }, 900);
+  } catch (e) { /* clipboard unavailable (insecure context) */ }
+}
+
+function _fmtTime(iso) {
+  return iso ? iso.replace("T", " ").slice(0, 16) : "—";
+}
+
+function _esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
 /* ---------- experiments ---------- */

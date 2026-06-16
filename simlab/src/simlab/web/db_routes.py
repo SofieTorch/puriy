@@ -297,3 +297,258 @@ def line_traces(line_id: str) -> dict:
         return {"type": "FeatureCollection", "features": features}
     finally:
         db.close()
+
+
+# --- preview the voteable segments (what the app would show each rider) ------
+
+def _stitch(edges, to_shape) -> list[list[float]]:
+    """Concatenate consecutive edge LineStrings into one [lon, lat] polyline,
+    de-duplicating the shared boundary vertex (same logic the server uses)."""
+    out: list[list[float]] = []
+    for edge in edges:
+        if edge.path is None:
+            continue
+        coords = [[x, y] for x, y in to_shape(edge.path).coords]
+        if not coords:
+            continue
+        if out and out[-1] == coords[0]:
+            out.extend(coords[1:])
+        else:
+            out.extend(coords)
+    return out
+
+
+def _polyline_length_m(coords: list[list[float]]) -> float:
+    from math import asin, cos, radians, sin, sqrt
+
+    total = 0.0
+    for (lo1, la1), (lo2, la2) in zip(coords, coords[1:]):
+        lo1, la1, lo2, la2 = map(radians, (lo1, la1, lo2, la2))
+        h = sin((la2 - la1) / 2) ** 2 + cos(la1) * cos(la2) * sin((lo2 - lo1) / 2) ** 2
+        total += 6371000 * 2 * asin(sqrt(h))
+    return total
+
+
+@db_router.get("/lines/{line_id}/voteable-segments")
+def line_voteable_segments(line_id: str, min_trips: int = 1) -> dict:
+    """Preview the voteable segments per rider — exactly what each device would
+    be shown to vote on in the app, WITHOUT casting any votes.
+
+    For every device with cleaned trips on the line, find the route edges that
+    overlap its own trips (per ramal), group them into contiguous sections, and
+    return them as a User -> Segments hierarchy. ``min_trips`` defaults to 1
+    because sim devices record a single trip each (the production app gates at
+    3); raise it to see who would actually be eligible.
+    """
+    from geoalchemy2.shape import to_shape
+    from sqlalchemy import select
+
+    from database.models import Route, RouteEdge, RouteStatus, Trip, TripSession
+    from geodata.edge_overlap import (
+        find_overlapping_edges,
+        get_device_trips_for_line,
+    )
+
+    lid = UUID(line_id)
+    db = _session()
+    try:
+        # Active route per ramal (sim lines have several).
+        routes = db.execute(
+            select(Route).where(
+                Route.line_id == lid, Route.status != RouteStatus.SUPERSEDED
+            )
+        ).scalars().all()
+        if not routes:
+            return {"users": [], "ramal_count": 0}
+
+        # Every device that recorded a cleaned trip on this line.
+        device_ids = db.execute(
+            select(TripSession.device_id)
+            .distinct()
+            .join(Trip, Trip.session_id == TripSession.id)
+            .where(Trip.line_id == lid, Trip.computed_path.isnot(None))
+            .order_by(TripSession.device_id)
+        ).scalars().all()
+
+        users = []
+        for device_id in device_ids:
+            trips = get_device_trips_for_line(db, device_id, lid)
+            if len(trips) < min_trips:
+                continue
+            trip_ids = [t.id for t in trips]
+
+            segments = []
+            for route in routes:
+                edges = find_overlapping_edges(db, route.id, trip_ids)
+                if not edges:
+                    continue
+                # Split into contiguous runs by edge sequence.
+                run: list[RouteEdge] = []
+                runs: list[list[RouteEdge]] = []
+                for edge in edges:
+                    if run and edge.sequence != run[-1].sequence + 1:
+                        runs.append(run)
+                        run = []
+                    run.append(edge)
+                if run:
+                    runs.append(run)
+
+                for run in runs:
+                    geometry = _stitch(run, to_shape)
+                    if len(geometry) < 2:
+                        continue
+                    segments.append({
+                        "ramal_label": route.ramal_label,
+                        "edge_count": len(run),
+                        "length_m": round(_polyline_length_m(geometry)),
+                        "geometry": geometry,
+                    })
+
+            if segments:
+                users.append({
+                    "device_id": device_id,
+                    "trip_count": len(trips),
+                    "segments": segments,
+                })
+
+        return {"users": users, "ramal_count": len(routes)}
+    finally:
+        db.close()
+
+
+# --- DB inspector: devices + their traces -----------------------------------
+
+@db_router.get("/inspect/devices")
+def inspect_devices() -> dict:
+    """List every device ordered by last connection, with its recorded traces
+    grouped underneath. Used to find a device id to impersonate on the phone for
+    voting (pick one that has >= min_trips clean trips on a line)."""
+    from sqlalchemy import func, select
+
+    from database.models import Device, Line, Trip, TripSession, TripSessionPoint
+    from geodata.edge_overlap import DEFAULT_MIN_TRIPS
+
+    db = _session()
+    try:
+        # Sessions with their line name.
+        sess_rows = db.execute(
+            select(
+                TripSession.id, TripSession.device_id, TripSession.status,
+                TripSession.processing_status, TripSession.started_at, Line.name,
+            ).join(Line, TripSession.line_id == Line.id, isouter=True)
+        ).all()
+        # Point count per session.
+        pt_counts = dict(db.execute(
+            select(TripSessionPoint.session_id, func.count())
+            .group_by(TripSessionPoint.session_id)
+        ).all())
+        # Sessions that produced a clean (matched) trip.
+        clean_sessions = set(db.execute(
+            select(Trip.session_id).where(Trip.computed_path.isnot(None))
+        ).scalars().all())
+
+        by_device: dict[str, list] = {}
+        for sid, device_id, status, proc, started_at, line_name in sess_rows:
+            by_device.setdefault(device_id, []).append({
+                "session_id": str(sid),
+                "line_name": line_name,
+                "status": _status(status),
+                "processing_status": _status(proc),
+                "points": int(pt_counts.get(sid, 0)),
+                "clean": sid in clean_sessions,
+                "started_at": started_at.isoformat() if started_at else None,
+            })
+
+        devices = db.execute(
+            select(Device).order_by(Device.last_seen_at.desc())
+        ).scalars().all()
+
+        out = []
+        for dev in devices:
+            sessions = by_device.get(dev.id, [])
+            # Per-line clean-trip tally → voting eligibility.
+            per_line: dict[str, dict] = {}
+            for s in sessions:
+                ln = s["line_name"] or "(no line)"
+                slot = per_line.setdefault(ln, {"sessions": 0, "clean_trips": 0})
+                slot["sessions"] += 1
+                if s["clean"]:
+                    slot["clean_trips"] += 1
+            lines = [
+                {"line_name": ln, **vals,
+                 "eligible": vals["clean_trips"] >= DEFAULT_MIN_TRIPS}
+                for ln, vals in sorted(per_line.items())
+            ]
+            out.append({
+                "id": dev.id,
+                "platform": _status(dev.platform) if dev.platform else None,
+                "last_seen_at": dev.last_seen_at.isoformat() if dev.last_seen_at else None,
+                "session_count": len(sessions),
+                "clean_trip_count": sum(1 for s in sessions if s["clean"]),
+                "eligible_any": any(line["eligible"] for line in lines),
+                "lines": lines,
+                "sessions": sessions,
+            })
+        return {"devices": out, "min_trips": DEFAULT_MIN_TRIPS}
+    finally:
+        db.close()
+
+
+@db_router.get("/inspect/device-traces")
+def inspect_device_traces(device_id: str) -> dict:
+    """One device's recorded sessions as polylines, for the inspector map.
+    `device_id` is a query param (sim ids contain ':' and spaces)."""
+    from sqlalchemy import select
+
+    from database.models import TripSession, TripSessionPoint
+
+    db = _session()
+    try:
+        features = []
+        sessions = db.execute(
+            select(TripSession.id).where(TripSession.device_id == device_id)
+        ).scalars().all()
+        for sid in sessions:
+            pts = db.execute(
+                select(TripSessionPoint.longitude, TripSessionPoint.latitude)
+                .where(TripSessionPoint.session_id == sid)
+                .order_by(TripSessionPoint.timestamp)
+            ).all()
+            coords = [[float(lon), float(lat)] for lon, lat in pts]
+            if len(coords) >= 2:
+                features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": coords},
+                    "properties": {"kind": "device_trace", "session_id": str(sid)},
+                })
+        return {"type": "FeatureCollection", "features": features}
+    finally:
+        db.close()
+
+
+# --- refresh the API server's transit graph ---------------------------------
+
+@db_router.post("/rebuild-graph")
+def rebuild_directions_graph() -> dict:
+    """Proxy to the API server's transit-graph rebuild.
+
+    The directions graph is an in-memory cache living in the API server process
+    (default http://127.0.0.1:8000, override with APP_SERVER_URL) — separate
+    from simlab and the database. After route data changes (promote/build), it
+    must be refreshed there or A→B routing keeps using the old lines. This is a
+    server-to-server call so the browser doesn't hit a cross-origin block."""
+    import json
+    import os
+    import urllib.request
+
+    base = os.environ.get("APP_SERVER_URL", "http://127.0.0.1:8000").rstrip("/")
+    url = f"{base}/directions/graph/rebuild"
+    try:
+        req = urllib.request.Request(
+            url, data=b"", method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return {"ok": True, "url": url, "result": json.load(resp)}
+    except Exception as e:
+        return {"ok": False, "url": url, "error": str(e)}

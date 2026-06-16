@@ -108,7 +108,10 @@ export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPa
         .setView([centerLat, centerLng], 13);
       mapRef.current = map;
 
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20, subdomains: 'abcd' }).addTo(map);
+
+      // When a section is highlighted (voting) the full route is muted context.
+      const hasHighlight = !!(data.highlightPath && data.highlightPath.length >= 2);
 
       // Route leg polylines
       for (const leg of data.legs) {
@@ -120,10 +123,13 @@ export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPa
         L.polyline(coords, opts).addTo(map);
       }
 
-      // Line route polyline
+      // Line route polyline (muted context while voting, primary otherwise)
       if (data.lineRoute && data.lineRoute.coordinates.length >= 2) {
         const coords = data.lineRoute.coordinates.map(([lng, lat]: [number, number]) => [lat, lng]);
-        L.polyline(coords, { color: '#09A6F3', weight: 5 }).addTo(map);
+        const opts = hasHighlight
+          ? { color: '#6b7280', weight: 5, opacity: 0.45 }
+          : { color: '#09A6F3', weight: 5 };
+        L.polyline(coords, opts).addTo(map);
       }
 
       // Detour path
@@ -132,10 +138,25 @@ export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPa
         L.polyline(coords, { color: '#F97316', weight: 4, dashArray: '8 6' }).addTo(map);
       }
 
-      // Highlighted section (bold blue, for voting)
-      if (data.highlightPath && data.highlightPath.length >= 2) {
-        const coords = data.highlightPath.map(([lng, lat]: [number, number]) => [lat, lng]);
-        L.polyline(coords, { color: '#09A6F3', weight: 7, opacity: 0.9 }).addTo(map);
+      // Highlighted section (bold blue, for voting) + legend
+      if (hasHighlight) {
+        const coords = data.highlightPath!.map(([lng, lat]: [number, number]) => [lat, lng]);
+        L.polyline(coords, { color: '#09A6F3', weight: 7, opacity: 1 }).addTo(map);
+
+        const legend = new L.Control({ position: 'bottomleft' });
+        legend.onAdd = () => {
+          const div = L.DomUtil.create('div');
+          div.style.cssText = 'background:rgba(255,255,255,.92);border-radius:10px;' +
+            'padding:8px 10px;font:12px -apple-system,system-ui,sans-serif;color:#374151;' +
+            'box-shadow:0 1px 6px rgba(0,0,0,.15)';
+          div.innerHTML =
+            '<div style="display:flex;align-items:center;gap:6px">' +
+            '<span style="width:16px;height:4px;border-radius:2px;background:#09A6F3;display:inline-block"></span>Tu sección</div>' +
+            '<div style="display:flex;align-items:center;gap:6px;margin-top:4px">' +
+            '<span style="width:16px;height:4px;border-radius:2px;background:#6b7280;opacity:.5;display:inline-block"></span>Resto de la ruta</div>';
+          return div;
+        };
+        legend.addTo(map);
       }
 
       // Markers for legs

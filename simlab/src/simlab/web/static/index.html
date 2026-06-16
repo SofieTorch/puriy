@@ -14,6 +14,7 @@
     <div id="mode-toggle">
       <button id="mode-scenario-btn" class="mode-btn active">Scenario</button>
       <button id="mode-database-btn" class="mode-btn">Database</button>
+      <button id="mode-inspect-btn" class="mode-btn">Inspect</button>
     </div>
 
     <section>
@@ -56,6 +57,7 @@
       <button id="db-promote">⬆ Promote scenario → new line</button>
       <div class="button-row">
         <button id="db-new-line">+ New line</button>
+        <button id="db-rebuild-graph" title="Refresh the API server's A→B routing graph after building routes">↻ Rebuild directions graph</button>
       </div>
       <p id="db-status" class="muted">Push the selected scenario's traces into the
         DB as raw recordings, then build the route with the production pipeline.</p>
@@ -68,6 +70,36 @@
         <h2>Layers</h2>
         <div id="db-layers"></div>
       </div>
+      <div id="db-vsegs-box" hidden>
+        <h2>Voteable segments <span class="muted">preview</span></h2>
+        <div class="vseg-controls">
+          <label>Min trips
+            <input id="db-vsegs-mintrips" type="number" min="1" max="20" value="3" />
+          </label>
+          <span class="muted" id="db-vsegs-summary"></span>
+        </div>
+        <p class="muted">What each eligible rider would be asked to vote on in
+          the app — the route edges overlapping their own trips, per ramal.</p>
+        <div id="db-vsegs"></div>
+      </div>
+    </section>
+
+    <section id="inspect-section" class="inspect-only">
+      <h2>Database inspector</h2>
+      <div class="button-row">
+        <button id="inspect-refresh">↻ Refresh</button>
+        <label class="inspect-filter">line
+          <select id="inspect-line"><option value="">all</option></select>
+        </label>
+        <label class="inspect-filter"><input type="checkbox" id="inspect-eligible-only" />
+          eligible only</label>
+      </div>
+      <p class="muted">Devices by last connection. <b>Click a device</b> to draw its
+        traces; click its <b>id</b> to copy it (set it on the phone → Developer ·
+        device id to impersonate that rider). <b>★</b> = enough clean trips to vote
+        on the selected line.</p>
+      <p id="inspect-summary" class="muted"></p>
+      <div id="inspect-devices"></div>
     </section>
 
     <section class="scenario-only">
@@ -92,6 +124,8 @@
       <a id="export-csv" href="#" download>⤓ Metrics CSV</a>
     </section>
   </div>
+
+  <div id="sidebar-resizer" title="Drag to resize the panel"></div>
 
   <div id="map">
     <div id="measure-readout" hidden></div>

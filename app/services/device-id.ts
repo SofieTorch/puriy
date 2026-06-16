@@ -10,12 +10,18 @@
  * server fixtures working without DB writes.
  */
 
+import Constants from 'expo-constants';
 import { eq } from 'drizzle-orm';
 
 import { preferences } from '@/db/schema';
 import { getDb } from '@/lib/db';
 
 const E2E_DEVICE_ID = process.env.EXPO_PUBLIC_E2E_DEVICE_ID ?? null;
+// Optional override from the DEVICE_ID env var (baked into extra by
+// app.config.ts, same mechanism as API_BASE_URL). When set, every contribution
+// is attributed to it — paste a sim voter id to test voting. Unset → the
+// auto-generated, persisted id is used.
+const ENV_DEVICE_ID = (Constants.expoConfig?.extra?.deviceId as string | null) ?? null;
 const DEVICE_ID_KEY = 'device_id';
 
 let cachedDeviceId: string | null = null;
@@ -30,6 +36,7 @@ function generateUuid(): string {
 
 export function getDeviceId(): string {
   if (E2E_DEVICE_ID) return E2E_DEVICE_ID;
+  if (ENV_DEVICE_ID) return ENV_DEVICE_ID;
   if (cachedDeviceId) return cachedDeviceId;
 
   const db = getDb();
