@@ -6,6 +6,7 @@ from .reconstruct_routes import execute as reconstruct_routes
 from .resolve_edge_votes import execute as resolve_edge_votes
 from .resolve_line_votes import execute as resolve_line_votes
 from .resolve_routes import execute as resolve_routes
+from .resolve_fares import execute as resolve_fares
 from .rebuild_graph import execute as rebuild_graph
 from .cleanup import execute as cleanup
 from .infer_schedules import execute as infer_schedules
@@ -45,6 +46,11 @@ STEPS: dict[str, dict] = {
         "fn": resolve_line_votes,
         "label": "Resolve line votes",
         "description": "Approve or reject transit lines based on community votes",
+    },
+    "resolve_fares": {
+        "fn": resolve_fares,
+        "label": "Resolve fares",
+        "description": "Assign crowdsourced fare reports to fare zones (municipalities)",
     },
     "rebuild_graph": {
         "fn": rebuild_graph,

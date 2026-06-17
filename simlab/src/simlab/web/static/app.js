@@ -8,7 +8,7 @@ const STAGE_LAYERS = [
   { file: "03_ramales.geojson", label: "Ramal clusters", color: "data", fallback: "#9aa0a8", width: 2.5, opacity: 0.8, off: true, ramalToggles: true },
   { file: "04_consensus.geojson", label: "Consensus route", color: "confidence", width: 4, opacity: 0.9 },
   { file: "05_votes.geojson", label: "Votes", color: "votes", width: 4, opacity: 0.9, off: true },
-  { file: "07_fares.geojson", label: "Fare reports", color: "#bb6bd9", width: 4, opacity: 0.8, off: true, circle: true },
+  { file: "07_fares.geojson", label: "Fare reports", color: "#bb6bd9", width: 4, opacity: 0.8, off: true, circle: true, labelField: "amount_bob" },
 ];
 
 let map;
@@ -56,6 +56,15 @@ async function init() {
   document.getElementById("db-promote").onclick = () => promoteScenario();
   document.getElementById("db-new-line").onclick = createDbLine;
   document.getElementById("db-rebuild-graph").onclick = rebuildDirectionsGraph;
+  document.getElementById("db-import-zones").onclick = importMunicipalities;
+  document.getElementById("db-wipe").onclick = openWipeModal;
+  document.getElementById("wipe-cancel").onclick = closeWipeModal;
+  document.getElementById("wipe-continue").onclick = wipeStep2;
+  document.getElementById("wipe-input").oninput = (e) => {
+    document.getElementById("wipe-final").disabled =
+      e.target.value.trim().toUpperCase() !== "DELETE";
+  };
+  document.getElementById("wipe-final").onclick = doWipe;
   document.getElementById("db-vsegs-mintrips").onchange = () => {
     if (_currentDbLine) renderVoteableSegments(_currentDbLine);
   };
@@ -65,6 +74,7 @@ async function init() {
   document.getElementById("inspect-refresh").onclick = loadInspector;
   document.getElementById("inspect-eligible-only").onchange = renderInspector;
   document.getElementById("inspect-line").onchange = renderInspector;
+  document.getElementById("inspect-zones").onchange = (e) => toggleFareZones(e.target.checked);
   initSidebarResize();
   setMode(localStorage.getItem("simlabMode") || "scenario");
 }
@@ -132,16 +142,86 @@ async function promoteScenario(lineId) {
   if (!id) return;
   _dbStatus(lineId ? `Adding "${id}" traces to the line…`
                    : `Promoting "${id}" to a new line…`);
+  const lineType = document.getElementById("db-line-type")?.value || null;
   const resp = await fetch(`/api/scenarios/${encodeURIComponent(id)}/promote`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(lineId ? { line_id: lineId } : { line_name: id }),
+    body: JSON.stringify(lineId
+      ? { line_id: lineId }
+      : { line_name: id, line_type: lineType }),
   });
   if (!resp.ok) { _dbStatus("Promote failed."); return; }
   const r = await resp.json();
   _dbStatus(`Line "${r.line_name}" now has +${r.sessions} traces, ${r.devices} ` +
             `devices. Click ▶ Build to run the pipeline.`);
   await loadDbLines();
+}
+
+/* ---------- wipe database (double-confirm modal) ---------- */
+
+function openWipeModal() {
+  document.getElementById("wipe-step2").hidden = true;
+  document.getElementById("wipe-final").hidden = true;
+  document.getElementById("wipe-final").disabled = true;
+  document.getElementById("wipe-continue").hidden = false;
+  document.getElementById("wipe-input").value = "";
+  document.getElementById("wipe-status").textContent = "";
+  document.getElementById("wipe-modal").hidden = false;
+}
+
+function closeWipeModal() {
+  document.getElementById("wipe-modal").hidden = true;
+}
+
+function wipeStep2() {
+  document.getElementById("wipe-continue").hidden = true;
+  document.getElementById("wipe-step2").hidden = false;
+  document.getElementById("wipe-final").hidden = false;
+  document.getElementById("wipe-input").focus();
+}
+
+async function doWipe() {
+  const input = document.getElementById("wipe-input").value.trim();
+  const status = document.getElementById("wipe-status");
+  status.textContent = "Wiping…";
+  let j;
+  try {
+    const r = await fetch("/api/wipe-database", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: input }),
+    });
+    j = await r.json();
+  } catch (e) { status.textContent = "Request failed: " + e; return; }
+  if (j.ok) {
+    const c = j.cleared || {};
+    closeWipeModal();
+    clearDbLayers();
+    await loadDbLines();
+    _dbStatus(`Database wiped: ${c.lines} line(s) · ${c.trip_sessions} sessions · ` +
+      `${c.routes} routes · ${c.fare_reports} fare reports cleared. ` +
+      `Kept ${j.kept.fare_zones} fare zones + ${j.kept.devices} devices.`);
+  } else {
+    status.textContent = "Failed: " + (j.detail || j.error || "unknown");
+  }
+}
+
+async function importMunicipalities() {
+  _dbStatus("Importing Cochabamba municipalities from OpenStreetMap (Overpass) — " +
+            "this can take up to a minute…");
+  let j;
+  try {
+    const r = await fetch("/api/import-zones", { method: "POST" });
+    j = await r.json();
+  } catch (e) {
+    _dbStatus("Import request failed: " + e);
+    return;
+  }
+  if (j.ok) {
+    _dbStatus(`Municipalities imported: ${j.created} new · ${j.updated} updated · ` +
+              `${j.total} fare zones total.`);
+  } else {
+    _dbStatus("Municipality import failed: " + j.error);
+  }
 }
 
 async function rebuildDirectionsGraph() {
@@ -196,7 +276,8 @@ async function loadDbLines() {
     const li = document.createElement("li");
     li.className = "db-line";
     li.innerHTML =
-      `<div class="db-line-head"><span class="db-line-name">${ln.name}</span>` +
+      `<div class="db-line-head"><span class="db-line-name">${ln.name}` +
+      `${ln.line_type ? ` <span class="db-line-type-tag">${ln.line_type}</span>` : ""}</span>` +
       `<span class="run-metric">${ln.sessions} sess · ${ln.trips} trips · ` +
       `${ln.routes} routes</span></div>`;
     const actions = document.createElement("div");
@@ -284,11 +365,12 @@ function renderDbSteps(steps) {
 
 async function showLine(id) {
   _currentDbLine = id;
-  const [routes, traces] = await Promise.all([
+  const [routes, traces, fares] = await Promise.all([
     api(`/lines/${id}/routes`),
     api(`/lines/${id}/traces`),
+    api(`/lines/${id}/fare-reports`).catch(() => ({ features: [] })),
   ]);
-  setDbLayers(routes, traces);
+  setDbLayers(routes, traces, fares);
   await renderVoteableSegments(id);
 }
 
@@ -303,7 +385,7 @@ async function deleteDbLine(id, name) {
 const _DB_PALETTE = ["#e3514f", "#2d9cdb", "#6fcf97", "#f2c94c", "#bb6bd9", "#f2994a"];
 let _dbLayerIds = [];   // every db map layer currently shown (for cleanup)
 
-function setDbLayers(routesFC, tracesFC) {
+function setDbLayers(routesFC, tracesFC, faresFC) {
   clearDbLayers();   // fresh start — no stale layers
   const box = document.getElementById("db-layers");
   document.getElementById("db-layers-box").hidden = false;
@@ -315,8 +397,20 @@ function setDbLayers(routesFC, tracesFC) {
     { "line-color": "#9aa0a8", "line-width": 1.5, "line-opacity": 0.4 });
   box.appendChild(_dbLayerRow("Raw traces", "db-traces", "#9aa0a8", `${traces.length}`));
 
+  // Fare reports: boarding/alighting points labelled with the amount (off by
+  // default — toggle on to inspect the crowdsourced fares behind the estimate).
+  const fares = (faresFC && faresFC.features) || [];
+  if (fares.length) {
+    _addDbFareLayer(faresFC, false);
+    box.appendChild(_dbFareRow(fares.length));
+  }
+
+  // Fare zones (municipalities) overlay — off by default, shared toggle logic.
+  box.appendChild(_dbZonesRow());
+
   // One colored layer + toggle PER reconstructed ramal (added last → on top).
   const routes = routesFC.features || [];
+  _dbRamalCoords = routes.map((f) => f.geometry.coordinates);   // for fare hover
   routes.forEach((f, i) => {
     const label = (f.properties || {}).ramal_label ?? `ramal ${i}`;
     const color = _DB_PALETTE[i % _DB_PALETTE.length];
@@ -359,6 +453,141 @@ function _dbLayerRow(label, layerId, color, count) {
   return row;
 }
 
+// --- fare hover: highlight the route span a fare applies to ---------------
+
+let _dbRamalCoords = [];
+let _fareHoverWired = false;
+
+function _nearestIdx(coords, pt) {
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < coords.length; i++) {
+    const dx = coords[i][0] - pt[0], dy = coords[i][1] - pt[1];
+    const d = dx * dx + dy * dy;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return { idx: best, dist: bestD };
+}
+
+// Highlight the stretch of route between a fare's boarding and alighting
+// points — i.e. where that fare applies. Picks the ramal closest to both ends;
+// falls back to a straight connector if neither end is near a route.
+function _highlightFareSpan(board, alight) {
+  let seg = null, bestCost = Infinity;
+  for (const coords of _dbRamalCoords) {
+    if (!coords || coords.length < 2) continue;
+    const b = _nearestIdx(coords, board), a = _nearestIdx(coords, alight);
+    const cost = b.dist + a.dist;
+    if (cost < bestCost) {
+      bestCost = cost;
+      seg = coords.slice(Math.min(b.idx, a.idx), Math.max(b.idx, a.idx) + 1);
+    }
+  }
+  if (!seg || seg.length < 2) seg = [board, alight];
+  const fc = { type: "FeatureCollection", features: [
+    { type: "Feature", geometry: { type: "LineString", coordinates: seg } }] };
+  const src = "db-fare-hl-src";
+  if (map.getSource(src)) {
+    map.getSource(src).setData(fc);
+  } else {
+    map.addSource(src, { type: "geojson", data: fc });
+    map.addLayer({
+      id: "db-fare-hl", type: "line", source: src,
+      layout: { "line-cap": "round", "line-join": "round" },
+      // bright gold so the span pops over the (blue) route line
+      paint: { "line-color": "#ffb000", "line-width": 9, "line-opacity": 0.95 },
+    }, "db-fares");   // under the points so they stay clickable
+  }
+}
+
+function _clearFareHighlight() {
+  if (map.getLayer("db-fare-hl")) map.removeLayer("db-fare-hl");
+  if (map.getSource("db-fare-hl-src")) map.removeSource("db-fare-hl-src");
+}
+
+function _wireFareHover() {
+  if (_fareHoverWired) return;
+  _fareHoverWired = true;
+  map.on("mouseenter", "db-fares", () => { map.getCanvas().style.cursor = "pointer"; });
+  map.on("mousemove", "db-fares", (e) => {
+    const f = e.features && e.features[0];
+    if (!f) return;
+    let board = f.properties.board, alight = f.properties.alight;
+    try {
+      if (typeof board === "string") board = JSON.parse(board);
+      if (typeof alight === "string") alight = JSON.parse(alight);
+    } catch (err) { return; }
+    _highlightFareSpan(board, alight);
+  });
+  map.on("mouseleave", "db-fares", () => {
+    map.getCanvas().style.cursor = "";
+    _clearFareHighlight();
+  });
+}
+
+// Fare reports → a circle layer + an amount-label layer sharing one source.
+function _addDbFareLayer(fc, visible) {
+  const src = "db-fares-src";
+  const apply = () => {
+    map.addSource(src, { type: "geojson", data: fc });
+    map.addLayer({
+      id: "db-fares", type: "circle", source: src,
+      paint: {
+        "circle-radius": 4, "circle-color": "#bb6bd9", "circle-opacity": 0.85,
+        "circle-stroke-width": 1, "circle-stroke-color": "#ffffff",
+      },
+    });
+    map.addLayer({
+      id: "db-fares-label", type: "symbol", source: src,
+      filter: ["==", ["get", "kind"], "fare_alighting"],   // label at the end
+      layout: {
+        "text-field": ["concat", "Bs ",
+          ["number-format", ["get", "amount_bob"],
+            { "min-fraction-digits": 2, "max-fraction-digits": 2 }]],
+        "text-size": 13, "text-offset": [0, 1], "text-anchor": "top",
+        "text-allow-overlap": false,
+      },
+      paint: {
+        "text-color": "#7a3fa0", "text-halo-color": "#ffffff", "text-halo-width": 1.8,
+      },
+    });
+    for (const id of ["db-fares", "db-fares-label"]) {
+      map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+      if (!_dbLayerIds.includes(id)) _dbLayerIds.push(id);
+    }
+  };
+  try { apply(); } catch (e) { map.once("idle", apply); }
+  _wireFareHover();
+}
+
+function _dbZonesRow() {
+  const row = document.createElement("label");
+  row.className = "layer-row";
+  row.innerHTML =
+    `<input type="checkbox" id="db-zones" />` +
+    `<span class="swatch" style="background:#9b51e0"></span>` +
+    `<span>Fare zones</span><span class="run-metric">municipalities</span>`;
+  row.querySelector("input").onchange = (e) => toggleFareZones(e.target.checked);
+  return row;
+}
+
+function _dbFareRow(count) {
+  const row = document.createElement("label");
+  row.className = "layer-row";
+  row.innerHTML =
+    `<input type="checkbox" />` +
+    `<span class="swatch" style="background:#bb6bd9"></span>` +
+    `<span>Fare reports</span><span class="run-metric">${count} pts</span>`;
+  row.querySelector("input").onchange = (e) => {
+    for (const id of ["db-fares", "db-fares-label"]) {
+      if (map.getLayer(id)) {
+        map.setLayoutProperty(id, "visibility", e.target.checked ? "visible" : "none");
+      }
+    }
+    if (!e.target.checked) _clearFareHighlight();
+  };
+  return row;
+}
+
 function _setDbGeo(id, fc, paint) {
   const src = `${id}-src`;
   const apply = () => {
@@ -384,14 +613,21 @@ function _setDbGeo(id, fc, paint) {
 }
 
 function clearDbLayers() {
+  // Two passes: remove every layer first, then sources — the fare circle and
+  // label layers share one source, which can't be dropped while in use.
+  for (const id of _dbLayerIds) if (map.getLayer(id)) map.removeLayer(id);
   for (const id of _dbLayerIds) {
-    if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource(`${id}-src`)) map.removeSource(`${id}-src`);
   }
+  _clearFareHighlight();
+  if (map.getSource("db-fares-src")) map.removeSource("db-fares-src");
   _dbLayerIds = [];
   const layersBox = document.getElementById("db-layers-box");
   if (layersBox) layersBox.hidden = true;
   clearVsegLayers();
+  clearFareZones();
+  const zonesCb = document.getElementById("inspect-zones");
+  if (zonesCb) zonesCb.checked = false;
 }
 
 /* ---------- voteable segments (preview of the per-rider vote UI) ---------- */
@@ -651,6 +887,62 @@ function _fmtTime(iso) {
 function _esc(s) {
   return String(s).replace(/[&<>"]/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+/* ---------- fare zones overlay ---------- */
+
+let _zoneLayerIds = [];
+
+function _eachCoord(geom, cb) {
+  const walk = (a) => { if (typeof a[0] === "number") cb(a); else a.forEach(walk); };
+  walk(geom.coordinates);
+}
+
+async function toggleFareZones(show) {
+  clearFareZones();
+  if (!show) return;
+  let fc;
+  try { fc = await api("/fare-zones"); } catch (e) { return; }
+  if (!fc.features || !fc.features.length) {
+    _dbStatus("No fare zones yet — click 🏛 Populate municipalities first.");
+    for (const id of ["inspect-zones", "db-zones"]) {
+      const el = document.getElementById(id);
+      if (el) el.checked = false;
+    }
+    return;
+  }
+  const src = "fare-zones-src";
+  const apply = () => {
+    map.addSource(src, { type: "geojson", data: fc });
+    map.addLayer({ id: "fare-zones-fill", type: "fill", source: src,
+      paint: { "fill-color": "#9b51e0", "fill-opacity": 0.07 } });
+    map.addLayer({ id: "fare-zones-line", type: "line", source: src,
+      paint: { "line-color": "#9b51e0", "line-width": 1, "line-opacity": 0.55 } });
+    map.addLayer({ id: "fare-zones-label", type: "symbol", source: src,
+      layout: { "text-field": ["get", "name"], "text-size": 11, "text-allow-overlap": false },
+      paint: { "text-color": "#6b3fa0", "text-halo-color": "#fff", "text-halo-width": 1.4 } });
+    _zoneLayerIds = ["fare-zones-fill", "fare-zones-line", "fare-zones-label"];
+  };
+  try { apply(); } catch (e) { map.once("idle", apply); }
+
+  let bounds = null;
+  for (const f of fc.features) {
+    _eachCoord(f.geometry, (c) => {
+      bounds = bounds || new maplibregl.LngLatBounds(c, c);
+      bounds.extend(c);
+    });
+  }
+  // Fit to the zones only when there's nothing else to anchor on (Inspect);
+  // in Database mode keep the current line view and just overlay.
+  if (bounds && !document.body.classList.contains("mode-database")) {
+    map.fitBounds(bounds, { padding: 40, duration: 500 });
+  }
+}
+
+function clearFareZones() {
+  for (const id of _zoneLayerIds) if (map.getLayer(id)) map.removeLayer(id);
+  if (map.getSource("fare-zones-src")) map.removeSource("fare-zones-src");
+  _zoneLayerIds = [];
 }
 
 /* ---------- experiments ---------- */
@@ -1014,7 +1306,7 @@ function clearCurrentRun() {
   currentRun = null;
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   for (const spec of STAGE_LAYERS) {
-    for (const suffix of ["", "-inferred", "-points"]) {
+    for (const suffix of ["", "-inferred", "-points", "-label"]) {
       const id = `layer-${spec.file}${suffix}`;
       if (map.getLayer(id)) map.removeLayer(id);
     }
@@ -1165,6 +1457,23 @@ async function renderLayers(runId) {
           "circle-stroke-color": "#16181d",
         },
       });
+      if (spec.labelField) {
+        map.addLayer({
+          id: `${layerId}-label`, type: "symbol", source: sourceId,
+          filter: ["==", ["get", "kind"], "fare_alighting"],   // label at the end
+          layout: {
+            "text-field": ["concat", "Bs ",
+              ["number-format", ["get", spec.labelField],
+                { "min-fraction-digits": 2, "max-fraction-digits": 2 }]],
+            "text-size": 13, "text-offset": [0, 1], "text-anchor": "top",
+            "text-allow-overlap": false,
+          },
+          paint: {
+            "text-color": spec.color, "text-halo-color": "#16181d",
+            "text-halo-width": 1.6,
+          },
+        });
+      }
     } else {
       const layer = {
         id: layerId, type: "line", source: sourceId,

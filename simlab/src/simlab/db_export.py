@@ -24,6 +24,7 @@ from database.models import (
     Device,
     Line,
     LineStatus,
+    LineType,
     ProcessingStatus,
     SessionStatus,
     TripSession,
@@ -31,6 +32,7 @@ from database.models import (
 )
 
 from .scenario import ScenarioConfig
+from .sim.fares import simulate_fares
 from .sim.gps import simulate_trip_points
 from .sim.personas import build_personas, form_voters, generate_trip_history
 from .sim.route import load_route
@@ -63,7 +65,11 @@ def _generate_trips(config: ScenarioConfig, rng: random.Random):
         )
         if len(points) >= 2:
             out.append((trip, points))
-    return out
+    # Crowdsourced fare reports for the kept trips (same generation as the
+    # runner's fares stage) — written to the DB so the fare pipeline can
+    # resolve zones and estimate per-line fares.
+    fare_reports = simulate_fares([t for t, _ in out], rideable, config, rng)
+    return out, fare_reports
 
 
 def export_scenario_to_db(
@@ -72,14 +78,17 @@ def export_scenario_to_db(
     *,
     line_id: UUID | None = None,
     line_name: str | None = None,
+    line_type: LineType | None = None,
 ) -> dict:
     """Materialize a scenario's traces into the DB as raw sessions.
 
     ``line_id`` targets an existing line; otherwise a new APPROVED line is
-    created (named ``line_name`` or the scenario name). Returns a summary.
+    created (named ``line_name`` or the scenario name). ``line_type`` (micro /
+    trufi / taxi_trufi) is recorded on a newly-created line and drives the fare
+    rule downstream (trufi = zone-based, micro = flat). Returns a summary.
     """
     rng = random.Random(config.seed)
-    trips = _generate_trips(config, rng)
+    trips, fare_reports = _generate_trips(config, rng)
     if not trips:
         return {"error": "no trips generated", "sessions": 0, "points": 0}
 
@@ -88,7 +97,11 @@ def export_scenario_to_db(
         if line is None:
             raise ValueError(f"line {line_id} not found")
     else:
-        line = Line(name=line_name or config.name, status=LineStatus.APPROVED)
+        line = Line(
+            name=line_name or config.name,
+            status=LineStatus.APPROVED,
+            line_type=line_type,
+        )
         db.add(line)
         db.flush()
 
@@ -124,6 +137,24 @@ def export_scenario_to_db(
                 point=from_shape(Point(p.lon, p.lat), srid=4326),
             ))
             n_points += 1
+    # Fare reports (raw — zones resolved later by the resolve_fares step).
+    from database.models import FareReport, FareSource
+    n_fares = 0
+    for r in fare_reports:
+        if r.device_id not in existing:
+            db.add(Device(id=r.device_id))
+            existing.add(r.device_id)
+        db.add(FareReport(
+            line_id=line.id,
+            device_id=r.device_id,
+            amount_bob=r.amount_bob,
+            boarding_latitude=r.boarding_lat,
+            boarding_longitude=r.boarding_lon,
+            alighting_latitude=r.alighting_lat,
+            alighting_longitude=r.alighting_lon,
+            source=FareSource.REGISTRATION,
+        ))
+        n_fares += 1
     db.commit()
 
     return {
@@ -132,4 +163,5 @@ def export_scenario_to_db(
         "sessions": len(trips),
         "points": n_points,
         "devices": len({trip.device_id for trip, _ in trips}),
+        "fare_reports": n_fares,
     }

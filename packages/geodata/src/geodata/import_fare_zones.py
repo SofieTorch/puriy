@@ -26,6 +26,11 @@ def _query_overpass(department: str, admin_level: int) -> dict[str, Any]:
     response = httpx.post(
         OVERPASS_URL,
         data={"data": query},
+        # Overpass rejects requests without a descriptive User-Agent (406/429).
+        headers={
+            "User-Agent": "cbba-mobility/1.0 (transit route research)",
+            "Accept": "application/json",
+        },
         timeout=180,
     )
     response.raise_for_status()

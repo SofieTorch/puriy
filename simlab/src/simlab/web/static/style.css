@@ -1,4 +1,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
+/* the `button`/`select` display rule below overrides the UA [hidden] rule —
+   restore it so `hidden` reliably hides buttons (e.g. the wipe modal steps). */
+[hidden] { display: none !important; }
 
 :root {
   --bg: #16181d;
@@ -296,6 +299,31 @@ body.mode-database .inspect-only { display: none; }
 /* Database inspector */
 .inspect-filter { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; }
 .inspect-filter select { width: auto; font-size: 12px; padding: 2px 4px; margin: 0; }
+.db-linetype { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin-bottom: 6px; }
+.db-linetype select { width: auto; flex: 1; }
+.db-line-type-tag {
+  font-size: 10px; background: var(--border); color: var(--text);
+  padding: 1px 6px; border-radius: 8px; margin-left: 4px;
+}
+
+/* Danger button + wipe-confirmation modal */
+.danger-btn { background: #7a2620; color: #ffd9d5; border-color: #a3433b; }
+.danger-btn:hover:not(:disabled) { background: #97302a; }
+.danger-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-overlay[hidden] { display: none; }
+.modal-box {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  padding: 20px; max-width: 420px; width: calc(100% - 40px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+.modal-box h2 { margin-bottom: 8px; }
+.modal-box .muted { font-size: 13px; line-height: 1.5; margin-bottom: 10px; }
+.modal-box input { width: 100%; padding: 8px 10px; margin: 4px 0 10px; }
+.modal-box .button-row { justify-content: flex-end; }
 .insp-device.active > summary { background: rgba(45, 156, 219, 0.18); border-radius: 5px; }
 #inspect-devices { display: flex; flex-direction: column; gap: 2px; }
 .insp-device > summary {

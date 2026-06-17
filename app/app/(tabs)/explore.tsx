@@ -423,11 +423,17 @@ export default function ExploreScreen() {
                   <View className="flex-row"><View className="mr-4 w-8 items-center"><View className="w-0.5 flex-1 bg-[#09A6F3]" /></View>
                     <View className="flex-1 py-1 pb-2">
                       <Text className="text-xs text-gray-400">{formatDistance(leg.distance_m)} · {formatDuration(leg.duration_s)}</Text>
-                      {(fareText || freqText) && (
-                        <Text className="text-xs text-[#09A6F3]" testID={`leg-${index}-meta`}>
-                          {[fareText, freqText].filter(Boolean).join(' · ')}
-                        </Text>
-                      )}
+                      <View className="mt-1.5 flex-row flex-wrap items-center gap-2">
+                        {fareText ? (
+                          <View className="flex-row items-center rounded-full bg-sky-50 px-2.5 py-1">
+                            <Feather name="dollar-sign" size={12} color={BLUE} />
+                            <Text className="ml-1 text-xs font-semibold text-[#09A6F3]" testID={`leg-${index}-fare`}>{fareText}</Text>
+                          </View>
+                        ) : (
+                          <Text className="text-xs text-gray-300" testID={`leg-${index}-fare`}>Tarifa no disponible</Text>
+                        )}
+                        {freqText && <Text className="text-xs text-gray-400">{freqText}</Text>}
+                      </View>
                     </View>
                   </View>
                   <View className="flex-row">

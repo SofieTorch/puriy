@@ -48,6 +48,22 @@ def _line_status(value: str | None):
 class _PromoteRequest(BaseModel):
     line_id: str | None = None
     line_name: str | None = None
+    line_type: str | None = None   # micro | trufi | taxi_trufi
+
+
+def _line_type(value: str | None):
+    """Coerce a string to LineType, or None when unset/unknown."""
+    from database.models import LineType
+
+    if not value:
+        return None
+    try:
+        return LineType(value)
+    except ValueError:
+        try:
+            return LineType[value.upper()]
+        except KeyError:
+            return None
 
 
 @db_router.post("/scenarios/{scenario_id}/promote")
@@ -65,6 +81,7 @@ def promote_scenario(scenario_id: str, body: _PromoteRequest | None = None) -> d
             config, db,
             line_id=UUID(body.line_id) if body.line_id else None,
             line_name=body.line_name,
+            line_type=_line_type(body.line_type),
         )
     finally:
         db.close()
@@ -91,6 +108,7 @@ def list_lines() -> list[dict]:
                 "id": str(line.id),
                 "name": line.name,
                 "status": _status(line.status),
+                "line_type": _status(line.line_type) if line.line_type else None,
                 "sessions": count(TripSession),
                 "trips": count(Trip),
                 "routes": count(Route, Route.status != RouteStatus.SUPERSEDED),
@@ -158,6 +176,7 @@ def delete_line(line_id: str) -> dict:
     db = _session()
     try:
         for stmt in (
+            "delete from fare_reports where line_id=:l",
             "delete from route_edges where route_id in (select id from routes where line_id=:l)",
             "delete from routes where line_id=:l",
             "delete from trip_points where trip_id in (select id from trips where line_id=:l)",
@@ -197,6 +216,7 @@ class _ReconstructRequest(BaseModel):
 def reconstruct_line(line_id: str, body: _ReconstructRequest | None = None) -> dict:
     from pipeline.steps.clean_traces import execute as clean_execute
     from pipeline.steps.reconstruct_routes import execute as reconstruct_execute
+    from pipeline.steps.resolve_fares import execute as resolve_fares_execute
 
     body = body or _ReconstructRequest()
     lid = UUID(line_id)
@@ -210,6 +230,8 @@ def reconstruct_line(line_id: str, body: _ReconstructRequest | None = None) -> d
                 gps_accuracy=body.gps_accuracy,
                 turn_penalty_factor=body.turn_penalty_factor,
             )
+        # Assign fare reports to municipalities (no-op if zones not imported).
+        result["resolve_fares"] = resolve_fares_execute(db, line_id=lid)
         result["reconstruct_routes"] = reconstruct_execute(
             db, line_id=lid, strategy_key=body.strategy,
             # Re-match the consensus spine with the SAME tight params as the
@@ -293,6 +315,66 @@ def line_traces(line_id: str) -> dict:
                     "type": "Feature",
                     "geometry": {"type": "LineString", "coordinates": coords},
                     "properties": {"kind": "db_trace"},
+                })
+        return {"type": "FeatureCollection", "features": features}
+    finally:
+        db.close()
+
+
+# --- fare estimate for a line -----------------------------------------------
+
+@db_router.get("/lines/{line_id}/fare")
+def line_fare(line_id: str) -> dict:
+    """The fare estimate for a line: flat (micro) or zonal (trufi)."""
+    from database.models import Line
+    from geodata.fares import estimate_line_fare
+
+    db = _session()
+    try:
+        line = db.get(Line, UUID(line_id))
+        if line is None:
+            raise HTTPException(404, f"line {line_id} not found")
+        return {
+            "line_type": _status(line.line_type) if line.line_type else None,
+            "estimate": estimate_line_fare(db, line),
+        }
+    finally:
+        db.close()
+
+
+# --- fare reports as points (for the map overlay) ---------------------------
+
+@db_router.get("/lines/{line_id}/fare-reports")
+def line_fare_reports(line_id: str) -> dict:
+    """A line's crowdsourced fare reports as boarding + alighting points,
+    each carrying the reported amount."""
+    from sqlalchemy import select
+
+    from database.models import FareReport
+
+    lid = UUID(line_id)
+    db = _session()
+    try:
+        features = []
+        reports = db.execute(
+            select(FareReport).where(FareReport.line_id == lid)
+        ).scalars().all()
+        for r in reports:
+            amount = float(r.amount_bob)
+            rid = str(r.id)
+            for kind, lon, lat in (
+                ("fare_boarding", r.boarding_longitude, r.boarding_latitude),
+                ("fare_alighting", r.alighting_longitude, r.alighting_latitude),
+            ):
+                features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [float(lon), float(lat)]},
+                    "properties": {
+                        "kind": kind, "amount_bob": amount, "report_id": rid,
+                        # carry both endpoints so the UI can highlight the span.
+                        "board": [float(r.boarding_longitude), float(r.boarding_latitude)],
+                        "alight": [float(r.alighting_longitude), float(r.alighting_latitude)],
+                    },
                 })
         return {"type": "FeatureCollection", "features": features}
     finally:
@@ -552,3 +634,93 @@ def rebuild_directions_graph() -> dict:
             return {"ok": True, "url": url, "result": json.load(resp)}
     except Exception as e:
         return {"ok": False, "url": url, "error": str(e)}
+
+
+# --- fare zones as GeoJSON (for the map overlay) ----------------------------
+
+@db_router.get("/fare-zones")
+def fare_zones_geojson() -> dict:
+    """Imported fare zones (municipalities) as simplified polygons."""
+    import json
+
+    from sqlalchemy import text
+
+    db = _session()
+    try:
+        rows = db.execute(text(
+            "select name, ST_AsGeoJSON(ST_Simplify(boundary, 0.001)) g "
+            "from fare_zones where boundary is not null order by name"
+        )).all()
+        features = [
+            {
+                "type": "Feature",
+                "geometry": json.loads(g),
+                "properties": {"name": name, "kind": "fare_zone"},
+            }
+            for name, g in rows if g
+        ]
+        return {"type": "FeatureCollection", "features": features}
+    finally:
+        db.close()
+
+
+# --- wipe all transit data (keeps fare zones + devices) ---------------------
+
+class _WipeRequest(BaseModel):
+    confirm: str | None = None
+
+
+@db_router.post("/wipe-database")
+def wipe_database(body: _WipeRequest | None = None) -> dict:
+    """Delete ALL lines and everything under them (sessions, trips, routes,
+    edges, votes, fare reports). Keeps fare_zones (the imported municipalities —
+    expensive to re-fetch) and devices. Requires a 'DELETE' confirmation token."""
+    from sqlalchemy import text
+
+    body = body or _WipeRequest()
+    if (body.confirm or "").strip().upper() != "DELETE":
+        raise HTTPException(400, "confirmation token 'DELETE' required")
+
+    db = _session()
+    try:
+        cleared = {}
+        for t in ("lines", "trip_sessions", "trips", "routes",
+                  "route_edges", "edge_votes", "fare_reports"):
+            cleared[t] = db.execute(text(f"select count(*) from {t}")).scalar() or 0
+        db.execute(text("TRUNCATE lines CASCADE"))
+        db.commit()
+        return {
+            "ok": True,
+            "cleared": cleared,
+            "kept": {
+                "fare_zones": db.execute(text("select count(*) from fare_zones")).scalar() or 0,
+                "devices": db.execute(text("select count(*) from devices")).scalar() or 0,
+            },
+        }
+    finally:
+        db.close()
+
+
+# --- populate fare zones (municipalities) from OSM --------------------------
+
+@db_router.post("/import-zones")
+def import_zones(department: str = "Cochabamba", admin_level: int = 8) -> dict:
+    """Populate FareZones (municipalities) from OpenStreetMap admin boundaries
+    via the Overpass API. admin_level=8 is the municipality level in Bolivia.
+    Idempotent — re-running upserts by zone name. Can take ~1 min (Overpass)."""
+    from sqlalchemy import func, select
+
+    from database.models import FareZone
+    from geodata.import_fare_zones import import_fare_zones_from_osm
+
+    db = _session()
+    try:
+        result = import_fare_zones_from_osm(
+            db, department=department, admin_level=admin_level
+        )
+        total = db.execute(select(func.count(FareZone.id))).scalar() or 0
+        return {"ok": True, "total": total, **result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    finally:
+        db.close()
