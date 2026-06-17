@@ -372,7 +372,7 @@ export default function RecordScreen() {
                   : "A continuación, toca «Permisos» y activa «Ubicación» con «Permitir todo el tiempo»."}
               </Text>
               <TouchableOpacity
-                className="items-center rounded-xl bg-[#09A6F3] py-3.5"
+                className="items-center rounded-xl bg-[#3D6CB4] py-3.5"
                 onPress={handleOpenSettings}
                 activeOpacity={0.8}
               >

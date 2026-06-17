@@ -86,6 +86,7 @@ class NearbyLineWithRouteRead(SQLModel):
     line_id: UUID
     line_name: str
     line_description: Optional[str] = None
+    line_type: Optional[LineType] = None
     route_geojson: Optional[dict] = None
     detour_alert: Optional[dict] = None
     # Per-ramal identity surfaced for the line card. Multi-ramal lines

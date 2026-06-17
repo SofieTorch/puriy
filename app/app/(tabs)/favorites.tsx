@@ -12,7 +12,7 @@ import { getCurrentLocation } from '@/services/current-location';
 import { reverseGeocode } from '@/services/geocoding';
 import { deleteTrip, getTodayTrips, parseRouteJson } from '@/services/saved-trips';
 
-const BLUE = '#09A6F3';
+const BLUE = '#3D6CB4';
 
 function formatDistance(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
@@ -91,7 +91,7 @@ export default function FavoritesScreen() {
           <Feather name="arrow-left" size={22} color="#333" />
         </Pressable>
         <View className="absolute left-4 right-4 items-center rounded-2xl bg-white px-5 py-3 shadow-lg" style={{ top: insets.top + 60 }}>
-          <Text className="text-base font-bold text-[#09A6F3]">{formatDuration(route.total_duration_s)} · {formatDistance(route.total_distance_m)}</Text>
+          <Text className="text-base font-bold text-[#3D6CB4]">{formatDuration(route.total_duration_s)} · {formatDistance(route.total_distance_m)}</Text>
           <Text className="text-xs text-gray-400">{selected.originName} → {selected.destName}</Text>
         </View>
         <BottomSheet ref={stepsRef} index={0} snapPoints={stepsSnapPoints} backgroundStyle={{ borderRadius: 24 }} handleIndicatorStyle={{ backgroundColor: '#D1D5DB', width: 40 }}>
@@ -105,7 +105,7 @@ export default function FavoritesScreen() {
                     {!isLast && <View className="w-0.5 flex-1 bg-gray-200" />}
                   </View>
                   <View className="flex-1 pb-5">
-                    <Text className="text-base font-semibold text-gray-800">Caminar</Text>
+                    <Text className="text-base font-semibold text-brand-ink">Caminar</Text>
                     <Text className="text-sm text-gray-400">{formatDistance(leg.distance_m)} · {formatDuration(leg.duration_s)}</Text>
                   </View>
                 </View>
@@ -114,20 +114,20 @@ export default function FavoritesScreen() {
               return (
                 <View key={`b-${index}`}>
                   <View className="flex-row">
-                    <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-[#DDF6FF]"><Feather name="log-in" size={14} color={BLUE} /></View><View className="w-0.5 flex-1 bg-[#09A6F3]" /></View>
-                    <View className="flex-1 pb-2"><Text className="text-base font-semibold text-[#09A6F3]">Tomar Línea {leg.line_name ?? '?'}</Text><Text className="text-sm text-gray-500">{names ? `en ${names.board}` : 'Cargando...'}</Text></View>
+                    <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-[#E7EEF7]"><Feather name="log-in" size={14} color={BLUE} /></View><View className="w-0.5 flex-1 bg-[#3D6CB4]" /></View>
+                    <View className="flex-1 pb-2"><Text className="text-base font-semibold text-[#3D6CB4]">Tomar Línea {leg.line_name ?? '?'}</Text><Text className="text-sm text-gray-500">{names ? `en ${names.board}` : 'Cargando...'}</Text></View>
                   </View>
-                  <View className="flex-row"><View className="mr-4 w-8 items-center"><View className="w-0.5 flex-1 bg-[#09A6F3]" /></View><View className="flex-1 py-1 pb-2"><Text className="text-xs text-gray-400">{formatDistance(leg.distance_m)} · {formatDuration(leg.duration_s)}</Text></View></View>
+                  <View className="flex-row"><View className="mr-4 w-8 items-center"><View className="w-0.5 flex-1 bg-[#3D6CB4]" /></View><View className="flex-1 py-1 pb-2"><Text className="text-xs text-gray-400">{formatDistance(leg.distance_m)} · {formatDuration(leg.duration_s)}</Text></View></View>
                   <View className="flex-row">
-                    <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-[#DDF6FF]"><Feather name="log-out" size={14} color={BLUE} /></View>{!isLast && <View className="w-0.5 flex-1 bg-gray-200" />}</View>
-                    <View className="flex-1 pb-5"><Text className="text-base font-semibold text-gray-800">Bajar</Text><Text className="text-sm text-gray-500">{names ? `en ${names.alight}` : 'Cargando...'}</Text></View>
+                    <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-[#E7EEF7]"><Feather name="log-out" size={14} color={BLUE} /></View>{!isLast && <View className="w-0.5 flex-1 bg-gray-200" />}</View>
+                    <View className="flex-1 pb-5"><Text className="text-base font-semibold text-brand-ink">Bajar</Text><Text className="text-sm text-gray-500">{names ? `en ${names.alight}` : 'Cargando...'}</Text></View>
                   </View>
                 </View>
               );
             })}
             <View className="flex-row">
               <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-red-100"><Feather name="map-pin" size={14} color="#EF4444" /></View></View>
-              <View className="flex-1"><Text className="text-base font-semibold text-gray-800">Llegaste</Text><Text className="text-sm text-gray-400">{selected.destName}</Text></View>
+              <View className="flex-1"><Text className="text-base font-semibold text-brand-ink">Llegaste</Text><Text className="text-sm text-gray-400">{selected.destName}</Text></View>
             </View>
           </BottomSheetScrollView>
         </BottomSheet>
@@ -154,13 +154,13 @@ export default function FavoritesScreen() {
             <>
               {commutes.length > 0 && (
                 <>
-                  <Text className="mb-3 text-lg font-semibold text-gray-800" testID="favorites-commute-title">Recurrentes</Text>
+                  <Text className="mb-3 text-lg font-semibold text-brand-ink" testID="favorites-commute-title">Recurrentes</Text>
                   {commutes.map((trip, idx) => <TripCard key={trip.id} trip={trip} index={idx} onPress={selectTrip} onDelete={handleDelete} />)}
                 </>
               )}
               {oneTime.length > 0 && (
                 <>
-                  <Text className="mb-3 mt-4 text-lg font-semibold text-gray-800" testID="favorites-today-title">Para hoy</Text>
+                  <Text className="mb-3 mt-4 text-lg font-semibold text-brand-ink" testID="favorites-today-title">Para hoy</Text>
                   {oneTime.map((trip, idx) => <TripCard key={trip.id} trip={trip} index={idx} onPress={selectTrip} onDelete={handleDelete} />)}
                 </>
               )}
@@ -176,10 +176,10 @@ function TripCard({ trip, index, onPress, onDelete }: { trip: SavedTrip; index: 
   const lines = busLines(route);
 
   return (
-    <Pressable testID={`favorites-trip-card-${index}`} className="mb-3 rounded-2xl border border-gray-200 bg-white p-4 active:bg-gray-50" onPress={() => onPress(trip)}>
+    <Pressable testID={`favorites-trip-card-${index}`} className="mb-3 rounded-2xl border border-brand-line bg-white p-4 active:bg-gray-50" onPress={() => onPress(trip)}>
       <View className="mb-2 flex-row items-start justify-between">
         <View className="flex-1">
-          <Text className="text-base font-semibold text-gray-800" numberOfLines={1}>{trip.originName}</Text>
+          <Text className="text-base font-semibold text-brand-ink" numberOfLines={1}>{trip.originName}</Text>
           <Text className="text-sm text-gray-500" numberOfLines={1}>→ {trip.destName}</Text>
         </View>
         <Pressable testID={`favorites-delete-${index}`} className="ml-2 p-1" onPress={() => onDelete(trip)}>
@@ -187,25 +187,25 @@ function TripCard({ trip, index, onPress, onDelete }: { trip: SavedTrip; index: 
         </Pressable>
       </View>
       <View className="mb-2 flex-row items-center gap-3">
-        <Text className="text-lg font-bold text-gray-800">{formatDuration(route.total_duration_s)}</Text>
+        <Text className="text-lg font-bold text-brand-ink">{formatDuration(route.total_duration_s)}</Text>
         <Text className="text-sm text-gray-400">{formatDistance(route.total_distance_m)}</Text>
         {route.total_fare_bob != null && (
-          <Text className="text-sm font-semibold text-[#09A6F3]" testID={`favorites-fare-${index}`}>
+          <Text className="text-sm font-semibold text-[#3D6CB4]" testID={`favorites-fare-${index}`}>
             Bs. {route.total_fare_bob.toFixed(2)}
           </Text>
         )}
         {trip.departureTime && (
-          <View className="ml-auto flex-row items-center gap-1 rounded-lg bg-[#DDF6FF] px-2 py-0.5" testID={`favorites-departure-${index}`}>
+          <View className="ml-auto flex-row items-center gap-1 rounded-lg bg-[#E7EEF7] px-2 py-0.5" testID={`favorites-departure-${index}`}>
             <Feather name="clock" size={11} color={BLUE} />
-            <Text className="text-xs font-semibold text-[#09A6F3]">{trip.departureTime}</Text>
+            <Text className="text-xs font-semibold text-[#3D6CB4]">{trip.departureTime}</Text>
           </View>
         )}
       </View>
       <View className="mb-2 flex-row items-center gap-1">
-        {route.legs.map((leg, i) => <View key={i} className={`h-1.5 rounded-full ${leg.mode === 'bus' ? 'bg-[#09A6F3]' : 'bg-gray-300'}`} style={{ flex: leg.distance_m, minWidth: 6 }} />)}
+        {route.legs.map((leg, i) => <View key={i} className={`h-1.5 rounded-full ${leg.mode === 'bus' ? 'bg-[#3D6CB4]' : 'bg-gray-300'}`} style={{ flex: leg.distance_m, minWidth: 6 }} />)}
       </View>
       <View className="flex-row flex-wrap items-center gap-2">
-        {lines.map(name => <View key={name} className="flex-row items-center rounded-lg bg-[#DDF6FF] px-2 py-0.5"><Feather name="truck" size={11} color={BLUE} /><Text className="ml-1 text-xs font-semibold text-[#09A6F3]">{name}</Text></View>)}
+        {lines.map(name => <View key={name} className="flex-row items-center rounded-lg bg-[#E7EEF7] px-2 py-0.5"><Feather name="truck" size={11} color={BLUE} /><Text className="ml-1 text-xs font-semibold text-[#3D6CB4]">{name}</Text></View>)}
         <View className={`rounded-lg px-2 py-0.5 ${trip.type === 'commute' ? 'bg-green-50' : 'bg-amber-50'}`}>
           <Text className={`text-xs font-medium ${trip.type === 'commute' ? 'text-green-600' : 'text-amber-600'}`}>{trip.type === 'commute' ? 'Recurrente' : 'Solo hoy'}</Text>
         </View>

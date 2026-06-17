@@ -10,7 +10,7 @@ import {
   setIncludePendingRoutes,
 } from '@/services/preferences';
 
-const BLUE = '#09A6F3';
+const BLUE = '#3D6CB4';
 
 const PreferencesSheet = forwardRef<BottomSheet>((_, ref) => {
   const tabBarHeight = useBottomTabBarHeight();

@@ -11,21 +11,31 @@ export interface Leg {
 export interface LineRoute {
   coordinates: [number, number][];
   name: string;
+  /** Stroke color (default brand blue). */
+  color?: string;
+  /** Stroke opacity (default 0.9). */
+  opacity?: number;
+  /** Stroke weight (default 5). */
+  weight?: number;
+  /** When any route is focused, the map fits bounds to the focused one(s). */
+  focused?: boolean;
 }
 
 interface RouteMapProps {
   legs?: Leg[];
   lineRoute?: LineRoute | null;
+  /** Multiple route geometries (e.g. every ramal of a line). */
+  lineRoutes?: LineRoute[] | null;
   detourPath?: [number, number][] | null;
   highlightPath?: [number, number][] | null;
   currentLocation?: { lon: number; lat: number } | null;
   style?: StyleProp<ViewStyle>;
 }
 
-export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPath, currentLocation, style }: RouteMapProps) {
+export default function RouteMap({ legs = [], lineRoute, lineRoutes, detourPath, highlightPath, currentLocation, style }: RouteMapProps) {
   const html = useMemo(
-    () => buildMapHtml(legs, currentLocation ?? null, lineRoute ?? null, detourPath ?? null, highlightPath ?? null),
-    [JSON.stringify(legs), JSON.stringify(currentLocation), JSON.stringify(lineRoute), JSON.stringify(detourPath), JSON.stringify(highlightPath)]
+    () => buildMapHtml(legs, currentLocation ?? null, lineRoute ?? null, lineRoutes ?? null, detourPath ?? null, highlightPath ?? null),
+    [JSON.stringify(legs), JSON.stringify(currentLocation), JSON.stringify(lineRoute), JSON.stringify(lineRoutes), JSON.stringify(detourPath), JSON.stringify(highlightPath)]
   );
 
   return (
@@ -43,6 +53,7 @@ function buildMapHtml(
   legs: Leg[],
   currentLocation: { lon: number; lat: number } | null,
   lineRoute: LineRoute | null,
+  lineRoutes: LineRoute[] | null,
   detourPath: [number, number][] | null,
   highlightPath: [number, number][] | null,
 ): string {
@@ -62,8 +73,20 @@ function buildMapHtml(
   if (lineRoute) {
     for (const [lng, lat] of lineRoute.coordinates) addToBounds(lng, lat);
   }
+  for (const lr of lineRoutes ?? []) {
+    for (const [lng, lat] of lr.coordinates) addToBounds(lng, lat);
+  }
   if (currentLocation) {
     addToBounds(currentLocation.lon, currentLocation.lat);
+  }
+
+  // When a ramal is focused, tighten the map to just that geometry.
+  const focusedRoutes = (lineRoutes ?? []).filter((lr) => lr.focused);
+  if (focusedRoutes.length) {
+    minLat = Infinity; maxLat = -Infinity; minLng = Infinity; maxLng = -Infinity;
+    for (const lr of focusedRoutes) {
+      for (const [lng, lat] of lr.coordinates) addToBounds(lng, lat);
+    }
   }
 
   const hasCoords = isFinite(minLat);
@@ -73,7 +96,7 @@ function buildMapHtml(
   // Polylines for route legs
   const polylines = legs.map((leg) => {
     const coords = leg.geometry.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
-    const color = leg.mode === 'bus' ? '#09A6F3' : '#9CA3AF';
+    const color = leg.mode === 'bus' ? '#3D6CB4' : '#9CA3AF';
     const weight = leg.mode === 'bus' ? 5 : 3;
     const dash = leg.mode === 'walk' ? ', dashArray: "6 8"' : '';
     return `L.polyline([${coords}], {color:'${color}', weight:${weight}${dash}}).addTo(map);`;
@@ -89,7 +112,22 @@ function buildMapHtml(
     const coords = lineRoute.coordinates.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
     lineRouteJs = hasHighlight
       ? `L.polyline([${coords}], {color:'#6b7280', weight:5, opacity:0.45}).addTo(map);`
-      : `L.polyline([${coords}], {color:'#09A6F3', weight:5}).addTo(map);`;
+      : `L.polyline([${coords}], {color:'#3D6CB4', weight:5}).addTo(map);`;
+  }
+
+  // Multiple route geometries (every ramal of a line), all in brand blue.
+  let lineRoutesJs = '';
+  if (lineRoutes && lineRoutes.length) {
+    lineRoutesJs = lineRoutes
+      .filter((lr) => lr.coordinates.length >= 2)
+      .map((lr) => {
+        const coords = lr.coordinates.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
+        const color = lr.color ?? '#3D6CB4';
+        const weight = lr.weight ?? 5;
+        const opacity = lr.opacity ?? 0.9;
+        return `L.polyline([${coords}], {color:'${color}', weight:${weight}, opacity:${opacity}}).addTo(map);`;
+      })
+      .join('\n');
   }
 
   // Detour path polyline (orange dashed, overlaid on normal route)
@@ -104,14 +142,14 @@ function buildMapHtml(
   let highlightPathJs = '';
   if (hasHighlight) {
     const coords = highlightPath!.map(([lng, lat]) => `[${lat},${lng}]`).join(',');
-    highlightPathJs = `L.polyline([${coords}], {color:'#09A6F3', weight:7, opacity:1}).addTo(map);`;
+    highlightPathJs = `L.polyline([${coords}], {color:'#3D6CB4', weight:7, opacity:1}).addTo(map);`;
     for (const [lng, lat] of highlightPath!) addToBounds(lng, lat);
   }
 
   // Legend — only while voting (section highlighted over the full route).
   const legendHtml = hasHighlight ? `
 <div id="legend">
-  <div class="legend-row"><span class="legend-line" style="background:#09A6F3"></span>Tu sección</div>
+  <div class="legend-row"><span class="legend-line" style="background:#3D6CB4"></span>Tu sección</div>
   <div class="legend-row"><span class="legend-line" style="background:#6b7280;opacity:0.5"></span>Resto de la ruta</div>
 </div>` : '';
 
@@ -190,7 +228,7 @@ function buildMapHtml(
 <div id="map"></div>
 ${legendHtml}
 <button id="recenter" onclick="recenter()">
-  <svg viewBox="0 0 24 24" fill="none" stroke="#09A6F3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#3D6CB4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
   </svg>
 </button>
@@ -200,6 +238,7 @@ ${legendHtml}
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {maxZoom: 20, subdomains: 'abcd'}).addTo(map);
   ${polylines}
   ${lineRouteJs}
+  ${lineRoutesJs}
   ${detourPathJs}
   ${highlightPathJs}
   ${markers.join('\n  ')}

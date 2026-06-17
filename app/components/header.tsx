@@ -56,7 +56,7 @@ export default function Header({ title }: { title: string }) {
   const { isOnline, isSyncing, isRecording } = useHeaderStatus();
 
   return (
-    <View className="relative justify-center bg-[#09A6F3] p-4">
+    <View className="relative justify-center bg-[#3D6CB4] p-4">
       <View className="flex-row items-center justify-between">
         <View
           className="flex-row items-center gap-1.5 rounded-xl bg-white/20 px-2.5 py-1"

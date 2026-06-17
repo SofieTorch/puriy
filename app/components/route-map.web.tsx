@@ -15,11 +15,16 @@ export interface Leg {
 export interface LineRoute {
   coordinates: [number, number][];
   name: string;
+  color?: string;
+  opacity?: number;
+  weight?: number;
+  focused?: boolean;
 }
 
 interface RouteMapProps {
   legs?: Leg[];
   lineRoute?: LineRoute | null;
+  lineRoutes?: LineRoute[] | null;
   detourPath?: [number, number][] | null;
   highlightPath?: [number, number][] | null;
   currentLocation?: { lon: number; lat: number } | null;
@@ -55,13 +60,13 @@ function loadLeaflet(): Promise<void> {
   return leafletLoaded;
 }
 
-export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPath, currentLocation, style }: RouteMapProps) {
+export default function RouteMap({ legs = [], lineRoute, lineRoutes, detourPath, highlightPath, currentLocation, style }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
 
   const data = useMemo(
-    () => ({ legs, lineRoute: lineRoute ?? null, detourPath: detourPath ?? null, highlightPath: highlightPath ?? null, currentLocation: currentLocation ?? null }),
-    [JSON.stringify(legs), JSON.stringify(lineRoute), JSON.stringify(detourPath), JSON.stringify(highlightPath), JSON.stringify(currentLocation)]
+    () => ({ legs, lineRoute: lineRoute ?? null, lineRoutes: lineRoutes ?? null, detourPath: detourPath ?? null, highlightPath: highlightPath ?? null, currentLocation: currentLocation ?? null }),
+    [JSON.stringify(legs), JSON.stringify(lineRoute), JSON.stringify(lineRoutes), JSON.stringify(detourPath), JSON.stringify(highlightPath), JSON.stringify(currentLocation)]
   );
 
   useEffect(() => {
@@ -93,11 +98,23 @@ export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPa
       if (data.lineRoute) {
         for (const [lng, lat] of data.lineRoute.coordinates) addToBounds(lng, lat);
       }
+      for (const lr of data.lineRoutes ?? []) {
+        for (const [lng, lat] of lr.coordinates) addToBounds(lng, lat);
+      }
       if (data.detourPath) {
         for (const [lng, lat] of data.detourPath) addToBounds(lng, lat);
       }
       if (data.currentLocation) {
         addToBounds(data.currentLocation.lon, data.currentLocation.lat);
+      }
+
+      // When a ramal is focused, tighten the map to just that geometry.
+      const focusedRoutes = (data.lineRoutes ?? []).filter((lr) => lr.focused);
+      if (focusedRoutes.length) {
+        minLat = Infinity; maxLat = -Infinity; minLng = Infinity; maxLng = -Infinity;
+        for (const lr of focusedRoutes) {
+          for (const [lng, lat] of lr.coordinates) addToBounds(lng, lat);
+        }
       }
 
       const hasCoords = isFinite(minLat);
@@ -116,7 +133,7 @@ export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPa
       // Route leg polylines
       for (const leg of data.legs) {
         const coords = leg.geometry.map(([lng, lat]: [number, number]) => [lat, lng]);
-        const color = leg.mode === 'bus' ? '#09A6F3' : '#9CA3AF';
+        const color = leg.mode === 'bus' ? '#3D6CB4' : '#9CA3AF';
         const weight = leg.mode === 'bus' ? 5 : 3;
         const opts: any = { color, weight };
         if (leg.mode === 'walk') opts.dashArray = '6 8';
@@ -128,8 +145,21 @@ export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPa
         const coords = data.lineRoute.coordinates.map(([lng, lat]: [number, number]) => [lat, lng]);
         const opts = hasHighlight
           ? { color: '#6b7280', weight: 5, opacity: 0.45 }
-          : { color: '#09A6F3', weight: 5 };
+          : { color: '#3D6CB4', weight: 5 };
         L.polyline(coords, opts).addTo(map);
+      }
+
+      // Multiple route geometries (every ramal of a line)
+      if (data.lineRoutes && data.lineRoutes.length) {
+        for (const lr of data.lineRoutes) {
+          if (lr.coordinates.length < 2) continue;
+          const coords = lr.coordinates.map(([lng, lat]: [number, number]) => [lat, lng]);
+          L.polyline(coords, {
+            color: lr.color ?? '#3D6CB4',
+            weight: lr.weight ?? 5,
+            opacity: lr.opacity ?? 0.9,
+          }).addTo(map);
+        }
       }
 
       // Detour path
@@ -141,7 +171,7 @@ export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPa
       // Highlighted section (bold blue, for voting) + legend
       if (hasHighlight) {
         const coords = data.highlightPath!.map(([lng, lat]: [number, number]) => [lat, lng]);
-        L.polyline(coords, { color: '#09A6F3', weight: 7, opacity: 1 }).addTo(map);
+        L.polyline(coords, { color: '#3D6CB4', weight: 7, opacity: 1 }).addTo(map);
 
         const legend = new L.Control({ position: 'bottomleft' });
         legend.onAdd = () => {
@@ -151,7 +181,7 @@ export default function RouteMap({ legs = [], lineRoute, detourPath, highlightPa
             'box-shadow:0 1px 6px rgba(0,0,0,.15)';
           div.innerHTML =
             '<div style="display:flex;align-items:center;gap:6px">' +
-            '<span style="width:16px;height:4px;border-radius:2px;background:#09A6F3;display:inline-block"></span>Tu sección</div>' +
+            '<span style="width:16px;height:4px;border-radius:2px;background:#3D6CB4;display:inline-block"></span>Tu sección</div>' +
             '<div style="display:flex;align-items:center;gap:6px;margin-top:4px">' +
             '<span style="width:16px;height:4px;border-radius:2px;background:#6b7280;opacity:.5;display:inline-block"></span>Resto de la ruta</div>';
           return div;

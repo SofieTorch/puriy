@@ -320,6 +320,7 @@ def find_lines_nearby(
                 line_id=line.id,
                 line_name=line.name,
                 line_description=line.description,
+                line_type=line.line_type,
                 route_geojson=route_geojson,
                 detour_alert=detour_alert,
                 ramales=ramales,

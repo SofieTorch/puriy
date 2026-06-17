@@ -4,6 +4,8 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { LogBox } from 'react-native';
 import { useEffect } from 'react';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import 'react-native-reanimated';
 
 if (process.env.EXPO_PUBLIC_E2E === 'true') {
@@ -20,16 +22,24 @@ LogBox.ignoreLogs([
 
 import { DatabaseProvider } from '@/components/DatabaseProvider';
 import { GluestackUIProvider } from '@/components/ui/gluestack-ui-provider';
+import { applyInterFont, interFontMap } from '@/constants/fonts';
+import { palette } from '@/constants/palette';
 import { initPushNotifications } from '@/services/push';
 import { rescheduleAllSavedTrips } from '@/services/trip-notifications';
 import '@/global.css';
+
+// Keep the splash up until Inter loads; patch Text to use it before any render.
+SplashScreen.preventAutoHideAsync().catch(() => {});
+applyInterFont();
 
 const LightTheme: Theme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    background: '#FFFDF7',
-    primary: '#09A6F3',
+    background: palette.bg,
+    primary: palette.blue.DEFAULT,
+    text: palette.ink,
+    border: palette.line,
   },
 };
 
@@ -53,6 +63,16 @@ function PostBootEffects() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts(interFontMap);
+  const fontsReady = fontsLoaded || fontError != null;
+
+  useEffect(() => {
+    if (fontsReady) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsReady]);
+
+  // Hold on the splash only briefly; if the font fails, fall back to system.
+  if (!fontsReady) return null;
+
   return (
 
     <GluestackUIProvider mode="light">
@@ -64,7 +84,7 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
             </Stack>
-            <StatusBar style="light" backgroundColor="#09A6F3" />
+            <StatusBar style="light" backgroundColor={palette.blue.DEFAULT} />
           </ThemeProvider>
         </DatabaseProvider>
       </GestureHandlerRootView>

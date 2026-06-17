@@ -150,6 +150,7 @@ export interface NearbyLineWithRoute {
   line_id: string;
   line_name: string;
   line_description: string | null;
+  line_type: 'micro' | 'trufi' | 'taxi_trufi' | null;
   route_geojson: { type: string; coordinates: [number, number][] } | null;
   detour_alert?: DetourAlert | null;
   ramales: RamalSummary[];

@@ -18,7 +18,7 @@ import { Feather } from '@expo/vector-icons';
 
 import type { TripType } from '@/services/saved-trips';
 
-const BLUE = '#09A6F3';
+const BLUE = '#3D6CB4';
 
 export interface SaveTripModalResult {
   type: TripType;
@@ -94,13 +94,13 @@ export function SaveTripModal({
               onPress={() => setType('one_time')}
               className={`flex-1 rounded-lg border px-4 py-3 ${
                 type === 'one_time'
-                  ? 'border-[#09A6F3] bg-[#DDF6FF]'
+                  ? 'border-[#3D6CB4] bg-[#E7EEF7]'
                   : 'border-gray-200 bg-white'
               }`}
             >
               <Text
                 className={`text-center text-sm font-semibold ${
-                  type === 'one_time' ? 'text-[#09A6F3]' : 'text-gray-600'
+                  type === 'one_time' ? 'text-[#3D6CB4]' : 'text-gray-600'
                 }`}
               >
                 Solo por hoy
@@ -111,13 +111,13 @@ export function SaveTripModal({
               onPress={() => setType('commute')}
               className={`flex-1 rounded-lg border px-4 py-3 ${
                 type === 'commute'
-                  ? 'border-[#09A6F3] bg-[#DDF6FF]'
+                  ? 'border-[#3D6CB4] bg-[#E7EEF7]'
                   : 'border-gray-200 bg-white'
               }`}
             >
               <Text
                 className={`text-center text-sm font-semibold ${
-                  type === 'commute' ? 'text-[#09A6F3]' : 'text-gray-600'
+                  type === 'commute' ? 'text-[#3D6CB4]' : 'text-gray-600'
                 }`}
               >
                 Viaje recurrente

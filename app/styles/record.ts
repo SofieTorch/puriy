@@ -10,7 +10,7 @@ export const styles = StyleSheet.create({
       paddingBottom: 20,
     },
     statusSection: {
-      backgroundColor: '#F0FDF4',
+      backgroundColor: '#FBE7E9',
       borderRadius: 16,
       padding: 20,
       marginBottom: 24,
@@ -27,17 +27,17 @@ export const styles = StyleSheet.create({
     statusValue: {
       fontSize: 32,
       fontWeight: '700',
-      color: '#166534',
+      color: '#1A1C1E',
     },
     statusLabel: {
       fontSize: 14,
-      color: '#15803D',
+      color: '#5F6368',
       marginTop: 4,
     },
     statusDivider: {
       width: 1,
       height: 40,
-      backgroundColor: '#BBF7D0',
+      backgroundColor: '#E4E7EA',
     },
     recordingIndicator: {
       flexDirection: 'row',
@@ -49,13 +49,13 @@ export const styles = StyleSheet.create({
       width: 10,
       height: 10,
       borderRadius: 5,
-      backgroundColor: '#EF4444',
+      backgroundColor: '#D62F3F',
       marginRight: 8,
     },
     recordingText: {
       fontSize: 14,
       fontWeight: '500',
-      color: '#166534',
+      color: '#D62F3F',
     },
     switchContainer: {
       alignItems: 'center',

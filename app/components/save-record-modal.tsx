@@ -278,7 +278,7 @@ export default function SaveRecordModal({
               </View>
 
               <View className="mb-2 flex-row items-center gap-3">
-                <View className="h-1 w-6 rounded bg-[#09A6F3]" />
+                <View className="h-1 w-6 rounded bg-[#3D6CB4]" />
                 <Text className="text-xs text-gray-500">Ruta normal</Text>
                 <View className="h-1 w-6 rounded bg-orange-400" style={{ borderStyle: 'dashed' }} />
                 <Text className="text-xs text-gray-500">Tu recorrido (desvío)</Text>
@@ -369,7 +369,7 @@ export default function SaveRecordModal({
                           className={`flex-row items-center border-b border-gray-100 px-4 py-3 ${isSelected ? 'bg-sky-50' : ''}`}
                           onPress={() => { setSelectedLine(item); setCustomLineName(''); setDropdownOpen(false); }}
                         >
-                          <Text className={`flex-1 text-sm ${isSelected ? 'font-semibold text-[#09A6F3]' : 'text-gray-700'}`}>
+                          <Text className={`flex-1 text-sm ${isSelected ? 'font-semibold text-[#3D6CB4]' : 'text-gray-700'}`}>
                             {item.name}
                           </Text>
                           {item.status === 'pending' && (
@@ -377,7 +377,7 @@ export default function SaveRecordModal({
                               <Text className="text-[10px] font-medium text-amber-600">Pendiente</Text>
                             </View>
                           )}
-                          {isSelected && <Feather name="check" size={16} color="#09A6F3" className="ml-2" />}
+                          {isSelected && <Feather name="check" size={16} color="#3D6CB4" className="ml-2" />}
                         </Pressable>
                       );
                     })
@@ -410,7 +410,7 @@ export default function SaveRecordModal({
                       className="flex-row items-center rounded-lg px-3 py-2.5 active:bg-sky-100"
                       onPress={() => { setSelectedLine(item); setCustomLineName(''); }}
                     >
-                      <Feather name="truck" size={14} color="#09A6F3" />
+                      <Feather name="truck" size={14} color="#3D6CB4" />
                       <Text className="ml-2 flex-1 text-sm font-medium text-gray-800">{item.name}</Text>
                       {item.status === 'pending' && (
                         <View className="ml-2 rounded-md bg-amber-50 px-1.5 py-0.5">
@@ -463,20 +463,20 @@ export default function SaveRecordModal({
                           }}
                           className={`flex-row items-center rounded-full border px-3 py-1.5 ${
                             selected
-                              ? 'border-[#09A6F3] bg-[#DDF6FF]'
+                              ? 'border-[#3D6CB4] bg-[#E7EEF7]'
                               : 'border-gray-200 bg-white'
                           }`}
                         >
                           <Text
                             className={`text-sm font-semibold ${
-                              selected ? 'text-[#09A6F3]' : 'text-gray-700'
+                              selected ? 'text-[#3D6CB4]' : 'text-gray-700'
                             }`}
                           >
                             Bs {opt.amount_bob.toFixed(2)}
                           </Text>
                           <Text
                             className={`ml-1.5 text-xs ${
-                              selected ? 'text-[#09A6F3] opacity-80' : 'text-gray-400'
+                              selected ? 'text-[#3D6CB4] opacity-80' : 'text-gray-400'
                             }`}
                           >
                             ({opt.report_count})
@@ -548,7 +548,7 @@ export default function SaveRecordModal({
                   <Switch
                     value={isDetour}
                     onValueChange={setIsDetour}
-                    trackColor={{ false: '#D1D5DB', true: '#09A6F3' }}
+                    trackColor={{ false: '#D1D5DB', true: '#3D6CB4' }}
                     thumbColor="#FFFFFF"
                   />
                 </View>
@@ -562,10 +562,10 @@ export default function SaveRecordModal({
                         return (
                           <Pressable
                             key={reason}
-                            className={`rounded-full border px-4 py-2 ${active ? 'border-[#09A6F3] bg-sky-100' : 'border-gray-300 bg-white'}`}
+                            className={`rounded-full border px-4 py-2 ${active ? 'border-[#3D6CB4] bg-sky-100' : 'border-gray-300 bg-white'}`}
                             onPress={() => setDetourReason(reason)}
                           >
-                            <Text className={`text-sm font-medium ${active ? 'text-[#09A6F3]' : 'text-gray-600'}`}>
+                            <Text className={`text-sm font-medium ${active ? 'text-[#3D6CB4]' : 'text-gray-600'}`}>
                               {reason}
                             </Text>
                           </Pressable>
@@ -593,7 +593,7 @@ export default function SaveRecordModal({
             </TouchableOpacity>
             <TouchableOpacity
               testID="modal-save-btn"
-              className={`flex-1 items-center rounded-xl py-3.5 ${!canSave ? 'bg-[#09A6F3]/40' : isDetour ? 'bg-orange-500' : 'bg-[#09A6F3]'}`}
+              className={`flex-1 items-center rounded-xl py-3.5 ${!canSave ? 'bg-[#3D6CB4]/40' : isDetour ? 'bg-orange-500' : 'bg-[#3D6CB4]'}`}
               onPress={handleSavePress}
               disabled={!canSave || isSaving}
             >
