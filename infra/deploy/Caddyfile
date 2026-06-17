@@ -1,10 +1,7 @@
 puriy.sofietorch.dev {
-	# Bare-prefix redirects (handle exact-matches /marimo only, not /marimo/foo)
+	# Bare-prefix redirects (handle exact-matches like /grafana, not /grafana/foo)
 	handle /grafana {
 		redir * /grafana/ permanent
-	}
-	handle /marimo {
-		redir * /marimo/ permanent
 	}
 	handle /valhalla {
 		redir * /valhalla/ permanent
@@ -25,12 +22,6 @@ puriy.sofietorch.dev {
 	# Grafana dashboards
 	handle /grafana/* {
 		reverse_proxy grafana:3000
-	}
-
-	# Marimo notebooks
-	handle /marimo/* {
-		uri strip_prefix /marimo
-		reverse_proxy marimo:2727
 	}
 
 	# Project landing page (replace with a static site later)
