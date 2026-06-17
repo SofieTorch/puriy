@@ -6,6 +6,7 @@ requires-python = ">=3.14"
 dependencies = [
   "database>=0.1.0",
   "geodata>=0.1.0",
+  "routebuilder>=0.1.0",
   "sqlalchemy>=2.0.48",
 ]
 
@@ -24,6 +25,7 @@ where = ["src"]
 [tool.uv.sources]
 database = {path = "../database", editable = true}
 geodata = {path = "../geodata", editable = true}
+routebuilder = {path = "../routebuilder", editable = true}
 
 [dependency-groups]
 dev = [

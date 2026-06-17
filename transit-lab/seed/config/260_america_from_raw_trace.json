@@ -1,0 +1,48 @@
+{
+  "sim_params": {
+    "Number of tracks": 20,
+    "Sampling rate (s)": 2.0,
+    "Base speed (m/s)": 4.176,
+    "Speed jitter (%)": 20.24,
+    "Target pts/track (0=auto)": 0,
+    "Mean trace proportion (0-1)": 1.0,
+    "Stddev trace proportion": 0.0
+  },
+  "noise": {
+    "gaussian": {
+      "Enabled": true,
+      "Sigma (m)": 3.754
+    },
+    "perpendicular": {
+      "Enabled": false,
+      "Sigma (m)": 0.0
+    },
+    "zigzag": {
+      "Enabled": true,
+      "Amplitude (m)": 2.651,
+      "Period (points)": 27
+    },
+    "jumps": {
+      "Enabled": false,
+      "Probability": 0.0,
+      "Distance (m)": 40.0
+    },
+    "missing": {
+      "Enabled": true,
+      "Probability": 0.3
+    },
+    "biased_drift": {
+      "Enabled": false,
+      "Drift (m/pt)": 0.0,
+      "Bearing (deg)": 0.0
+    },
+    "lateral_drift": {
+      "Enabled": true,
+      "Total (m)": 1.873
+    },
+    "timestamp_jitter": {
+      "Enabled": true,
+      "Sigma (s)": 0.064
+    }
+  }
+}

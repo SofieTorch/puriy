@@ -114,7 +114,7 @@ export default function RamalDescriptorsScreen({
       {/* Header — identifies the ramal without ever showing ramal_label. */}
       <View className="mb-3 border-b border-gray-100 pb-3">
         {endpointLabel && (
-          <Text className="text-base font-semibold text-gray-800">{endpointLabel}</Text>
+          <Text className="text-base font-semibold text-brand-ink">{endpointLabel}</Text>
         )}
         {streetsLabel && (
           <Text className="text-xs text-gray-500" numberOfLines={2}>{streetsLabel}</Text>
@@ -139,16 +139,16 @@ export default function RamalDescriptorsScreen({
               onPress={() => toggleVote(d)}
               className={
                 'mb-2 flex-row items-center justify-between rounded-lg border px-3 py-2 ' +
-                (highlightedId === d.id ? 'border-[#09A6F3] bg-[#DDF6FF]' : 'border-gray-200 bg-white')
+                (highlightedId === d.id ? 'border-[#3D6CB4] bg-[#E7EEF7]' : 'border-brand-line bg-white')
               }
             >
-              <Text className="flex-1 pr-3 text-sm text-gray-800">{d.text}</Text>
+              <Text className="flex-1 pr-3 text-sm text-brand-ink">{d.text}</Text>
               <View className="flex-row items-center">
                 <Text className="mr-2 text-xs font-semibold text-gray-600">{d.votes_count}</Text>
                 <View
                   className={
                     'h-7 w-7 items-center justify-center rounded-full ' +
-                    (d.voted_by_me ? 'bg-[#09A6F3]' : 'bg-gray-100')
+                    (d.voted_by_me ? 'bg-[#3D6CB4]' : 'bg-gray-100')
                   }
                 >
                   <Feather
@@ -186,7 +186,7 @@ export default function RamalDescriptorsScreen({
               maxLength={200}
               multiline
               editable={!submitting}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800"
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-brand-ink"
             />
             <View className="mt-2 flex-row justify-end">
               <Pressable
@@ -201,7 +201,7 @@ export default function RamalDescriptorsScreen({
                 disabled={submitting || !draft.trim()}
                 className={
                   'rounded-md px-3 py-1.5 ' +
-                  (submitting || !draft.trim() ? 'bg-gray-200' : 'bg-[#09A6F3]')
+                  (submitting || !draft.trim() ? 'bg-gray-200' : 'bg-[#3D6CB4]')
                 }
               >
                 <Text className={'text-sm font-semibold ' + (submitting || !draft.trim() ? 'text-gray-500' : 'text-white')}>

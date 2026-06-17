@@ -437,6 +437,7 @@ def load_reconstruction_traces_from_db(
                         points=points,
                         point_index_attr="point_index",
                         matched_edges=matched_edges,
+                        match_attributes=trip.match_attributes,
                     )
                 )
             return [trace for trace in traces if len(trace.points) >= 2]
@@ -455,6 +456,7 @@ def _rows_to_trace(
     points: list[Any],
     point_index_attr: str,
     matched_edges: list[Any] | None = None,
+    match_attributes: dict | None = None,
 ) -> ReconstructionTrace:
     return ReconstructionTrace(
         trace_id=trace_id,
@@ -479,6 +481,7 @@ def _rows_to_trace(
             if matched_edges
             else None
         ),
+        match_attributes=match_attributes,
     )
 
 

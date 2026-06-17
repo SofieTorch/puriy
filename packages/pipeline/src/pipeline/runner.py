@@ -20,6 +20,7 @@ STEP_ORDER = [
     # routes.
     "resolve_routes",
     "resolve_line_votes",
+    "resolve_fares",
     "rebuild_graph",
     "infer_schedules",
 ]

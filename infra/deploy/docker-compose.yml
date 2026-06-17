@@ -81,21 +81,31 @@ services:
       - default
       - www
 
-  marimo:
+  # Internal-only simulation lab (route-reconstruction scenarios + admin
+  # tooling). Deliberately NOT on the `www` network and NOT proxied by Caddy:
+  # it exposes destructive endpoints (wipe-database, rebuild-graph) against the
+  # production DB. Reach it over the WireGuard VPN. By default it publishes on
+  # the host loopback only (safe; use an SSH tunnel); set SIMLAB_BIND to the
+  # server's WireGuard interface IP to reach it directly from a VPN peer.
+  simlab:
     build:
       context: ../..
-      dockerfile: infra/deploy/Dockerfile.marimo
+      dockerfile: infra/deploy/Dockerfile.simlab
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       VALHALLA_URL: http://valhalla:8002
-      MARIMO_PATH_PREFIX: /marimo
+    ports:
+      - "${SIMLAB_BIND:-127.0.0.1}:8050:8050"
+    volumes:
+      - simlab_runs:/app/simlab/runs
+      - simlab_scenarios:/app/simlab/scenarios
+      - simlab_routes:/app/simlab/routes
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
-    networks:
-      - default
-      - www
 
   # --- Observability stack ---
   otel-collector:
@@ -159,3 +169,6 @@ volumes:
   loki_data:
   prometheus_data:
   grafana_data:
+  simlab_runs:
+  simlab_scenarios:
+  simlab_routes:

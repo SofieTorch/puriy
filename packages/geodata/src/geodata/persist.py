@@ -7,6 +7,7 @@ from geoalchemy2.shape import from_shape
 from shapely.geometry import LineString, Point
 from sqlalchemy.orm import Session
 
+from database.devices import ensure_device
 from database.models import SessionStatus, TripSession, TripSessionPoint
 
 from .telemetry import tracer
@@ -52,9 +53,14 @@ def save_tracks_to_db(
             timestamps = [datetime.fromisoformat(p["timestamp"]) for p in points]
             coords = [(p["longitude"], p["latitude"]) for p in points]
 
+            # trip_sessions.device_id is FK-constrained to devices.id; register the
+            # synthetic device before flushing so callers don't have to.
+            session_device_id = device_id or f"simulator-{track_id}"
+            ensure_device(db, session_device_id)
+
             session = TripSession(
                 line_id=line_id,
-                device_id=device_id or f"simulator-{track_id}",
+                device_id=session_device_id,
                 status=SessionStatus.COMPLETED,
                 started_at=timestamps[0],
                 ended_at=timestamps[-1],

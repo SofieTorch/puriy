@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1660" viewBox="0 0 1120 1660" font-family="Georgia, 'Times New Roman', serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#44566b"/>
+    </marker>
+    <style>
+      .act   { fill:#eef3f8; stroke:#466184; stroke-width:1.4; }
+      .dec   { fill:#fcf4e0; stroke:#b07d2b; stroke-width:1.4; }
+      .none  { fill:#f4eef0; stroke:#8a6a72; stroke-width:1.4; }
+      .pub   { fill:#e9f3ec; stroke:#4a7c59; stroke-width:1.4; }
+      .bar   { fill:#2c3e50; }
+      .edge  { fill:none; stroke:#44566b; stroke-width:1.4; marker-end:url(#arrow); }
+      .merge { fill:#ffffff; stroke:#44566b; stroke-width:1.4; }
+      .t     { fill:#1f2d3d; font-size:14px; text-anchor:middle; }
+      .td    { fill:#1f2d3d; font-size:13px; text-anchor:middle; }
+      .lbl   { fill:#324; font-size:13px; font-style:italic; text-anchor:middle; }
+      .br    { fill:#466184; font-size:14.5px; font-style:italic; text-anchor:middle; }
+      .note  { fill:#fffdf3; stroke:#9a8c5c; stroke-width:1; }
+      .ntxt  { fill:#5a5230; font-size:12.5px; text-anchor:middle; font-style:italic; }
+      .cap   { fill:#445; font-size:13px; font-style:italic; text-anchor:middle; }
+    </style>
+  </defs>
+
+  <rect width="1120" height="1660" fill="#ffffff"/>
+
+  <!-- ===== Header ===== -->
+  <text x="560" y="44" text-anchor="middle" fill="#1f2d3d" font-size="24" font-weight="bold">Cálculo del horario y la frecuencia de las líneas</text>
+  <text x="560" y="70" text-anchor="middle" fill="#5a6675" font-size="14.5" font-style="italic">Inferencia a partir de las marcas de inicio de las sesiones de viaje registradas</text>
+  <line x1="120" y1="88" x2="1000" y2="88" stroke="#c9d2db" stroke-width="1"/>
+
+  <!-- ===== Initial node ===== -->
+  <circle cx="520" cy="128" r="11" fill="#2c3e50"/>
+  <path class="edge" d="M520,139 L520,158"/>
+
+  <!-- A1 -->
+  <rect class="act" x="360" y="159" width="320" height="52" rx="9"/>
+  <text class="t" x="520" y="190">Obtener las líneas con estado <tspan font-style="italic">APROBADO</tspan></text>
+  <path class="edge" d="M520,211 L520,237"/>
+
+  <!-- A2 -->
+  <rect class="act" x="328" y="238" width="384" height="64" rx="9"/>
+  <text class="t" x="520" y="263">Recolectar las marcas de inicio (<tspan font-style="italic">started_at</tspan>, en UTC)</text>
+  <text class="t" x="520" y="283">de las sesiones con estado <tspan font-style="italic">COMPLETADA</tspan></text>
+  <path class="edge" d="M520,302 L520,328"/>
+
+  <!-- A3 -->
+  <rect class="act" x="345" y="329" width="350" height="52" rx="9"/>
+  <text class="t" x="520" y="360">Convertir cada marca UTC a hora local (UTC−4)</text>
+  <path class="edge" d="M520,381 L520,407"/>
+
+  <!-- A4 -->
+  <rect class="act" x="330" y="408" width="380" height="64" rx="9"/>
+  <text class="t" x="520" y="433">Agrupar las marcas por tipo de día:</text>
+  <text class="t" x="520" y="453">Entre semana · Sábado · Domingo</text>
+
+  <!-- note on A4 -->
+  <path class="note" d="M742,406 L862,406 L874,418 L874,476 L742,476 Z"/>
+  <path d="M862,406 L862,418 L874,418" fill="none" stroke="#9a8c5c" stroke-width="1"/>
+  <line x1="710" y1="440" x2="742" y2="440" stroke="#9a8c5c" stroke-width="1" stroke-dasharray="4 3"/>
+  <text class="ntxt" x="808" y="430">Se repite de forma</text>
+  <text class="ntxt" x="808" y="448">independiente para</text>
+  <text class="ntxt" x="808" y="466">cada tipo de día</text>
+
+  <path class="edge" d="M520,472 L520,505"/>
+
+  <!-- ===== Fork bar ===== -->
+  <rect class="bar" x="205" y="508" width="630" height="8" rx="2"/>
+  <text class="br" x="300" y="540">Horas de servicio</text>
+  <text class="br" x="720" y="540">Frecuencia de paso (intervalo)</text>
+
+  <!-- fork to left and right -->
+  <path class="edge" d="M300,516 L300,576"/>
+  <path class="edge" d="M720,516 L720,586"/>
+
+  <!-- =================== LEFT BRANCH =================== -->
+  <!-- L1 decision -->
+  <path class="dec" d="M300,576 L378,620 L300,664 L222,620 Z"/>
+  <text class="td" x="300" y="615">¿≥ 10 sesiones</text>
+  <text class="td" x="300" y="631">de inicio?</text>
+
+  <!-- L1 Sí -> L2 -->
+  <path class="edge" d="M300,664 L300,722"/>
+  <text class="lbl" x="312" y="694">Sí</text>
+
+  <!-- L1 No -> Lno -->
+  <path class="edge" d="M222,620 L202,620"/>
+  <text class="lbl" x="212" y="610">No</text>
+
+  <!-- Lno -->
+  <rect class="none" x="42" y="592" width="160" height="56" rx="9"/>
+  <text class="td" x="122" y="616">No se publican</text>
+  <text class="td" x="122" y="634">horas de servicio</text>
+
+  <!-- L2 -->
+  <rect class="act" x="180" y="723" width="240" height="74" rx="9"/>
+  <text class="t" x="300" y="748">Horas de servicio:</text>
+  <text class="t" x="300" y="768">inicio = P5, fin = P95</text>
+  <text class="t" x="300" y="788">de los horarios de inicio</text>
+
+  <!-- Lno down to merge -->
+  <path class="edge" d="M122,648 L122,900 L281,900"/>
+  <!-- L2 to merge -->
+  <path class="edge" d="M300,797 L300,881"/>
+
+  <!-- Left merge -->
+  <path class="merge" d="M300,881 L319,900 L300,919 L281,900 Z"/>
+  <!-- merge to join -->
+  <path class="edge" d="M300,919 L300,1429"/>
+
+  <!-- =================== RIGHT BRANCH =================== -->
+  <!-- R1 -->
+  <rect class="act" x="565" y="588" width="310" height="64" rx="9"/>
+  <text class="t" x="720" y="613">Agrupar las marcas por día calendario;</text>
+  <text class="t" x="720" y="633">conservar los días con ≥ 5 sesiones</text>
+  <path class="edge" d="M720,652 L720,688"/>
+
+  <!-- R2 -->
+  <rect class="act" x="565" y="689" width="310" height="62" rx="9"/>
+  <text class="t" x="720" y="714">Calcular los intervalos entre</text>
+  <text class="t" x="720" y="734">inicios consecutivos (por día)</text>
+  <path class="edge" d="M720,751 L720,786"/>
+
+  <!-- R3 -->
+  <rect class="act" x="565" y="787" width="310" height="62" rx="9"/>
+  <text class="t" x="720" y="812">Descartar los intervalos &gt; 60 min</text>
+  <text class="t" x="720" y="832">(cruces de día, no son paso real)</text>
+  <path class="edge" d="M720,849 L720,875"/>
+
+  <!-- R4 decision -->
+  <path class="dec" d="M720,875 L800,920 L720,965 L640,920 Z"/>
+  <text class="td" x="720" y="915">¿≥ 2 intervalos</text>
+  <text class="td" x="720" y="931">válidos?</text>
+
+  <!-- R4 Sí -> R5 -->
+  <path class="edge" d="M720,965 L720,998"/>
+  <text class="lbl" x="732" y="985">Sí</text>
+
+  <!-- R4 No -> Rnone1 -->
+  <path class="edge" d="M800,920 L912,920"/>
+  <text class="lbl" x="856" y="910">No</text>
+  <rect class="none" x="913" y="893" width="150" height="54" rx="9"/>
+  <text class="td" x="988" y="924">frecuencia = None</text>
+
+  <!-- R5 -->
+  <rect class="act" x="565" y="999" width="310" height="62" rx="9"/>
+  <text class="t" x="720" y="1024">Calcular mediana, media,</text>
+  <text class="t" x="720" y="1044">desviación estándar y CV</text>
+  <path class="edge" d="M720,1061 L720,1087"/>
+
+  <!-- R6 decision -->
+  <path class="dec" d="M720,1087 L796,1130 L720,1173 L644,1130 Z"/>
+  <text class="td" x="720" y="1135">¿CV &lt; 0.5?</text>
+
+  <!-- R6 Sí -> Rpub -->
+  <path class="edge" d="M720,1173 L720,1216"/>
+  <text class="lbl" x="732" y="1198">Sí</text>
+
+  <!-- R6 No -> Rnone2 -->
+  <path class="edge" d="M796,1130 L908,1130"/>
+  <text class="lbl" x="852" y="1120">No</text>
+  <rect class="none" x="909" y="1100" width="166" height="60" rx="9"/>
+  <text class="td" x="992" y="1124">frecuencia = None</text>
+  <text class="td" x="992" y="1142">(cadencia no confiable)</text>
+
+  <!-- Rpub -->
+  <rect class="pub" x="608" y="1217" width="224" height="64" rx="9"/>
+  <text class="t" x="720" y="1242">frecuencia = mediana</text>
+  <text class="t" x="720" y="1262">de los intervalos (min)</text>
+
+  <!-- merges into Rm -->
+  <path class="edge" d="M720,1281 L720,1341"/>
+  <path class="edge" d="M988,947 L988,1360 L739,1360"/>
+  <path class="edge" d="M992,1160 L992,1352 L739,1356"/>
+
+  <!-- Right merge -->
+  <path class="merge" d="M720,1341 L739,1360 L720,1379 L701,1360 Z"/>
+  <path class="edge" d="M720,1379 L720,1429"/>
+
+  <!-- ===== Join bar ===== -->
+  <rect class="bar" x="205" y="1431" width="630" height="8" rx="2"/>
+  <path class="edge" d="M520,1439 L520,1461"/>
+
+  <!-- Persist -->
+  <rect class="act" x="330" y="1462" width="380" height="66" rx="9"/>
+  <text class="t" x="520" y="1488">Guardar <tspan font-style="italic">LineSchedule</tspan> (por línea y tipo de día):</text>
+  <text class="t" x="520" y="1508">inicio, fin, frecuencia, <tspan font-style="italic">inferred_at</tspan></text>
+  <path class="edge" d="M520,1528 L520,1556"/>
+
+  <!-- Final node -->
+  <circle cx="520" cy="1572" r="14" fill="none" stroke="#2c3e50" stroke-width="1.6"/>
+  <circle cx="520" cy="1572" r="7" fill="#2c3e50"/>
+
+  <!-- caption -->
+  <text class="cap" x="560" y="1632">Figura. Diagrama de actividad del proceso de inferencia de horario (percentiles P5–P95) y</text>
+  <text class="cap" x="560" y="1650">frecuencia (mediana de intervalos con control de variabilidad mediante el coeficiente de variación, CV).</text>
+</svg>

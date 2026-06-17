@@ -102,7 +102,7 @@ export default function ContributeScreen() {
       >
         {loading ? (
           <View className="items-center py-20">
-            <ActivityIndicator size="large" color="#09A6F3" />
+            <ActivityIndicator size="large" color="#3D6CB4" />
           </View>
         ) : pending.length === 0 && nearbyLines.length === 0 ? (
           <View className="items-center gap-3 py-20">
@@ -123,16 +123,16 @@ export default function ContributeScreen() {
             {/* Line familiarity voting */}
             {nearbyLines.length > 0 && (
               <>
-                <Text testID="contribute-lines-title" className="text-lg font-semibold text-gray-800">
+                <Text testID="contribute-lines-title" className="text-lg font-semibold text-brand-ink">
                   ¿Conoces estas líneas?
                 </Text>
                 {nearbyLines.map((line, idx) => (
                   <View
                     key={line.line_id}
-                    className="flex-row items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3"
+                    className="flex-row items-center justify-between rounded-2xl border border-brand-line bg-white px-4 py-3"
                   >
                     <View className="flex-1 gap-0.5">
-                      <Text className="text-base font-medium text-gray-800">
+                      <Text className="text-base font-medium text-brand-ink">
                         Línea {line.line_name}
                       </Text>
                       {line.line_description && (
@@ -164,7 +164,7 @@ export default function ContributeScreen() {
 
             {/* Route edge voting */}
             {pending.length > 0 && (
-              <Text testID="contribute-routes-title" className="text-lg font-semibold text-gray-800">
+              <Text testID="contribute-routes-title" className="text-lg font-semibold text-brand-ink">
                 ¿Estas rutas son correctas?
               </Text>
             )}
@@ -172,10 +172,10 @@ export default function ContributeScreen() {
             {pending.map((line) => (
               <View
                 key={line.line_id}
-                className="overflow-hidden rounded-2xl border border-gray-200 bg-white"
+                className="overflow-hidden rounded-2xl border border-brand-line bg-white"
               >
                 <View className="gap-1 p-4">
-                  <Text className="text-base font-semibold text-gray-800">
+                  <Text className="text-base font-semibold text-brand-ink">
                     Línea {line.line_name}
                   </Text>
                   {line.line_description && (
@@ -194,9 +194,9 @@ export default function ContributeScreen() {
                   disabled={loadingSegment === line.line_id}
                 >
                   {loadingSegment === line.line_id ? (
-                    <ActivityIndicator size="small" color="#09A6F3" />
+                    <ActivityIndicator size="small" color="#3D6CB4" />
                   ) : (
-                    <Text className="text-sm font-medium text-[#09A6F3]">
+                    <Text className="text-sm font-medium text-[#3D6CB4]">
                       Votar por secciones
                     </Text>
                   )}

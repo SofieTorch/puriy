@@ -1,11 +1,9 @@
 """Import fare zones from OpenStreetMap administrative boundaries via Overpass API."""
 
-import json
 from typing import Any
 
 import httpx
-from shapely.geometry import MultiPolygon, Polygon, shape
-from shapely.ops import unary_union
+from shapely.geometry import MultiPolygon, Polygon
 from geoalchemy2.shape import from_shape
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -28,6 +26,11 @@ def _query_overpass(department: str, admin_level: int) -> dict[str, Any]:
     response = httpx.post(
         OVERPASS_URL,
         data={"data": query},
+        # Overpass rejects requests without a descriptive User-Agent (406/429).
+        headers={
+            "User-Agent": "cbba-mobility/1.0 (transit route research)",
+            "Accept": "application/json",
+        },
         timeout=180,
     )
     response.raise_for_status()

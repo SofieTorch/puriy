@@ -16,7 +16,7 @@ from database.models import (
     RouteStatus,
 )
 
-from .geojson import parse_route_from_geojson, parse_routes_from_geojson
+from .geojson import parse_routes_from_geojson
 from .match import trace_match
 
 

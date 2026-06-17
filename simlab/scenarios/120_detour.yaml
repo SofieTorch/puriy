@@ -1,0 +1,33 @@
+name: 120_detour
+description: >
+  Line 120 with a temporary detour as its own base route: during days
+  7-14 all trips follow the feria detour geometry instead of the main
+  route's middle stretch.
+seed: 11
+sim_days: 21
+vote_day: 21
+routes:
+  - name: main
+    path: transit-lab/seed/routes/120_from_univalle_to_umss.geojson
+    role: main
+  - name: feria_detour
+    path: simlab/routes/120_detour_feria.geojson
+    role: detour
+    replaces: main
+    from_day: 7
+    to_day: 14
+    fraction_of_trips: 1.0
+personas:
+  - name: commuter
+    count: 5
+    route: main
+    trips_per_week: 5.0
+    partial_trip_prob: 0.3
+    travel_window: [0.0, 1.0]
+    min_trip_fraction: 0.5
+    vote_propensity: 0.8
+    fare_report_prob: 0.3
+    sampling_rate_s: 2.0
+    fare_areas:
+      - {name: centro, start_fraction: 0.0, end_fraction: 0.5, amount_bob: 2.4}
+      - {name: norte, start_fraction: 0.5, end_fraction: 1.0, amount_bob: 3.5}

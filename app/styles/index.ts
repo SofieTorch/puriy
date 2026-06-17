@@ -1,8 +1,8 @@
 import { StyleSheet } from "react-native";
 
-const HEADER_BLUE = '#09A6F3';
-const HEADER_BLUE_DARK = '#0A85ED';
-const SEGMENT_ACTIVE_BORDER_COLOR = '#005399';
+const HEADER_BLUE = '#3D6CB4';
+const HEADER_BLUE_DARK = '#2F5690';
+const SEGMENT_ACTIVE_BORDER_COLOR = '#1E3A66';
 
 export const styles = StyleSheet.create({
     container: {

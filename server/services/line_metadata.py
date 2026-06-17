@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Numeric, cast, func, select
 from sqlalchemy.orm import Session
 
 from database.models.fare import FareReport, FareZone
@@ -29,6 +29,18 @@ def _resolve_zone(db: Session, lat: float, lon: float) -> UUID | None:
     ).scalars().first()
 
 
+def _fare_median():
+    """Median fare amount (rounded to 2 dp). Median, not mean, so a stray
+    misreport doesn't skew the estimate — the point of crowdsourcing with noise.
+    """
+    # percentile_cont returns double precision; cast to numeric so round(x, 2)
+    # is valid in Postgres.
+    return func.round(
+        cast(func.percentile_cont(0.5).within_group(FareReport.amount_bob.asc()), Numeric),
+        2,
+    )
+
+
 def estimate_fare_bob(
     db: Session,
     line_id: UUID,
@@ -40,8 +52,8 @@ def estimate_fare_bob(
     """Return the estimated fare in BOB for one bus leg, or None if there's
     no signal (no reports / unresolvable zones).
 
-    For MICRO lines the fare is a flat average across all reports;
-    for trufi/taxi-trufi lines it's the average over the resolved
+    For MICRO lines the fare is a flat median across all reports;
+    for trufi/taxi-trufi lines it's the median over the resolved
     boarding/alighting zone-pair (symmetric).
     """
     line = db.get(Line, line_id)
@@ -49,19 +61,18 @@ def estimate_fare_bob(
         return None
 
     if line.line_type == LineType.MICRO:
-        avg = db.execute(
-            select(func.round(func.avg(FareReport.amount_bob), 2))
-            .where(FareReport.line_id == line_id)
+        median = db.execute(
+            select(_fare_median()).where(FareReport.line_id == line_id)
         ).scalar_one_or_none()
-        return float(avg) if avg is not None else None
+        return float(median) if median is not None else None
 
     boarding_zone_id = _resolve_zone(db, boarding_lat, boarding_lon)
     alighting_zone_id = _resolve_zone(db, alighting_lat, alighting_lon)
     if not boarding_zone_id or not alighting_zone_id:
         return None
 
-    avg = db.execute(
-        select(func.round(func.avg(FareReport.amount_bob), 2)).where(
+    median = db.execute(
+        select(_fare_median()).where(
             FareReport.line_id == line_id,
             (
                 (FareReport.boarding_zone_id == boarding_zone_id)
@@ -73,7 +84,7 @@ def estimate_fare_bob(
             ),
         )
     ).scalar_one_or_none()
-    return float(avg) if avg is not None else None
+    return float(median) if median is not None else None
 
 
 def _today_bucket(now: Optional[datetime] = None) -> DayBucket:

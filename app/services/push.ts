@@ -17,9 +17,17 @@
 
 import { Platform } from 'react-native';
 import { router } from 'expo-router';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 
 import { api } from '@/services/api';
 import { getDeviceId } from '@/services/device-id';
+
+// Expo Go (the dev client downloaded from the store) reports `storeClient`.
+// As of SDK 53 it dropped remote-push support on Android — calling
+// `getExpoPushTokenAsync()` there throws "...removed from Expo Go". A real
+// token needs a development build; in Expo Go we register tokenless instead.
+const IS_EXPO_GO =
+  Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 let initialized = false;
 let tapSubscription: { remove(): void } | null = null;
@@ -62,6 +70,12 @@ export async function initPushNotifications(): Promise<void> {
 }
 
 async function tryGetPushToken(): Promise<string | null> {
+  if (IS_EXPO_GO && Platform.OS === 'android') {
+    // Remote push was removed from Expo Go on Android (SDK 53+). Don't touch
+    // the remote notification APIs at all here — a dev build is needed for a
+    // real token. The device still registers tokenless below.
+    return null;
+  }
   const N = await loadNotifications();
   if (!N) return null;
   try {

@@ -1,0 +1,46 @@
+FROM python:3.14-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgeos-dev libproj-dev gcc g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+WORKDIR /app
+
+# Install packages/database
+COPY packages/database/pyproject.toml packages/database/uv.lock packages/database/
+COPY packages/database/src packages/database/src
+RUN cd packages/database && uv sync --frozen --no-dev
+
+# Install packages/geodata (depends on database)
+COPY packages/geodata/pyproject.toml packages/geodata/uv.lock packages/geodata/
+COPY packages/geodata/src packages/geodata/src
+RUN cd packages/geodata && uv sync --frozen --no-dev
+
+# Install packages/routebuilder (depends on geodata, database)
+COPY packages/routebuilder/pyproject.toml packages/routebuilder/uv.lock packages/routebuilder/
+COPY packages/routebuilder/src packages/routebuilder/src
+RUN cd packages/routebuilder && uv sync --frozen --no-dev
+
+# Install packages/pipeline (depends on geodata, database, routebuilder)
+COPY packages/pipeline/pyproject.toml packages/pipeline/uv.lock packages/pipeline/
+COPY packages/pipeline/src packages/pipeline/src
+RUN cd packages/pipeline && uv sync --frozen --no-dev
+
+# Install simlab (depends on routebuilder, pipeline, geodata, database)
+COPY simlab/pyproject.toml simlab/uv.lock simlab/
+COPY simlab/src simlab/src
+RUN cd simlab && uv sync --frozen --no-dev
+
+# Seed committed scenarios + reference routes. These dirs are mounted as
+# named volumes at runtime (see docker-compose.yml); Docker seeds each fresh
+# volume from this baked content, then persists UI edits across deploys.
+COPY simlab/scenarios simlab/scenarios
+COPY simlab/routes simlab/routes
+
+EXPOSE 8050
+
+# Bind 0.0.0.0 *inside* the container; host-side exposure is controlled by the
+# port mapping in docker-compose.yml (loopback by default, VPN IP via SIMLAB_BIND).
+CMD ["simlab/.venv/bin/uvicorn", "simlab.web.app:app", "--host", "0.0.0.0", "--port", "8050"]

@@ -1,6 +1,7 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from '@expo/vector-icons/Feather';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -15,7 +16,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PreferencesSheet from '@/components/preferences-sheet';
+import PickMap from '@/components/pick-map';
 import RouteMap, { Leg, LineRoute } from '@/components/route-map';
+import { palette } from '@/constants/palette';
 import api, { DirectionsLeg, DirectionsResponse, NearbyLineWithRoute } from '@/services/api';
 import { getCurrentLocation, watchLocation } from '@/services/current-location';
 import { GeocodingResult, reverseGeocode, searchAddress } from '@/services/geocoding';
@@ -25,7 +28,31 @@ import { SaveTripModal, SaveTripModalResult } from '@/components/save-trip-modal
 import { addToHistory, filterHistory } from '@/services/search-history';
 import { SearchHistoryEntry } from '@/db/schema';
 
-const BLUE = '#09A6F3';
+const BLUE = palette.blue.DEFAULT;
+const RED = palette.red.DEFAULT;
+
+// Vehicle-type icon + label per line_type, shown as a chip on the
+// nearby-lines cards. micro = painted city bus, trufi = shared minibus/van,
+// taxi_trufi = shared sedan running a fixed route.
+const VEHICLE_META = {
+  micro: { icon: 'bus', label: 'Micro' },
+  trufi: { icon: 'van-passenger', label: 'Trufi' },
+  taxi_trufi: { icon: 'taxi', label: 'Taxi trufi' },
+} as const;
+
+// Distinct colors for a line's ramales on the map (qualitative palette,
+// readable on the light Positron basemap). Cycled if a line has more.
+const RAMAL_COLORS = ['#3D6CB4', '#D62F3F', '#1F9D57', '#E8A300', '#7E57C2', '#0CA5A5', '#E0682B'];
+
+// A line's ramal as shown in the detail view: its color, geometry
+// (one or more fragments), endpoints, and street summary.
+type RamalDetail = {
+  label: string;
+  color: string;
+  segments: [number, number][][];
+  streets: string;
+  endpointLabel: string | null;
+};
 
 function formatDistance(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
@@ -67,6 +94,10 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 
 type ActiveField = 'origin' | 'destination' | null;
 type ViewState = 'search' | 'results' | 'detail' | 'line_detail';
+type SearchMode = 'text' | 'map';
+
+// Cochabamba centroid — fallback when we have no user location yet.
+const CBBA_CENTER = { lon: -66.157, lat: -17.3895 };
 
 export default function ExploreScreen() {
   const navigation = useNavigation();
@@ -83,6 +114,12 @@ export default function ExploreScreen() {
   const [originCoords, setOriginCoords] = useState<[number, number] | null>(null);
   const [destCoords, setDestCoords] = useState<[number, number] | null>(null);
 
+  // Search mode (text autocomplete vs. drop-a-pin on the map)
+  const [searchMode, setSearchMode] = useState<SearchMode>('text');
+  const [pinTarget, setPinTarget] = useState<'origin' | 'destination'>('origin');
+  const [pinCenter, setPinCenter] = useState<{ lon: number; lat: number } | null>(null);
+  const [pinResolving, setPinResolving] = useState(false);
+
   // Autocomplete
   const [activeField, setActiveField] = useState<ActiveField>(null);
   const [suggestions, setSuggestions] = useState<GeocodingResult[]>([]);
@@ -98,6 +135,10 @@ export default function ExploreScreen() {
   // Nearby lines
   const [nearbyLines, setNearbyLines] = useState<NearbyLineWithRoute[]>([]);
   const [selectedLine, setSelectedLine] = useState<NearbyLineWithRoute | null>(null);
+  // Every active ramal for the selected line (fetched on open), plus
+  // which one (if any) the user has tapped to focus.
+  const [lineRamals, setLineRamals] = useState<RamalDetail[] | null>(null);
+  const [focusedRamal, setFocusedRamal] = useState<number | null>(null);
   const [lineDetailLoc, setLineDetailLoc] = useState<{ lon: number; lat: number } | null>(null);
   const [nearbyRadius, setNearbyRadius] = useState(2000);
   const [radiusExpanded, setRadiusExpanded] = useState(false);
@@ -105,10 +146,11 @@ export default function ExploreScreen() {
   // View state
   const [view, setView] = useState<ViewState>('search');
 
-  const showHeader = view === 'search' || view === 'results';
+  // Both the search and results views carry their own blue header band
+  // (SBB-style), so the native navigator header is never used here.
   useLayoutEffect(() => {
-    navigation.setOptions({ headerShown: showHeader });
-  }, [navigation, showHeader]);
+    navigation.setOptions({ headerShown: false });
+  }, [navigation]);
 
   const prefsRef = useRef<BottomSheet>(null);
   const stepsRef = useRef<BottomSheet>(null);
@@ -265,6 +307,87 @@ export default function ExploreScreen() {
     } finally { setLoading(false); }
   }, [originCoords, destCoords]);
 
+  // Map-pin mode: confirm the current map center as origin/destination,
+  // resolving its address in the background.
+  const confirmPin = useCallback(async () => {
+    if (!pinCenter || pinResolving) return;
+    const { lon, lat } = pinCenter;
+    const target = pinTarget;
+    setPinResolving(true);
+    try {
+      const name = await reverseGeocode(lon, lat);
+      const label = name || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+      if (target === 'origin') {
+        setOriginCoords([lon, lat]); setOriginText(label); setUsingCurrentLoc(false);
+        if (!destCoords) setPinTarget('destination');
+      } else {
+        setDestCoords([lon, lat]); setDestText(label);
+        if (!originCoords) setPinTarget('origin');
+      }
+      setRoutes([]);
+    } finally {
+      setPinResolving(false);
+    }
+  }, [pinCenter, pinResolving, pinTarget, destCoords, originCoords]);
+
+  const swapEndpoints = useCallback(() => {
+    setOriginText(destText); setDestText(originText);
+    setOriginCoords(destCoords); setDestCoords(originCoords);
+    setUsingCurrentLoc(false); setRoutes([]);
+  }, [destText, originText, destCoords, originCoords]);
+
+  // Open a nearby line's detail view, fetching every active ramal's
+  // geometry so the map shows all branches (not just the first ramal).
+  const openLine = useCallback(async (line: NearbyLineWithRoute) => {
+    setSelectedLine(line);
+    setLineDetailLoc(userLoc);
+    setLineRamals(null);
+    setFocusedRamal(null);
+    setView('line_detail');
+    try {
+      const fc = await api.getLineRoute(line.line_id);
+      const feats = (fc.features ?? []).filter((f) => (f.geometry?.coordinates?.length ?? 0) >= 2);
+
+      // Group fragments by ramal so each ramal is one entry (with its
+      // own color), even when split across multiple route fragments.
+      const order: string[] = [];
+      const byLabel = new Map<string, typeof feats>();
+      for (const f of feats) {
+        const key = f.properties.ramal_label ?? '';
+        if (!byLabel.has(key)) { byLabel.set(key, []); order.push(key); }
+        byLabel.get(key)!.push(f);
+      }
+
+      const ramals: RamalDetail[] = order.map((key, i) => {
+        const group = byLabel.get(key)!.slice().sort(
+          (a, b) => a.properties.fragment_index - b.properties.fragment_index,
+        );
+        const segments = group.map((f) => f.geometry.coordinates as [number, number][]);
+        const streetsList: string[] = [];
+        for (const f of group) {
+          for (const s of f.properties.street_summary ?? []) {
+            if (!streetsList.includes(s)) streetsList.push(s);
+          }
+        }
+        const startZone = group[0].properties.endpoint_zones?.[0] ?? null;
+        const endZone = group[group.length - 1].properties.endpoint_zones?.[1] ?? null;
+        const endpointLabel = startZone && endZone
+          ? `${startZone} → ${endZone}`
+          : startZone || endZone || null;
+        return {
+          label: key || `Ramal ${i + 1}`,
+          color: RAMAL_COLORS[i % RAMAL_COLORS.length],
+          segments,
+          streets: streetsList.slice(0, 6).join(' · '),
+          endpointLabel,
+        };
+      });
+      setLineRamals(ramals.length ? ramals : null);
+    } catch {
+      setLineRamals(null);
+    }
+  }, [userLoc]);
+
   const selectRoute = useCallback(async (route: DirectionsResponse) => {
     setSelectedRoute(route); setLegNames({}); setLineDetailLoc(userLoc); setView('detail');
     stepsRef.current?.snapToIndex(0);
@@ -314,7 +437,7 @@ export default function ExploreScreen() {
 
   // Autocomplete dropdown (reused in search + results views)
   const autocompleteDropdown = activeField && (historyItems.length > 0 || suggestions.length > 0) ? (
-    <View className="mb-3 rounded-xl border border-gray-200 bg-white">
+    <View className="mb-3 rounded-xl border border-brand-line bg-white">
       {historyItems.map(entry => (
         <Pressable key={`h-${entry.id}`} className="flex-row items-center border-b border-gray-100 px-4 py-3" onPress={() => pickHistoryItem(entry)}>
           <Feather name="clock" size={14} color="#9CA3AF" />
@@ -323,7 +446,7 @@ export default function ExploreScreen() {
       ))}
       {suggestions.map((item, i) => (
         <Pressable key={`s-${i}`} className="border-b border-gray-100 px-4 py-3" onPress={() => pickSuggestion(item)}>
-          <Text className="text-sm font-medium text-gray-800" numberOfLines={1}>{item.shortName}</Text>
+          <Text className="text-sm font-medium text-brand-ink" numberOfLines={1}>{item.shortName}</Text>
           <Text className="text-xs text-gray-400" numberOfLines={1}>{item.displayName}</Text>
         </Pressable>
       ))}
@@ -338,20 +461,38 @@ export default function ExploreScreen() {
     const lr: LineRoute | null = selectedLine.route_geojson
       ? { coordinates: selectedLine.route_geojson.coordinates, name: selectedLine.line_name }
       : null;
+    // One polyline per ramal fragment, colored per ramal. When a ramal
+    // is focused, it's emphasized and the others are dimmed.
+    const mapLineRoutes: LineRoute[] | null = lineRamals
+      ? lineRamals.flatMap((r, i) =>
+          r.segments.map((seg) => ({
+            coordinates: seg,
+            name: r.label,
+            color: r.color,
+            focused: focusedRamal === i,
+            opacity: focusedRamal === null ? 0.9 : focusedRamal === i ? 1 : 0.2,
+            weight: focusedRamal === i ? 7 : focusedRamal === null ? 5 : 4,
+          })),
+        )
+      : null;
     return (
       <View accessible={false} className="flex-1">
         <RouteMap
-          lineRoute={lr}
+          lineRoute={mapLineRoutes ? null : lr}
+          lineRoutes={mapLineRoutes}
           detourPath={selectedLine.detour_alert?.detour_path ?? null}
           currentLocation={lineDetailLoc}
           style={{ flex: 1 }}
         />
-        <Pressable className="absolute left-4 rounded-full bg-white p-3 shadow-lg" style={{ top: insets.top + 8 }} onPress={() => { setSelectedLine(null); setView('search'); }}>
+        <Pressable className="absolute left-4 rounded-full bg-white p-3 shadow-lg" style={{ top: insets.top + 8 }} onPress={() => { setSelectedLine(null); setLineRamals(null); setFocusedRamal(null); setView('search'); }}>
           <Feather name="arrow-left" size={22} color="#333" />
         </Pressable>
         <View className="absolute left-4 right-4 items-center rounded-2xl bg-white px-5 py-3 shadow-lg" style={{ top: insets.top + 60 }}>
-          <Text className="text-base font-bold text-[#09A6F3]">Línea {selectedLine.line_name}</Text>
+          <Text className="text-base font-bold text-[#3D6CB4]">Línea {selectedLine.line_name}</Text>
           {selectedLine.line_description && <Text className="text-xs text-gray-400">{selectedLine.line_description}</Text>}
+          {selectedLine.ramales && selectedLine.ramales.length > 1 && (
+            <Text className="mt-0.5 text-xs text-brand-muted">{selectedLine.ramales.length} ramales</Text>
+          )}
         </View>
         {selectedLine.detour_alert && (
           <View className="absolute left-4 right-4 flex-row items-center rounded-2xl bg-orange-50 px-4 py-3 shadow-lg" style={{ top: insets.top + 115 }}>
@@ -366,6 +507,40 @@ export default function ExploreScreen() {
                 </Text>
               )}
             </View>
+          </View>
+        )}
+        {/* Streets-summary card — tap a ramal to focus it on the map */}
+        {lineRamals && lineRamals.length > 0 && (
+          <View
+            className="absolute left-3 right-3 rounded-2xl bg-white"
+            style={{ bottom: tabBarHeight + 12, maxHeight: 240, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 8 }}
+          >
+            <ScrollView contentContainerStyle={{ padding: 6 }} showsVerticalScrollIndicator={false}>
+              {lineRamals.map((r, i) => {
+                const active = focusedRamal === i;
+                return (
+                  <Pressable
+                    key={`${r.label}-${i}`}
+                    testID={`ramal-row-${i}`}
+                    className={`flex-row items-center rounded-xl px-3 py-2.5 ${active ? 'bg-brand-bg' : ''}`}
+                    onPress={() => setFocusedRamal(active ? null : i)}
+                  >
+                    <View style={{ backgroundColor: r.color }} className="mr-3 h-9 w-1.5 rounded-full" />
+                    <View className="flex-1">
+                      <Text className="text-sm font-semibold text-brand-ink" numberOfLines={1}>
+                        {r.endpointLabel ?? r.label}
+                      </Text>
+                      {r.streets ? (
+                        <Text className="mt-0.5 text-xs text-brand-muted" numberOfLines={active ? 4 : 1}>
+                          {r.streets}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Feather name={active ? 'x' : 'chevron-right'} size={16} color={active ? r.color : palette.hint} />
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </View>
         )}
       </View>
@@ -384,16 +559,21 @@ export default function ExploreScreen() {
         </Pressable>
         <Pressable className="absolute right-4 flex-row items-center rounded-full bg-white px-4 py-3 shadow-lg" style={{ top: insets.top + 8 }} testID="explore-save-btn" onPress={promptSaveTrip}>
           <Feather name="bookmark" size={18} color={BLUE} />
-          <Text className="ml-2 text-sm font-semibold text-[#09A6F3]">Guardar</Text>
+          <Text className="ml-2 text-sm font-semibold text-[#3D6CB4]">Guardar</Text>
         </Pressable>
         <SaveTripModal
           visible={saveTripModalVisible}
           onCancel={() => setSaveTripModalVisible(false)}
           onSave={handleSaveTrip}
         />
-        <View className="absolute left-4 right-4 items-center rounded-2xl bg-white px-5 py-3 shadow-lg" style={{ top: insets.top + 60 }}>
-          <Text className="text-base font-bold text-[#09A6F3]">{formatDuration(selectedRoute.total_duration_s)} · {formatDistance(selectedRoute.total_distance_m)}</Text>
-          <Text className="text-xs text-gray-400">{originText} → {destText}</Text>
+        <View className="absolute left-4 right-4 rounded-2xl bg-white px-5 py-3 shadow-lg" style={{ top: insets.top + 60 }}>
+          <View className="flex-row items-center justify-center gap-2">
+            <Text className="text-base font-bold text-brand-ink">{formatDuration(selectedRoute.total_duration_s)} · {formatDistance(selectedRoute.total_distance_m)}</Text>
+            {formatFareBob(selectedRoute.total_fare_bob) && (
+              <Text className="rounded bg-brand-yellow px-2 py-0.5 text-xs font-semibold text-brand-yellow-ink">{formatFareBob(selectedRoute.total_fare_bob)}</Text>
+            )}
+          </View>
+          <Text className="mt-0.5 text-center text-xs text-brand-hint">{originText} → {destText}</Text>
         </View>
         <BottomSheet ref={stepsRef} index={0} snapPoints={stepsSnapPoints} backgroundStyle={{ borderRadius: 24 }} handleIndicatorStyle={{ backgroundColor: '#D1D5DB', width: 40 }}>
           <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32 }}>
@@ -406,7 +586,7 @@ export default function ExploreScreen() {
                     {!isLast && <View className="w-0.5 flex-1 bg-gray-200" />}
                   </View>
                   <View className="flex-1 pb-5">
-                    <Text className="text-base font-semibold text-gray-800">Caminar</Text>
+                    <Text className="text-base font-semibold text-brand-ink">Caminar</Text>
                     <Text className="text-sm text-gray-400">{formatDistance(leg.distance_m)} · {formatDuration(leg.duration_s)}</Text>
                   </View>
                 </View>
@@ -417,29 +597,34 @@ export default function ExploreScreen() {
               return (
                 <View key={`b-${index}`}>
                   <View className="flex-row">
-                    <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-[#DDF6FF]"><Feather name="log-in" size={14} color={BLUE} /></View><View className="w-0.5 flex-1 bg-[#09A6F3]" /></View>
-                    <View className="flex-1 pb-2"><Text className="text-base font-semibold text-[#09A6F3]">Tomar Línea {leg.line_name ?? '?'}</Text><Text className="text-sm text-gray-500">{names ? `en ${names.board}` : 'Cargando...'}</Text></View>
+                    <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-[#E7EEF7]"><Feather name="log-in" size={14} color={BLUE} /></View><View className="w-0.5 flex-1 bg-[#3D6CB4]" /></View>
+                    <View className="flex-1 pb-2"><Text className="text-base font-semibold text-[#3D6CB4]">Tomar Línea {leg.line_name ?? '?'}</Text><Text className="text-sm text-gray-500">{names ? `en ${names.board}` : 'Cargando...'}</Text></View>
                   </View>
-                  <View className="flex-row"><View className="mr-4 w-8 items-center"><View className="w-0.5 flex-1 bg-[#09A6F3]" /></View>
+                  <View className="flex-row"><View className="mr-4 w-8 items-center"><View className="w-0.5 flex-1 bg-[#3D6CB4]" /></View>
                     <View className="flex-1 py-1 pb-2">
                       <Text className="text-xs text-gray-400">{formatDistance(leg.distance_m)} · {formatDuration(leg.duration_s)}</Text>
-                      {(fareText || freqText) && (
-                        <Text className="text-xs text-[#09A6F3]" testID={`leg-${index}-meta`}>
-                          {[fareText, freqText].filter(Boolean).join(' · ')}
-                        </Text>
-                      )}
+                      <View className="mt-1.5 flex-row flex-wrap items-center gap-2">
+                        {fareText ? (
+                          <View className="rounded-md bg-brand-yellow px-2.5 py-1">
+                            <Text className="text-xs font-semibold text-brand-yellow-ink" testID={`leg-${index}-fare`}>{fareText}</Text>
+                          </View>
+                        ) : (
+                          <Text className="text-xs text-brand-hint" testID={`leg-${index}-fare`}>Tarifa no disponible</Text>
+                        )}
+                        {freqText && <Text className="text-xs text-gray-400">{freqText}</Text>}
+                      </View>
                     </View>
                   </View>
                   <View className="flex-row">
-                    <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-[#DDF6FF]"><Feather name="log-out" size={14} color={BLUE} /></View>{!isLast && <View className="w-0.5 flex-1 bg-gray-200" />}</View>
-                    <View className="flex-1 pb-5"><Text className="text-base font-semibold text-gray-800">Bajar</Text><Text className="text-sm text-gray-500">{names ? `en ${names.alight}` : 'Cargando...'}</Text></View>
+                    <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-[#E7EEF7]"><Feather name="log-out" size={14} color={BLUE} /></View>{!isLast && <View className="w-0.5 flex-1 bg-gray-200" />}</View>
+                    <View className="flex-1 pb-5"><Text className="text-base font-semibold text-brand-ink">Bajar</Text><Text className="text-sm text-gray-500">{names ? `en ${names.alight}` : 'Cargando...'}</Text></View>
                   </View>
                 </View>
               );
             })}
             <View className="flex-row">
               <View className="mr-4 w-8 items-center"><View className="h-8 w-8 items-center justify-center rounded-full bg-red-100"><Feather name="map-pin" size={14} color="#EF4444" /></View></View>
-              <View className="flex-1"><Text className="text-base font-semibold text-gray-800">Llegaste</Text><Text className="text-sm text-gray-400">{destText}</Text></View>
+              <View className="flex-1"><Text className="text-base font-semibold text-brand-ink">Llegaste</Text><Text className="text-sm text-gray-400">{destText}</Text></View>
             </View>
           </BottomSheetScrollView>
         </BottomSheet>
@@ -452,77 +637,96 @@ export default function ExploreScreen() {
   // ================================================================
   if (view === 'results' && routes.length > 0) {
     return (
-        <View className="flex-1 bg-white">
-          <View accessible={false} className="px-5 pt-4">
-            <View className="mb-2 flex-row items-center gap-2">
-              <Pressable className="p-1" onPress={() => setView('search')}><Feather name="arrow-left" size={22} color="#333" /></Pressable>
-              <View className="flex-1">
-                <View className="h-11 flex-row items-center rounded-lg border border-gray-200 bg-gray-50 px-3">
-                  <Feather name="crosshair" size={16} color={BLUE} />
-                  <TextInput className="ml-2 flex-1 text-sm" placeholder="Punto de partida" value={originText} onChangeText={handleOriginChange} onFocus={() => setActiveField('origin')} />
-                  {originCoords && <Feather name="check-circle" size={14} color="#22C55E" />}
-                </View>
-              </View>
-              <Pressable className="p-1" onPress={() => { setOriginText(destText); setDestText(originText); setOriginCoords(destCoords); setDestCoords(originCoords); setUsingCurrentLoc(false); setRoutes([]); }}>
-                <Feather name="repeat" size={16} color={BLUE} />
+        <View className="flex-1 bg-brand-bg">
+          {/* Blue header band */}
+          <View style={{ paddingTop: insets.top + 10 }} className="rounded-b-3xl bg-brand-blue px-5 pb-14">
+            <View className="flex-row items-center">
+              <Pressable className="-ml-1 mr-1 p-1" testID="explore-results-back" onPress={() => setView('search')}>
+                <Feather name="arrow-left" size={24} color="#fff" />
               </Pressable>
+              <Text className="text-xl font-semibold text-white">Cómo llegar</Text>
             </View>
-            <View className="mb-2 flex-row items-center gap-2">
-              <View className="w-8" />
+          </View>
+
+          {/* Floating origin/destination card overlapping the header */}
+          <View accessible={false} className="px-5" style={{ marginTop: -36 }}>
+            <View
+              className="flex-row items-center rounded-2xl border border-brand-line bg-white"
+              style={{ shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}
+            >
               <View className="flex-1">
-                <View className="h-11 flex-row items-center rounded-lg border border-gray-200 bg-gray-50 px-3">
-                  <Feather name="target" size={16} color={BLUE} />
-                  <TextInput className="ml-2 flex-1 text-sm" placeholder="Destino" value={destText} onChangeText={handleDestChange} onFocus={() => setActiveField('destination')} />
-                  {destCoords && <Feather name="check-circle" size={14} color="#22C55E" />}
+                <View className="flex-row items-center px-4">
+                  <View className={`h-3 w-3 rounded-full ${originCoords ? 'bg-brand-blue' : 'border-2 border-brand-blue'}`} />
+                  <TextInput className="ml-3 flex-1 py-3 text-sm text-brand-ink" placeholder="Punto de partida" placeholderTextColor={palette.hint} value={originText} onChangeText={handleOriginChange} onFocus={() => setActiveField('origin')} />
+                </View>
+                <View className="ml-9 h-px bg-brand-line" />
+                <View className="flex-row items-center px-4">
+                  <View className={`h-3 w-3 rounded-sm ${destCoords ? 'bg-brand-red' : 'border-2 border-brand-red'}`} />
+                  <TextInput className="ml-3 flex-1 py-3 text-sm text-brand-ink" placeholder="Destino" placeholderTextColor={palette.hint} value={destText} onChangeText={handleDestChange} onFocus={() => setActiveField('destination')} />
                 </View>
               </View>
-              <Pressable className="rounded-lg bg-[#09A6F3] p-2" testID="explore-search-btn" onPress={handleSearch} disabled={!canSearch || loading}>
-                {loading ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="search" size={16} color="#fff" />}
-              </Pressable>
+              <View className="mr-2 items-center justify-center gap-2 py-2">
+                <Pressable testID="swap-button" className="h-9 w-9 items-center justify-center rounded-full border border-brand-line" onPress={swapEndpoints}>
+                  <MaterialCommunityIcons name="swap-vertical" size={17} color={RED} />
+                </Pressable>
+                <Pressable className={`h-9 w-9 items-center justify-center rounded-full ${canSearch ? 'bg-brand-blue active:opacity-90' : 'bg-[#A9C2E4]'}`} testID="explore-search-btn" onPress={handleSearch} disabled={!canSearch || loading}>
+                  {loading ? <ActivityIndicator size="small" color="#fff" /> : <Feather name="search" size={15} color="#fff" />}
+                </Pressable>
+              </View>
             </View>
             {autocompleteDropdown}
           </View>
-          <ScrollView accessible={false} className="flex-1 px-5" contentContainerStyle={{ paddingBottom: tabBarHeight + 12 }}>
-            <Text className="mb-3 text-lg font-semibold text-gray-800" testID="explore-results-title">Rutas disponibles</Text>
+          <ScrollView accessible={false} className="flex-1 px-5 pt-4" contentContainerStyle={{ paddingBottom: tabBarHeight + 12 }}>
+            <Text className="mb-3 text-lg font-semibold text-brand-ink" testID="explore-results-title">Rutas disponibles</Text>
             {routes.map((route, idx) => {
               const s = routeSummary(route.legs);
+              const fareText = formatFareBob(route.total_fare_bob);
+              const firstBus = route.legs.find((l) => l.mode === 'bus');
+              const primaryFreq = firstBus ? formatFrequency(firstBus.frequency_min) : null;
               return (
-                <Pressable key={idx} className="mb-3 rounded-2xl border border-gray-200 bg-white p-4 active:bg-gray-50" onPress={() => selectRoute(route)}>
+                <Pressable key={idx} className="mb-3 rounded-2xl border border-brand-line bg-white p-4 active:bg-gray-50" onPress={() => selectRoute(route)}>
                   {route.legs.some(l => l.detour_alert) && (
-                    <View className="mb-2 flex-row items-center rounded-lg bg-orange-50 px-3 py-2">
-                      <Feather name="alert-triangle" size={14} color="#F97316" />
-                      <Text className="ml-2 text-xs font-semibold text-orange-500">
+                    <View className="mb-2 flex-row items-center rounded-lg bg-brand-red-soft px-3 py-2">
+                      <Feather name="alert-triangle" size={14} color={RED} />
+                      <Text className="ml-2 text-xs font-semibold text-brand-red-ink">
                         Desvío activo en {route.legs.filter(l => l.detour_alert).map(l => `Línea ${l.line_name}`).join(', ')}
                       </Text>
                     </View>
                   )}
-                  <View className="mb-2 flex-row items-center justify-between">
-                    <Text className="text-xl font-bold text-gray-800">{formatDuration(route.total_duration_s)}</Text>
-                    <View className="flex-row items-center gap-2">
-                      {formatFareBob(route.total_fare_bob) && (
-                        <Text className="text-sm font-semibold text-[#09A6F3]" testID={`route-${idx}-total-fare`}>
-                          {formatFareBob(route.total_fare_bob)}
-                        </Text>
-                      )}
-                      <Text className="text-sm text-gray-400">{formatDistance(route.total_distance_m)}</Text>
+                  <View className="mb-1 h-4 flex-row items-center justify-between">
+                    {idx === 0
+                      ? <Text className="text-xs font-semibold text-brand-red">Más rápida</Text>
+                      : <View />}
+                    {primaryFreq && <Text className="text-xs text-brand-hint">{primaryFreq}</Text>}
+                  </View>
+                  <View className="mb-3 flex-row items-end justify-between">
+                    <View className="flex-row items-baseline gap-2">
+                      <Text className="text-2xl font-semibold text-brand-ink">{formatDuration(route.total_duration_s)}</Text>
+                      <Text className="text-xs text-brand-hint">{formatDistance(route.total_distance_m)}</Text>
                     </View>
+                    {fareText && (
+                      <Text className="rounded-md bg-brand-yellow px-3 py-1 text-sm font-semibold text-brand-yellow-ink" testID={`route-${idx}-total-fare`}>
+                        {fareText}
+                      </Text>
+                    )}
                   </View>
                   <View className="mb-3 flex-row items-center gap-1">
-                    {route.legs.map((leg, i) => <View key={i} className={`h-2 rounded-full ${leg.mode === 'bus' ? 'bg-[#09A6F3]' : 'bg-gray-300'}`} style={{ flex: leg.distance_m, minWidth: 8 }} />)}
+                    {route.legs.map((leg, i) => <View key={i} className={`h-1.5 rounded-full ${leg.mode === 'bus' ? 'bg-brand-blue' : 'bg-brand-line'}`} style={{ flex: leg.distance_m, minWidth: 8 }} />)}
                   </View>
                   <View className="flex-row flex-wrap items-center gap-2">
-                    {route.legs.filter(l => l.mode === 'bus' && l.line_name).map((leg, i) => {
-                      const freq = formatFrequency(leg.frequency_min);
-                      return (
-                        <View key={`bus-${i}-${leg.line_name}`} className="flex-row items-center rounded-lg bg-[#DDF6FF] px-2.5 py-1">
-                          <Feather name="truck" size={12} color={BLUE} />
-                          <Text className="ml-1 text-sm font-semibold text-[#09A6F3]">{leg.line_name}</Text>
-                          {freq && <Text className="ml-1 text-xs text-[#09A6F3] opacity-80">{freq}</Text>}
-                        </View>
-                      );
-                    })}
-                    {s.transfers > 0 && <Text className="text-xs text-gray-400">{s.transfers} transbordo{s.transfers > 1 ? 's' : ''}</Text>}
-                    {s.walkMin > 0 && <Text className="text-xs text-gray-400">🚶 {s.walkMin} min</Text>}
+                    {route.legs.filter(l => l.mode === 'bus' && l.line_name).map((leg, i) => (
+                      <View key={`bus-${i}-${leg.line_name}`} className="flex-row items-center rounded-md bg-brand-blue px-2.5 py-1">
+                        <Feather name="truck" size={11} color="#fff" />
+                        <Text className="ml-1 text-xs font-semibold text-white">{leg.line_name}</Text>
+                      </View>
+                    ))}
+                    {s.transfers > 0 && <Text className="text-xs text-brand-hint">{s.transfers} transbordo{s.transfers > 1 ? 's' : ''}</Text>}
+                    {s.walkMin > 0 && (
+                      <View className="flex-row items-center gap-1">
+                        <Feather name="navigation" size={11} color={palette.hint} />
+                        <Text className="text-xs text-brand-hint">{s.walkMin} min</Text>
+                      </View>
+                    )}
                   </View>
                 </Pressable>
               );
@@ -535,59 +739,88 @@ export default function ExploreScreen() {
   // ================================================================
   // SEARCH VIEW
   // ================================================================
+  const pinInitialCenter = userLoc ?? (originCoords ? { lon: originCoords[0], lat: originCoords[1] } : CBBA_CENTER);
+  const bothSet = originCoords !== null && destCoords !== null;
+
   return (
-      <View className="flex-1 bg-white">
+      <View className="flex-1 bg-brand-bg">
+        {/* Blue header band — title, settings, and search-mode pills */}
+        <View style={{ paddingTop: insets.top + 10 }} className="rounded-b-3xl bg-brand-blue px-5 pb-14">
+          <View className="mb-4 flex-row items-center justify-between">
+            <Text className="text-2xl font-semibold text-white">Planea tu viaje</Text>
+            <Pressable className="h-10 w-10 items-center justify-center rounded-xl bg-white/20" testID="explore-prefs-gear" onPress={() => prefsRef.current?.expand()}>
+              <Feather name="settings" size={20} color="#fff" />
+            </Pressable>
+          </View>
+          <View className="flex-row gap-1 rounded-full bg-white/20 p-1">
+            {(['text', 'map'] as const).map((mode) => {
+              const active = searchMode === mode;
+              return (
+                <Pressable
+                  key={mode}
+                  testID={`explore-mode-${mode}`}
+                  className={`flex-1 flex-row items-center justify-center gap-1.5 rounded-full py-2 ${active ? 'bg-white' : ''}`}
+                  onPress={() => {
+                    if (mode === 'map') setPinTarget(originCoords && !destCoords ? 'destination' : 'origin');
+                    setSearchMode(mode);
+                  }}
+                >
+                  <Feather name={mode === 'text' ? 'search' : 'map-pin'} size={15} color={active ? BLUE : '#fff'} />
+                  <Text className={`text-sm font-semibold ${active ? 'text-brand-blue-ink' : 'text-white'}`}>
+                    {mode === 'text' ? 'Buscar' : 'En el mapa'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {searchMode === 'text' ? (
         <ScrollView
           accessible={false}
-          className="flex-1 px-5 pt-6"
+          className="flex-1 px-5"
+          style={{ marginTop: -36 }}
           contentContainerStyle={{ paddingBottom: tabBarHeight + 12 }}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
          
         >
-          <View className="mb-4 flex-row justify-end">
-            <Pressable className="h-11 w-11 items-center justify-center rounded-xl bg-[#DDF6FF]" testID="explore-prefs-gear" onPress={() => prefsRef.current?.expand()}>
-              <Feather name="settings" size={20} color={BLUE} />
-            </Pressable>
-          </View>
-
-          <View className="mb-3 flex-row items-center gap-2">
+          <View
+            className="mb-4 flex-row items-center rounded-2xl border border-brand-line bg-white"
+            style={{ shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}
+          >
             <View className="flex-1">
-              <View className="h-14 flex-row items-center rounded-xl border-2 border-[#09A6F3] bg-white px-3">
-                <Feather name={usingCurrentLoc ? 'navigation' : 'crosshair'} size={22} color={BLUE} />
+              <View className="flex-row items-center px-4">
+                <View className={`h-3 w-3 rounded-full ${originCoords ? 'bg-brand-blue' : 'border-2 border-brand-blue'}`} />
                 <TextInput
-                  className="ml-2 flex-1 text-base"
+                  className="ml-3 flex-1 py-4 text-base text-brand-ink"
                   testID="explore-origin-input"
                   placeholder="Punto de partida"
-                  placeholderTextColor={BLUE}
+                  placeholderTextColor={palette.hint}
                   value={originText}
                   onChangeText={handleOriginChange}
                   onFocus={() => setActiveField('origin')}
                 />
-                {originCoords && <Feather name={usingCurrentLoc ? 'navigation' : 'check-circle'} size={18} color="#22C55E" />}
+              </View>
+              <View className="ml-9 h-px bg-brand-line" />
+              <View className="flex-row items-center px-4">
+                <View className={`h-3 w-3 rounded-sm ${destCoords ? 'bg-brand-red' : 'border-2 border-brand-red'}`} />
+                <TextInput testID="explore-dest-input" className="ml-3 flex-1 py-4 text-base text-brand-ink" placeholder="Destino" placeholderTextColor={palette.hint} value={destText} onChangeText={handleDestChange} onFocus={() => setActiveField('destination')} />
               </View>
             </View>
-            <Pressable testID="swap-button" className="h-14 w-10 items-center justify-center" onPress={() => { setOriginText(destText); setDestText(originText); setOriginCoords(destCoords); setDestCoords(originCoords); setUsingCurrentLoc(false); setRoutes([]); }}>
-              <Feather name="repeat" size={18} color={BLUE} />
+            <Pressable testID="swap-button" className="mx-2 h-10 w-10 items-center justify-center rounded-full border border-brand-line" onPress={swapEndpoints}>
+              <MaterialCommunityIcons name="swap-vertical" size={20} color={RED} />
             </Pressable>
-          </View>
-
-          <View className="mb-3">
-            <View className="h-14 flex-row items-center rounded-xl border-2 border-[#09A6F3] bg-white px-3">
-              <Feather name="target" size={22} color={BLUE} />
-              <TextInput testID="explore-dest-input" className="ml-2 flex-1 text-base" placeholder="Destino" placeholderTextColor={BLUE} value={destText} onChangeText={handleDestChange} onFocus={() => setActiveField('destination')} />
-              {destCoords && <Feather name="check-circle" size={18} color="#22C55E" />}
-            </View>
           </View>
 
           {autocompleteDropdown}
 
           <Pressable
-            className={`mb-5 h-14 items-center justify-center rounded-xl ${canSearch ? 'bg-[#09A6F3]' : 'bg-[#B0E2FA]'}`}
+            className={`mb-6 h-14 flex-row items-center justify-center gap-2 rounded-xl ${canSearch ? 'bg-brand-blue active:opacity-90' : 'bg-[#A9C2E4]'}`}
             testID="explore-search-btn" onPress={handleSearch}
             disabled={!canSearch || loading}
           >
-            {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text className="text-lg font-bold text-white">Buscar ruta</Text>}
+            {loading ? <ActivityIndicator color="#FFFFFF" /> : <><Feather name="search" size={18} color="#fff" /><Text className="text-base font-semibold text-white">Buscar ruta</Text></>}
           </Pressable>
 
           {/* Nearby lines */}
@@ -597,7 +830,7 @@ export default function ExploreScreen() {
               className="mb-3 flex-row items-center justify-between"
               onPress={() => setRadiusExpanded(!radiusExpanded)}
             >
-              <Text className="text-lg font-semibold text-gray-800">Líneas cercanas</Text>
+              <Text className="text-lg font-semibold text-brand-ink">Líneas cercanas</Text>
               <View className="flex-row items-center gap-1">
                 <Text className="text-sm text-gray-400">{nearbyRadius >= 1000 ? `${(nearbyRadius / 1000).toFixed(1)} km` : `${nearbyRadius} m`}</Text>
                 <Feather name={radiusExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#9CA3AF" />
@@ -605,13 +838,13 @@ export default function ExploreScreen() {
             </Pressable>
 
             {radiusExpanded && (
-              <View className="mb-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <View className="mb-3 rounded-xl border border-brand-line bg-gray-50 p-3">
                 <Text className="mb-2 text-xs font-medium text-gray-500">Radio de búsqueda</Text>
                 <View className="mb-2 flex-row gap-2">
                   {[500, 1000, 2000, 5000].map(r => (
                     <Pressable
                       key={r}
-                      className={`flex-1 items-center rounded-lg py-2 ${nearbyRadius === r ? 'bg-[#09A6F3]' : 'bg-white border border-gray-200'}`}
+                      className={`flex-1 items-center rounded-lg py-2 ${nearbyRadius === r ? 'bg-[#3D6CB4]' : 'bg-white border border-brand-line'}`}
                       onPress={() => setNearbyRadius(r)}
                     >
                       <Text className={`text-sm font-medium ${nearbyRadius === r ? 'text-white' : 'text-gray-600'}`}>
@@ -634,7 +867,7 @@ export default function ExploreScreen() {
                 <Feather name="map-pin" size={24} color="#D1D5DB" />
                 <Text className="mt-2 text-sm text-gray-400">No se pudo obtener tu ubicación.</Text>
                 <Pressable
-                  className="mt-3 rounded-xl bg-[#09A6F3] px-6 py-2.5"
+                  className="mt-3 rounded-xl bg-[#3D6CB4] px-6 py-2.5"
                   onPress={fetchLocation}
                 >
                   <Text className="text-sm font-semibold text-white">Reintentar</Text>
@@ -653,7 +886,7 @@ export default function ExploreScreen() {
                     testID="explore-prefs-gear" onPress={() => prefsRef.current?.expand()}
                   >
                     <Text className="text-sm text-amber-700">
-                      Hay líneas pendientes cerca. Toca aquí para activar "Incluir líneas pendientes" en preferencias.
+                      Hay líneas pendientes cerca. Toca aquí para activar «Incluir líneas pendientes» en preferencias.
                     </Text>
                   </Pressable>
                 )}
@@ -662,15 +895,21 @@ export default function ExploreScreen() {
               nearbyLines.map(line => (
                 <Pressable
                   key={line.line_id}
-                  className="mb-2 flex-row items-center rounded-xl border border-gray-200 bg-white px-4 py-3 active:bg-gray-50"
-                  onPress={() => { setSelectedLine(line); setLineDetailLoc(userLoc); setView('line_detail'); }}
+                  className="mb-2 flex-row items-center rounded-xl border border-brand-line bg-white px-4 py-3 active:bg-gray-50"
+                  onPress={() => openLine(line)}
                 >
-                  <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-[#DDF6FF]">
-                    <Feather name="truck" size={18} color={BLUE} />
+                  <View className="mr-3 h-10 w-10 items-center justify-center rounded-xl bg-brand-blue px-1">
+                    <Text className="text-sm font-semibold text-white" numberOfLines={1}>{line.line_name}</Text>
                   </View>
                   <View className="flex-1">
                     <View className="flex-row items-center">
-                      <Text className="text-base font-semibold text-gray-800">Línea {line.line_name}</Text>
+                      <Text className="text-base font-semibold text-brand-ink">Línea {line.line_name}</Text>
+                      {line.line_type && VEHICLE_META[line.line_type] && (
+                        <View className="ml-2 flex-row items-center rounded-full bg-gray-100 px-2 py-0.5">
+                          <MaterialCommunityIcons name={VEHICLE_META[line.line_type].icon} size={12} color={palette.muted} />
+                          <Text className="ml-1 text-[10px] font-semibold text-brand-muted">{VEHICLE_META[line.line_type].label}</Text>
+                        </View>
+                      )}
                       {line.detour_alert && (
                         <View className="ml-2 flex-row items-center rounded-md bg-orange-50 px-2 py-0.5">
                           <Feather name="alert-triangle" size={10} color="#F97316" />
@@ -715,6 +954,73 @@ export default function ExploreScreen() {
             )}
           </View>
         </ScrollView>
+        ) : (
+          <View className="flex-1">
+            <PickMap
+              initialCenter={pinInitialCenter}
+              onMove={(lon, lat) => setPinCenter({ lon, lat })}
+              style={{ flex: 1 }}
+            />
+            {/* Origin / destination selector floating over the map */}
+            <View
+              className="absolute left-4 right-4 top-3 rounded-2xl border border-brand-line bg-white"
+              style={{ shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 6 }}
+            >
+              <Pressable
+                className={`flex-row items-center rounded-t-2xl px-4 py-3 ${pinTarget === 'origin' ? 'bg-brand-blue-soft' : ''}`}
+                testID="explore-pin-origin-row"
+                onPress={() => setPinTarget('origin')}
+              >
+                <View className={`h-3 w-3 rounded-full ${originCoords ? 'bg-brand-blue' : 'border-2 border-brand-blue'}`} />
+                <Text className={`ml-3 flex-1 text-sm ${originCoords ? 'font-medium text-brand-ink' : 'text-brand-hint'}`} numberOfLines={1}>
+                  {originCoords ? originText : 'Elige tu origen'}
+                </Text>
+              </Pressable>
+              <View className="ml-9 h-px bg-brand-line" />
+              <Pressable
+                className={`flex-row items-center rounded-b-2xl px-4 py-3 ${pinTarget === 'destination' ? 'bg-brand-red-soft' : ''}`}
+                testID="explore-pin-dest-row"
+                onPress={() => setPinTarget('destination')}
+              >
+                <View className={`h-3 w-3 rounded-sm ${destCoords ? 'bg-brand-red' : 'border-2 border-brand-red'}`} />
+                <Text className={`ml-3 flex-1 text-sm ${destCoords ? 'font-medium text-brand-ink' : 'text-brand-hint'}`} numberOfLines={1}>
+                  {destCoords ? destText : 'Elige tu destino'}
+                </Text>
+              </Pressable>
+            </View>
+            {/* Bottom action(s) */}
+            <View className="absolute left-4 right-4" style={{ bottom: tabBarHeight + 16 }}>
+              {bothSet && (
+                <Pressable
+                  className="mb-2 h-14 flex-row items-center justify-center gap-2 rounded-xl bg-brand-blue active:opacity-90"
+                  testID="explore-map-search-btn"
+                  onPress={handleSearch}
+                  disabled={loading}
+                >
+                  {loading ? <ActivityIndicator color="#fff" /> : <><Feather name="search" size={18} color="#fff" /><Text className="text-base font-semibold text-white">Buscar ruta</Text></>}
+                </Pressable>
+              )}
+              <Pressable
+                className={`flex-row items-center justify-center gap-2 rounded-xl ${bothSet ? 'border border-brand-line bg-white' : 'bg-brand-blue active:opacity-90'}`}
+                style={{ height: 52 }}
+                testID="explore-pin-confirm-btn"
+                onPress={confirmPin}
+                disabled={pinResolving || !pinCenter}
+              >
+                {pinResolving ? (
+                  <ActivityIndicator color={bothSet ? BLUE : '#fff'} />
+                ) : (
+                  <>
+                    <Feather name="map-pin" size={18} color={bothSet ? BLUE : '#fff'} />
+                    <Text className={`text-base font-semibold ${bothSet ? 'text-brand-blue-ink' : 'text-white'}`}>
+                      {pinTarget === 'origin' ? 'Confirmar origen' : 'Confirmar destino'}
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        )}
         <PreferencesSheet ref={prefsRef} />
       </View>
   );

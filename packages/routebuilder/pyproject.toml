@@ -1,0 +1,36 @@
+[project]
+name = "routebuilder"
+version = "0.1.0"
+description = "Consensus route reconstruction from map-matched GPS traces"
+requires-python = ">=3.14"
+dependencies = [
+  "geodata>=0.1.0",
+  "database>=0.1.0",
+  "shapely>=2.0.0",
+  "numpy>=1.26",
+  "httpx>=0.28.0",
+  "sqlalchemy>=2.0.48",
+  "geoalchemy2>=0.18.4",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv.sources]
+database = {path = "../database", editable = true}
+geodata = {path = "../geodata", editable = true}
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.15.12",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "valhalla: tests that require a running Valhalla instance (infra/local)",
+]

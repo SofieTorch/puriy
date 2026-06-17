@@ -1,0 +1,196 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1490" width="1000" height="1490" font-family="'Latin Modern Roman','Georgia','Times New Roman',serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#444"/>
+    </marker>
+    <style>
+      .box   { fill:#ffffff; stroke:#444; stroke-width:1.4; }
+      .pre   { fill:#f7f5f0; stroke:#777; stroke-width:1.3; stroke-dasharray:5 3; }
+      .acc   { fill:#e8f0f8; stroke:#2f6fb0; stroke-width:1.9; }
+      .rej   { fill:#f4eceb; stroke:#b06a5a; stroke-width:1.4; }
+      .note  { fill:#efeee9; stroke:#999; stroke-width:1.2; }
+      .dia   { fill:#fbf7ee; stroke:#555; stroke-width:1.4; }
+      .lbl   { font-size:13px; fill:#1a1a1a; }
+      .sub   { font-size:11px; fill:#666; font-style:italic; }
+      .edge  { stroke:#444; stroke-width:1.4; fill:none; }
+      .br    { font-size:12px; fill:#333; font-style:italic; }
+      .title { font-size:17px; font-weight:bold; fill:#1a1a1a; }
+      .cap   { font-size:12px; fill:#555; font-style:italic; }
+      .tag   { font-size:10.5px; fill:#2f6fb0; font-style:italic; }
+    </style>
+  </defs>
+
+  <text class="title" text-anchor="middle" x="500" y="28">Reconstrucción de rutas de una línea</text>
+
+  <!-- ===== connectors (drawn first, under nodes) ===== -->
+  <!-- spine -->
+  <path class="edge" d="M340,94 L340,117" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,171 L340,200" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,288 L340,317" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,371 L340,403" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,457 L340,497" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,555 L340,582" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,610 L340,643" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,701 L340,728" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,820 L340,848" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,940 L340,978" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,1070 L340,1107" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,1161 L340,1214" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,1274 L340,1327" marker-end="url(#arrow)"/>
+  <path class="edge" d="M340,1383 L340,1418" marker-end="url(#arrow)"/>
+
+  <!-- D1 no -> omitir -->
+  <path class="edge" d="M435,244 L680,244" marker-end="url(#arrow)"/>
+  <path class="edge" d="M840,244 L888,244" marker-end="url(#arrow)"/>
+  <!-- D2 no -> descartar -->
+  <path class="edge" d="M440,774 L675,774" marker-end="url(#arrow)"/>
+  <path class="edge" d="M845,774 L888,774" marker-end="url(#arrow)"/>
+  <!-- D3 no (left) -> crear v1 -->
+  <path class="edge" d="M240,894 L230,894" marker-end="url(#arrow)"/>
+  <!-- crear v1 -> save (elbow) -->
+  <path class="edge" d="M140,921 L140,1244 L160,1244" marker-end="url(#arrow)"/>
+  <!-- D4 no (right) -> sin cambios -->
+  <path class="edge" d="M440,1024 L670,1024" marker-end="url(#arrow)"/>
+  <!-- sin cambios -> vote (elbow) -->
+  <path class="edge" d="M770,1051 L770,1354 L510,1354" marker-end="url(#arrow)"/>
+
+  <!-- branch labels -->
+  <text class="br" x="350" y="312">sí</text>
+  <text class="br" x="448" y="236">no</text>
+  <text class="br" x="350" y="838">sí</text>
+  <text class="br" x="448" y="766">no</text>
+  <text class="br" x="350" y="966">sí</text>
+  <text class="br" x="206" y="886">no</text>
+  <text class="br" x="350" y="1096">sí</text>
+  <text class="br" x="448" y="1016">no</text>
+
+  <!-- ===== nodes ===== -->
+  <!-- start -->
+  <circle cx="340" cy="80" r="9" fill="#1a1a1a"/>
+
+  <!-- N1 precondition -->
+  <rect class="pre" x="190" y="117" width="300" height="54" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="340" y="139">
+    <tspan x="340">Viajes limpios (CLEAN) de la línea</tspan>
+    <tspan class="sub" x="340" dy="17">map-matching HMM (Valhalla) ya aplicado</tspan>
+  </text>
+
+  <!-- D1 -->
+  <polygon class="dia" points="340,200 435,244 340,288 245,244"/>
+  <text class="lbl" text-anchor="middle" x="340" y="240">
+    <tspan x="340">¿≥ 3 viajes CLEAN</tspan>
+    <tspan x="340" dy="16">y línea APROBADA?</tspan>
+  </text>
+
+  <!-- omitir terminal -->
+  <rect class="rej" x="680" y="222" width="160" height="44" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="760" y="249">Omitir línea</text>
+  <circle cx="900" cy="244" r="12" fill="none" stroke="#444" stroke-width="1.4"/>
+  <circle cx="900" cy="244" r="6" fill="#444"/>
+
+  <!-- N2 -->
+  <rect class="box" x="190" y="317" width="300" height="54" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="340" y="339">
+    <tspan x="340">Cargar trazas de reconstrucción</tspan>
+    <tspan class="sub" x="340" dy="17">desde la base de datos (PostGIS)</tspan>
+  </text>
+
+  <!-- N3 -->
+  <rect class="box" x="190" y="403" width="300" height="54" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="340" y="425">
+    <tspan x="340">Cargar ramales existentes</tspan>
+    <tspan class="sub" x="340" dy="17">rutas activas por etiqueta de ramal</tspan>
+  </text>
+
+  <!-- N4 cluster (accent) -->
+  <rect class="acc" x="180" y="497" width="320" height="58" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="340" y="521">
+    <tspan x="340">Agrupar trazas en ramales</tspan>
+    <tspan class="sub" x="340" dy="17">Fréchet + agrupamiento jerárquico (200 m)</tspan>
+  </text>
+  <text class="tag" x="508" y="530">fig. ramales</text>
+
+  <!-- partition note -->
+  <rect class="note" x="240" y="582" width="200" height="28" rx="14"/>
+  <text class="lbl" text-anchor="middle" x="340" y="601" font-style="italic">por cada ramal detectado</text>
+
+  <!-- N5 strategy (accent strong) -->
+  <rect class="acc" x="175" y="643" width="330" height="58" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="340" y="667">
+    <tspan x="340" font-weight="bold">Estrategia: ensamblaje por</tspan>
+    <tspan x="340" dy="17" font-weight="bold">solapamiento de aristas</tspan>
+  </text>
+  <text class="tag" x="513" y="676">fig. ensamblaje</text>
+
+  <!-- D2 -->
+  <polygon class="dia" points="340,728 440,774 340,820 240,774"/>
+  <text class="lbl" text-anchor="middle" x="340" y="770">
+    <tspan x="340">¿Resultado = una</tspan>
+    <tspan x="340" dy="16">sola polilínea?</tspan>
+  </text>
+
+  <!-- descartar terminal -->
+  <rect class="rej" x="675" y="749" width="170" height="50" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="760" y="771">
+    <tspan x="760">Descartar ramal</tspan>
+    <tspan class="sub" x="760" dy="16">resultado fragmentado</tspan>
+  </text>
+  <circle cx="900" cy="774" r="12" fill="none" stroke="#444" stroke-width="1.4"/>
+  <circle cx="900" cy="774" r="6" fill="#444"/>
+
+  <!-- D3 -->
+  <polygon class="dia" points="340,848 440,894 340,940 240,894"/>
+  <text class="lbl" text-anchor="middle" x="340" y="890">
+    <tspan x="340">¿Existe ruta activa</tspan>
+    <tspan x="340" dy="16">para el ramal?</tspan>
+  </text>
+
+  <!-- crear v1 -->
+  <rect class="box" x="50" y="867" width="180" height="54" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="140" y="889">
+    <tspan x="140">Crear ruta v1</tspan>
+    <tspan class="sub" x="140" dy="17">estado PENDIENTE</tspan>
+  </text>
+
+  <!-- D4 -->
+  <polygon class="dia" points="340,978 440,1024 340,1070 240,1024"/>
+  <text class="lbl" text-anchor="middle" x="340" y="1020">
+    <tspan x="340">¿Fréchet ≥ 50 m</tspan>
+    <tspan x="340" dy="16">vs. ruta activa?</tspan>
+  </text>
+  <text class="tag" x="448" y="1052">fig. cambios</text>
+
+  <!-- sin cambios -->
+  <rect class="box" x="670" y="997" width="200" height="54" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="770" y="1019">
+    <tspan x="770">Sin cambios</tspan>
+    <tspan class="sub" x="770" dy="17">actualizar last_compared_at</tspan>
+  </text>
+
+  <!-- reemplazar -->
+  <rect class="box" x="215" y="1107" width="250" height="54" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="340" y="1129">
+    <tspan x="340">Reemplazar ruta</tspan>
+    <tspan class="sub" x="340" dy="17">SUPERSEDED + nueva versión (RF-19)</tspan>
+  </text>
+
+  <!-- save -->
+  <rect class="box" x="160" y="1214" width="360" height="60" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="340" y="1238">
+    <tspan x="340">Guardar geometría por arista (Valhalla):</tspan>
+    <tspan class="sub" x="340" dy="17">RouteEdge, calles, zonas, migración de votos</tspan>
+  </text>
+
+  <!-- vote -->
+  <rect class="box" x="170" y="1326" width="340" height="56" rx="8"/>
+  <text class="lbl" text-anchor="middle" x="340" y="1349">
+    <tspan x="340">Votación comunitaria de segmentos</tspan>
+    <tspan class="sub" x="340" dy="17">pasos posteriores del pipeline</tspan>
+  </text>
+
+  <!-- end -->
+  <circle cx="340" cy="1432" r="12" fill="none" stroke="#1a1a1a" stroke-width="1.6"/>
+  <circle cx="340" cy="1432" r="6" fill="#1a1a1a"/>
+
+  <text class="cap" text-anchor="middle" x="500" y="1474">Las etapas resaltadas en azul se detallan en las figuras siguientes.</text>
+</svg>

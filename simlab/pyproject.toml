@@ -1,0 +1,47 @@
+[project]
+name = "simlab"
+version = "0.1.0"
+description = "Simulation lab: end-to-end route reconstruction scenarios with a web UI"
+requires-python = ">=3.14"
+dependencies = [
+  "routebuilder>=0.1.0",
+  "geodata>=0.1.0",
+  "database>=0.1.0",
+  "pipeline>=0.1.0",
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "pydantic>=2.9.0",
+  "pyyaml>=6.0",
+  "httpx>=0.28.0",
+  "shapely>=2.0.0",
+]
+
+[project.scripts]
+simlab = "simlab.web.app:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"simlab.web" = ["static/*"]
+
+[tool.uv.sources]
+database = {path = "../packages/database", editable = true}
+geodata = {path = "../packages/geodata", editable = true}
+routebuilder = {path = "../packages/routebuilder", editable = true}
+pipeline = {path = "../packages/pipeline", editable = true}
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.15.12",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "valhalla: tests that require a running Valhalla instance (infra/local)",
+]

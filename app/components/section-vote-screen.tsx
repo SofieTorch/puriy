@@ -166,7 +166,7 @@ export default function SectionVoteScreen({
           />
           <View className="border-t border-gray-100 px-6 pb-10 pt-4">
             <Pressable
-              className="w-full items-center rounded-xl bg-[#09A6F3] py-4"
+              className="w-full items-center rounded-xl bg-[#3D6CB4] py-4"
               onPress={() => setStep('done')}
             >
               <Text className="text-base font-semibold text-white">Listo</Text>
@@ -198,7 +198,7 @@ export default function SectionVoteScreen({
             {rejected > 0 && `${rejected} rechazada${rejected > 1 ? 's' : ''}`}
           </Text>
           <Pressable
-            className="w-full items-center rounded-xl bg-[#09A6F3] py-4"
+            className="w-full items-center rounded-xl bg-[#3D6CB4] py-4"
             onPress={handleClose}
           >
             <Text className="text-base font-semibold text-white">Volver a Contribuir</Text>
@@ -234,40 +234,40 @@ export default function SectionVoteScreen({
         {/* Trip count badge */}
         <View className="items-center border-t border-gray-100 px-6 pt-4">
           <View className="flex-row items-center rounded-full bg-sky-50 px-5 py-2.5">
-            <MaterialCommunityIcons name="road-variant" size={18} color="#09A6F3" />
-            <Text className="ml-2 text-sm font-semibold text-[#09A6F3]">
+            <MaterialCommunityIcons name="road-variant" size={18} color="#3D6CB4" />
+            <Text className="ml-2 text-sm font-semibold text-[#3D6CB4]">
               Viajaste esta sección {section?.trip_count ?? 0} {section?.trip_count === 1 ? 'vez' : 'veces'}
             </Text>
           </View>
         </View>
 
         {/* Vote buttons */}
-        <View className="flex-row gap-4 px-6 pb-10 pt-4">
+        <View className="flex-row gap-3 px-6 pb-10 pt-4">
           <Pressable
-            className="flex-1 flex-row items-center justify-center rounded-xl border-2 border-red-200 bg-red-50 py-4"
+            className="flex-1 flex-row items-center justify-center rounded-xl bg-brand-red py-4 active:opacity-90"
             onPress={() => handleVote('reject')}
             disabled={submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#EF4444" />
+              <ActivityIndicator color="#fff" />
             ) : (
               <>
-                <Feather name="x" size={20} color="#EF4444" />
-                <Text className="ml-2 text-base font-semibold text-red-500">Rechazar</Text>
+                <Feather name="x" size={20} color="#fff" />
+                <Text className="ml-2 text-base font-semibold text-white">Rechazar</Text>
               </>
             )}
           </Pressable>
           <Pressable
-            className="flex-1 flex-row items-center justify-center rounded-xl border-2 border-green-200 bg-green-50 py-4"
+            className="flex-1 flex-row items-center justify-center rounded-xl bg-brand-green py-4 active:opacity-90"
             onPress={() => handleVote('approve')}
             disabled={submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#22C55E" />
+              <ActivityIndicator color="#fff" />
             ) : (
               <>
-                <Feather name="check" size={20} color="#22C55E" />
-                <Text className="ml-2 text-base font-semibold text-green-600">Aprobar</Text>
+                <Feather name="check" size={20} color="#fff" />
+                <Text className="ml-2 text-base font-semibold text-white">Aprobar</Text>
               </>
             )}
           </Pressable>

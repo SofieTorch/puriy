@@ -55,7 +55,7 @@ def test_trace_match_returns_cached_result_for_matching_trace_id(tmp_path, monke
             {
                 "version": 1,
                 "traces": {
-                    "cleaned-trace-1|bus|60|20": {
+                    "v2|cleaned-trace-1|bus|60|20|0": {
                         "costing": "bus",
                         "search_radius": 60,
                         "gps_accuracy": 20,
@@ -126,4 +126,4 @@ def test_trace_match_persists_result_to_cache_on_miss(tmp_path, monkeypatch):
     assert first.edges == second.edges == [{"id": 202, "forward": False}]
     assert cache_file.exists()
     cached_payload = json.loads(cache_file.read_text(encoding="utf-8"))
-    assert "cleaned-trace-2|bus|60|20" in cached_payload["traces"]
+    assert "v2|cleaned-trace-2|bus|60|20|0" in cached_payload["traces"]

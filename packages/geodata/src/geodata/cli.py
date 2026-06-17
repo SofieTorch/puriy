@@ -284,6 +284,19 @@ def _cmd_rebuild_graph(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _cmd_prune_cache(args: argparse.Namespace) -> int:
+    from .match import _trace_match_cache_path, prune_trace_match_cache
+
+    path = _trace_match_cache_path()
+    before_bytes = path.stat().st_size if path.exists() else 0
+    max_bytes = int(args.max_mb * 1024 * 1024) if args.max_mb is not None else None
+    result = prune_trace_match_cache(max_entries=args.max_entries, max_bytes=max_bytes)
+    print("Trace-match cache pruned:")
+    print(f"  Entries: {result['before']} → {result['after']}")
+    print(f"  Size:    {before_bytes / 1e6:.1f} MB → {result['bytes'] / 1e6:.1f} MB")
+    return 0
+
+
 def _cmd_import_route(args: argparse.Namespace) -> int:
     from .import_route import import_route_from_geojson, import_routes_from_directory
 
@@ -503,6 +516,20 @@ def main() -> int:
         help="Build the transit graph from all active routes and print statistics",
     )
     rebuild_parser.set_defaults(handler=_cmd_rebuild_graph)
+
+    prune_parser = subparsers.add_parser(
+        "prune-cache",
+        help="Evict oldest entries from the Valhalla trace-match cache",
+    )
+    prune_parser.add_argument(
+        "--max-entries", type=int, default=None,
+        help="Keep at most this many entries (default: configured bound)",
+    )
+    prune_parser.add_argument(
+        "--max-mb", type=float, default=None,
+        help="Keep the cache file under this many megabytes (default: configured bound)",
+    )
+    prune_parser.set_defaults(handler=_cmd_prune_cache)
 
     evaluate_parser = subparsers.add_parser(
         "evaluate-reconstruction",

@@ -123,7 +123,14 @@ def _(db, lines_table, mo):
 
 
 @app.cell
-def _(db, lines_table, mo, routes_data, routes_table):
+def _(mo):
+    fit_view = mo.ui.switch(value=False, label="Fit to route")
+    line_width = mo.ui.slider(start=0.25, stop=3.0, step=0.25, value=1.0, label="Line thickness", show_value=True)
+    return fit_view, line_width
+
+
+@app.cell
+def _(db, fit_view, line_width, lines_table, mo, routes_data, routes_table):
     from uuid import UUID as _UUID
     from components.data import load_route_edges
     from components.maps import path_layer, scatter_layer, deck, default_view_state
@@ -195,11 +202,13 @@ def _(db, lines_table, mo, routes_data, routes_table):
 
             route_map = deck(
                 _layers,
-                view_state=_view,
+                view_state=None if fit_view.value else _view,
+                fit=fit_view.value,
+                line_scale=line_width.value,
                 height=500,
                 tooltip_html="<b>{name}</b>",
             )
-    route_map
+    mo.vstack([mo.hstack([fit_view, line_width], gap=2, align="center"), route_map])
     return
 
 

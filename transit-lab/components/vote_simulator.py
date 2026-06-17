@@ -10,7 +10,7 @@ the cleaned/map-matched version).
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from geoalchemy2 import WKBElement
@@ -54,6 +54,11 @@ def _group_into_sections(edges: list[RouteEdge]) -> list[list[RouteEdge]]:
 def _load_simulator_sessions(db: Session, line_id: UUID) -> list[TripSession]:
     """Pull every simulator-tagged TripSession with cleaned trips on this line,
     sorted deterministically by (started_at, id) so bucketing is stable.
+
+    A session counts as simulator-generated if ``device_model == 'simulator'``
+    (what ``save_tracks_to_db`` always stamps, regardless of device_id) OR its
+    ``device_id`` starts with 'simulator' (legacy convention). Matching on
+    device_model means custom device ids like 'dev-device' still qualify.
     """
     return (
         db.execute(
@@ -62,7 +67,10 @@ def _load_simulator_sessions(db: Session, line_id: UUID) -> list[TripSession]:
             .where(
                 Trip.line_id == line_id,
                 Trip.computed_path.isnot(None),
-                TripSession.device_id.like(f"{SIMULATOR_DEVICE_PREFIX}%"),
+                or_(
+                    TripSession.device_model == "simulator",
+                    TripSession.device_id.like(f"{SIMULATOR_DEVICE_PREFIX}%"),
+                ),
             )
             .order_by(TripSession.started_at, TripSession.id)
             .distinct()
@@ -72,16 +80,69 @@ def _load_simulator_sessions(db: Session, line_id: UUID) -> list[TripSession]:
     )
 
 
+def _session_route_positions(
+    db: Session, sessions: list[TripSession], route_id: UUID
+) -> dict[UUID, float]:
+    """Map each session id to its average position (edge sequence) along the route.
+
+    Position = mean ``RouteEdge.sequence`` over all (trip, edge) pairs where one of
+    the session's cleaned trips passes within 50m of the edge. So a session whose
+    trips cover the start of the route scores low, one near the end scores high.
+    """
+    if not sessions:
+        return {}
+    rows = db.execute(
+        select(Trip.session_id, func.avg(RouteEdge.sequence))
+        .join(
+            RouteEdge,
+            func.ST_DWithin(
+                func.ST_Transform(RouteEdge.path, 3857),
+                func.ST_Transform(Trip.computed_path, 3857),
+                50.0,
+            ),
+        )
+        .where(
+            RouteEdge.route_id == route_id,
+            Trip.session_id.in_([s.id for s in sessions]),
+            Trip.computed_path.isnot(None),
+        )
+        .group_by(Trip.session_id)
+    ).all()
+    return {sid: float(avg) for sid, avg in rows if avg is not None}
+
+
 def _bucket_sessions(
-    sessions: list[TripSession], n_voters: int, voter_prefix: str
+    db: Session,
+    sessions: list[TripSession],
+    n_voters: int,
+    voter_prefix: str,
+    route_id: UUID,
 ) -> dict[str, list[TripSession]]:
-    """Round-robin bucket sessions into N synthetic voters."""
+    """Bucket sessions into N synthetic voters by *position along the route*.
+
+    Sessions are sorted by their average overlapping-edge sequence, then split
+    into N contiguous blocks — so each voter's sessions cluster in the same
+    region instead of being scattered all along the route (round-robin). Paired
+    with partial traces (simulator "Mean trace proportion" < 1.0), this gives
+    each voter a localized segment to vote on. Deterministic: same sessions in →
+    same buckets out, so the minimap rendering re-derives identical buckets.
+    """
     n = max(1, min(n_voters, len(sessions)))
     buckets: dict[str, list[TripSession]] = {
         f"{voter_prefix}-{i:03d}": [] for i in range(n)
     }
-    for i, s in enumerate(sessions):
-        buckets[f"{voter_prefix}-{i % n:03d}"].append(s)
+    if not sessions:
+        return buckets
+
+    positions = _session_route_positions(db, sessions, route_id)
+    # Sessions with no overlapping edges sort to the end; id keeps it stable.
+    sessions_sorted = sorted(
+        sessions, key=lambda s: (positions.get(s.id, float("inf")), str(s.id))
+    )
+    total = len(sessions_sorted)
+    for idx, s in enumerate(sessions_sorted):
+        bucket_idx = (idx * n) // total  # contiguous near-equal blocks
+        buckets[f"{voter_prefix}-{bucket_idx:03d}"].append(s)
     return buckets
 
 
@@ -189,8 +250,9 @@ def simulate_votes_for_line(
     if not sessions:
         return VoteSimulationResult(
             error=(
-                "No sessions tagged with a 'simulator…' device_id have cleaned "
-                "trips on this line. Run the trip simulator + reconstruction first."
+                "No simulator-generated sessions (device_model='simulator', or a "
+                "device_id starting with 'simulator') have cleaned trips on this "
+                "line. Run the trip simulator + reconstruction first."
             )
         )
 
@@ -198,7 +260,7 @@ def simulate_votes_for_line(
     if reset_synthetic:
         synthetic_wiped = _wipe_synthetic_votes(db, route.id, voter_prefix)
 
-    buckets = _bucket_sessions(sessions, n_voters, voter_prefix)
+    buckets = _bucket_sessions(db, sessions, n_voters, voter_prefix, route.id)
 
     result = VoteSimulationResult(
         sessions_considered=len(sessions),
@@ -454,7 +516,7 @@ def load_synthetic_voter_views(
 
     Re-derives each voter's session bucket by detecting N from the existing
     EdgeVote device_ids (max bucket index + 1) and replaying the same
-    deterministic round-robin bucketing the simulator used. For each voter,
+    deterministic position-along-route bucketing the simulator used. For each voter,
     returns the geometry needed to render a minimap:
 
       * raw_paths: TripSession.computed_path coords per session (raw GPS)
@@ -471,7 +533,7 @@ def load_synthetic_voter_views(
         return []
 
     sessions = _load_simulator_sessions(db, line_id)
-    buckets = _bucket_sessions(sessions, n, voter_prefix)
+    buckets = _bucket_sessions(db, sessions, n, voter_prefix, route_id)
 
     # Pull every synthetic vote (with its edge) for this route in one shot,
     # then group by voter id.

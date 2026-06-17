@@ -73,5 +73,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   extra: {
     apiBaseUrl: process.env.API_BASE_URL || 'http://172.27.25.135:8000',
     e2eDeviceId: process.env.EXPO_PUBLIC_E2E_DEVICE_ID || null,
+    // Override the crowdsourcing device id (testing). Set DEVICE_ID to a sim
+    // voter id from simlab's inspector to impersonate a rider; unset → the
+    // auto-generated, locally-persisted id is used.
+    deviceId: process.env.DEVICE_ID || null,
   },
 });

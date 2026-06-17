@@ -19,6 +19,15 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        brand: {
+          DEFAULT: '#3D6CB4',
+          blue: '#3D6CB4', 'blue-soft': '#E7EEF7', 'blue-ink': '#1E3A66',
+          red: '#D62F3F', 'red-soft': '#FBE7E9', 'red-ink': '#8A1A26',
+          yellow: '#F2C200', 'yellow-soft': '#FCF3D0', 'yellow-ink': '#4A3A00',
+          green: '#1F9D57', 'green-soft': '#E3F5EA', 'green-ink': '#0F6E3A',
+          bg: '#F4F6F7', surface: '#FFFFFF', ink: '#1A1C1E',
+          muted: '#5F6368', hint: '#9AA0A6', line: '#E4E7EA',
+        },
         primary: {
           0: 'rgb(var(--color-primary-0)/<alpha-value>)',
           50: 'rgb(var(--color-primary-50)/<alpha-value>)',

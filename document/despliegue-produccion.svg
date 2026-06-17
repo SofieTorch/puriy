@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1580" height="900" viewBox="0 0 1580 900" font-family="Georgia,'Times New Roman',serif">
+<defs><marker id="arr" markerWidth="10" markerHeight="10" refX="7.5" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,3 L0,6 Z" fill="#3A3A3A"/></marker><marker id="arrL" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L7,3 L0,6 Z" fill="#8A8A8A"/></marker></defs>
+<rect x="0" y="0" width="1580" height="900" rx="0" fill="#FCFCFA" stroke="#FCFCFA" stroke-width="0"/>
+<text x="790.0" y="46" font-family="Georgia,'Times New Roman',serif" font-size="24" font-weight="700" fill="#1A1A1A" text-anchor="middle">Diagrama de despliegue — Entorno de producción</text>
+<text x="790.0" y="71" font-family="Georgia,'Times New Roman',serif" font-size="13" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">Puriy — reconstrucción colaborativa de rutas de transporte · servidor VPS orquestado con Docker Compose</text>
+<line x1="40" y1="86" x2="1540" y2="86" stroke="#1A1A1A" stroke-width="1"/>
+<rect x="40" y="170" width="300" height="185" rx="3" fill="#F4F4F2" stroke="#1A1A1A" stroke-width="2"/>
+<rect x="40" y="170" width="300" height="34" rx="3" fill="#E4E4E2" stroke="#1A1A1A" stroke-width="2"/>
+<text x="190.0" y="185" font-family="Georgia,'Times New Roman',serif" font-size="11" font-weight="400" fill="#444" text-anchor="middle" font-style="italic">«dispositivo»</text>
+<text x="190.0" y="199" font-family="Georgia,'Times New Roman',serif" font-size="14" font-weight="700" fill="#1A1A1A" text-anchor="middle">Dispositivo móvil del usuario</text>
+<rect x="62" y="222" width="256" height="56" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="190.0" y="247.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">App Puriy</text>
+<text x="190.0" y="264.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">Expo · React Native (Android / iOS)</text>
+<rect x="62" y="290" width="256" height="50" rx="3" fill="#F0F0EE" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="190.0" y="312.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">SQLite local</text>
+<text x="190.0" y="329.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">Drizzle ORM · cola de subida</text>
+<rect x="40" y="440" width="300" height="150" rx="3" fill="#FFFFFF" stroke="#1A1A1A" stroke-width="2"/>
+<rect x="40" y="440" width="300" height="34" rx="3" fill="#E4E4E2" stroke="#1A1A1A" stroke-width="2"/>
+<text x="190.0" y="455" font-family="Georgia,'Times New Roman',serif" font-size="11" font-weight="400" fill="#444" text-anchor="middle" font-style="italic">«servidor CI/CD»</text>
+<text x="190.0" y="469" font-family="Georgia,'Times New Roman',serif" font-size="14" font-weight="700" fill="#1A1A1A" text-anchor="middle">GitHub Actions</text>
+<rect x="62" y="492" width="256" height="78" rx="3" fill="#F0F0EE" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="190.0" y="528.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">Workflow deploy.yml</text>
+<text x="190.0" y="545.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">build --no-cache · compose up</text>
+<rect x="1390" y="250" width="160" height="120" rx="3" fill="#EDEDED" stroke="#1A1A1A" stroke-width="2"/>
+<rect x="1390" y="250" width="160" height="34" rx="3" fill="#E4E4E2" stroke="#1A1A1A" stroke-width="2"/>
+<text x="1470.0" y="265" font-family="Georgia,'Times New Roman',serif" font-size="11" font-weight="400" fill="#444" text-anchor="middle" font-style="italic">«externo»</text>
+<text x="1470.0" y="279" font-family="Georgia,'Times New Roman',serif" font-size="14" font-weight="700" fill="#1A1A1A" text-anchor="middle">Geofabrik</text>
+<rect x="1404" y="300" width="132" height="56" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="1470.0" y="325.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">OSM Bolivia</text>
+<text x="1470.0" y="342.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">tiles .osm.pbf</text>
+<rect x="400" y="130" width="940" height="640" rx="3" fill="#FFFFFF" stroke="#1A1A1A" stroke-width="2"/>
+<rect x="400" y="130" width="940" height="34" rx="3" fill="#E4E4E2" stroke="#1A1A1A" stroke-width="2"/>
+<text x="870.0" y="145" font-family="Georgia,'Times New Roman',serif" font-size="11" font-weight="400" fill="#444" text-anchor="middle" font-style="italic">«servidor»</text>
+<text x="870.0" y="159" font-family="Georgia,'Times New Roman',serif" font-size="14" font-weight="700" fill="#1A1A1A" text-anchor="middle">VPS — Ubuntu Linux · Docker Engine</text>
+<text x="414" y="182" font-family="Georgia,'Times New Roman',serif" font-size="11" font-weight="400" fill="#666" text-anchor="start" font-style="italic">docker-compose.yml  ·  red interna  +  red externa compartida  www</text>
+<rect x="420" y="216" width="900" height="58" rx="3" fill="#EFEFED" stroke="#1A1A1A" stroke-width="1.6"/>
+<text x="870.0" y="242.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">Caddy — proxy inverso (red www · TLS)  ·  puriy.sofietorch.dev *</text>
+<text x="870.0" y="259.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">enruta  /api → server   /valhalla → valhalla   /grafana → grafana</text>
+<rect x="420" y="300" width="240" height="212" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="540.0" y="403.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">server</text>
+<text x="540.0" y="420.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">FastAPI · Uvicorn :8000</text>
+<rect x="690" y="300" width="240" height="92" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="810.0" y="343.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">valhalla</text>
+<text x="810.0" y="360.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">motor de ruteo HMM :8002</text>
+<rect x="690" y="420" width="240" height="92" rx="3" fill="#F0F0EE" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="810.0" y="463.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">PostgreSQL + PostGIS</text>
+<text x="810.0" y="480.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">:5432 · vol. db_data</text>
+<rect x="960" y="300" width="360" height="92" rx="3" fill="#F6F6F6" stroke="#6B6B6B" stroke-width="1.3" stroke-dasharray="5 3"/>
+<text x="1140" y="318" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">«jobs» tareas one-shot</text>
+<rect x="972" y="326" width="336" height="28" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.1" stroke-dasharray="4 2"/>
+<text x="1140.0" y="344.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">migrate</text>
+<rect x="972" y="358" width="336" height="28" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.1" stroke-dasharray="4 2"/>
+<text x="1140.0" y="376.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">pipeline</text>
+<rect x="960" y="420" width="360" height="92" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3" stroke-dasharray="5 3"/>
+<text x="1140" y="455" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">cron del host</text>
+<text x="1140" y="472" font-family="Georgia,'Times New Roman',serif" font-size="10" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">programa el servicio pipeline</text>
+<rect x="420" y="560" width="900" height="180" rx="3" fill="#F8F8F6" stroke="#1A1A1A" stroke-width="1.5"/>
+<rect x="420" y="560" width="900" height="30" rx="3" fill="#EAEAE8" stroke="#1A1A1A" stroke-width="1.5"/>
+<text x="870" y="580" font-family="Georgia,'Times New Roman',serif" font-size="12" font-weight="700" fill="#1A1A1A" text-anchor="middle">«stack de observabilidad»  —  telemetría OpenTelemetry</text>
+<rect x="440" y="612" width="185" height="96" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="532.5" y="657.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">OpenTelemetry</text>
+<text x="532.5" y="674.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">Collector :4317 (OTLP)</text>
+<rect x="648" y="612" width="150" height="96" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="723.0" y="657.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">Tempo</text>
+<text x="723.0" y="674.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">trazas</text>
+<rect x="820" y="612" width="150" height="96" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="895.0" y="657.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">Loki</text>
+<text x="895.0" y="674.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">logs</text>
+<rect x="992" y="612" width="170" height="96" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="1077.0" y="657.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">Prometheus</text>
+<text x="1077.0" y="674.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">métricas</text>
+<rect x="1184" y="612" width="120" height="96" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="1244.0" y="657.0" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="middle">Grafana</text>
+<text x="1244.0" y="674.0" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="middle" font-style="italic">:3000</text>
+<polyline points="340,262 418,245" fill="none" stroke="#3A3A3A" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="330.0" y="230" width="84.0" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="372" y="241" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="middle">HTTPS :443  /api</text>
+<polyline points="340,500 398,480" fill="none" stroke="#3A3A3A" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="364.125" y="460" width="15.75" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="372" y="471" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="middle">SSH</text>
+<rect x="316.875" y="496" width="110.25" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="372" y="507" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="middle">git pull · compose up</text>
+<polyline points="540,274 540,300" fill="none" stroke="#3A3A3A" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="558" y="280" width="26.25" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="558" y="291" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="start">:8000</text>
+<polyline points="810,274 810,300" fill="none" stroke="#3A3A3A" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="828" y="280" width="26.25" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="828" y="291" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="start">:8002</text>
+<polyline points="945,274 945,548 1244,548 1244,560" fill="none" stroke="#3A3A3A" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="955" y="530" width="26.25" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="955" y="541" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="start">:3000</text>
+<polyline points="660,336 690,336" fill="none" stroke="#3A3A3A" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="664.5" y="317" width="21.0" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="675" y="328" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="middle">HTTP</text>
+<polyline points="660,462 690,462" fill="none" stroke="#3A3A3A" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="651.375" y="443" width="47.25" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="675" y="454" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="middle">SQL :5432</text>
+<polyline points="490,512 490,560" fill="none" stroke="#3A3A3A" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="498" y="528" width="52.5" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="498" y="539" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="start">OTLP :4317</text>
+<polyline points="1000,392 1000,406 905,406 905,420" fill="none" stroke="#3A3A3A" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#arr)"/>
+<rect x="917.875" y="391" width="68.25" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="952" y="402" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="middle">alembic · SQL</text>
+<polyline points="1140,420 1140,392" fill="none" stroke="#3A3A3A" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#arr)"/>
+<rect x="1111.125" y="398" width="57.75" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="1140" y="409" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="middle">compose run</text>
+<polyline points="810,300 810,288 1389,288" fill="none" stroke="#3A3A3A" stroke-width="1.4" marker-end="url(#arr)"/>
+<rect x="1028.125" y="272" width="183.75" height="14" fill="#FCFCFA" opacity="0.92"/>
+<text x="1120" y="283" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#2A2A2A" text-anchor="middle">HTTPS · descarga OSM Bolivia (.pbf)</text>
+<polyline points="625,660 648,660" fill="none" stroke="#8A8A8A" stroke-width="1.1" marker-end="url(#arrL)"/>
+<polyline points="798,660 820,660" fill="none" stroke="#8A8A8A" stroke-width="1.1" marker-end="url(#arrL)"/>
+<polyline points="970,660 992,660" fill="none" stroke="#8A8A8A" stroke-width="1.1" marker-end="url(#arrL)"/>
+<polyline points="1162,660 1184,660" fill="none" stroke="#8A8A8A" stroke-width="1.1" marker-end="url(#arrL)"/>
+<line x1="40" y1="810" x2="1540" y2="810" stroke="#1A1A1A" stroke-width="1"/>
+<text x="40" y="830" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-weight="700" fill="#1A1A1A" text-anchor="start">Leyenda.</text>
+<rect x="118" y="818" width="18" height="16" rx="3" fill="#FFFFFF" stroke="#1A1A1A" stroke-width="1.3"/>
+<text x="143" y="831" font-family="Georgia,'Times New Roman',serif" font-size="11.5" font-weight="400" fill="#1A1A1A" text-anchor="start">Nodo (servidor / dispositivo)</text>
+<rect x="345.4" y="818" width="18" height="16" rx="3" fill="#FFFFFF" stroke="#6B6B6B" stroke-width="1.3"/>
+<text x="370.4" y="831" font-family="Georgia,'Times New Roman',serif" font-size="11.5" font-weight="400" fill="#1A1A1A" text-anchor="start">Componente / contenedor</text>
+<rect x="533.1999999999999" y="818" width="18" height="16" rx="3" fill="#F6F6F6" stroke="#6B6B6B" stroke-width="1.3" stroke-dasharray="4 2"/>
+<text x="558.1999999999999" y="831" font-family="Georgia,'Times New Roman',serif" font-size="11.5" font-weight="400" fill="#1A1A1A" text-anchor="start">Tarea one-shot / programada</text>
+<rect x="747.3999999999999" y="818" width="18" height="16" rx="3" fill="#EDEDED" stroke="#1A1A1A" stroke-width="1.3"/>
+<text x="772.3999999999999" y="831" font-family="Georgia,'Times New Roman',serif" font-size="11.5" font-weight="400" fill="#1A1A1A" text-anchor="start">Servicio externo</text>
+<line x1="888.9999999999999" y1="826" x2="914.9999999999999" y2="826" stroke="#3A3A3A" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="921.9999999999999" y="831" font-family="Georgia,'Times New Roman',serif" font-size="11.5" font-weight="400" fill="#1A1A1A" text-anchor="start">Comunicación en ejecución</text>
+<line x1="1101.0" y1="826" x2="1127.0" y2="826" stroke="#3A3A3A" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arr)"/>
+<text x="1134.0" y="831" font-family="Georgia,'Times New Roman',serif" font-size="11.5" font-weight="400" fill="#1A1A1A" text-anchor="start">Tarea / migración programada</text>
+<text x="40" y="866" font-family="Georgia,'Times New Roman',serif" font-size="10.5" font-weight="400" fill="#555" text-anchor="start" font-style="italic">*  Caddy se ejecuta como proxy inverso compartido del host (red Docker externa www); el resto de servicios se orquestan con infra/deploy/docker-compose.yml.</text>
+<text x="40" y="886" font-family="Georgia,'Times New Roman',serif" font-size="12" font-weight="700" fill="#333" text-anchor="start">Figura. </text>
+<text x="85" y="886" font-family="Georgia,'Times New Roman',serif" font-size="12" font-weight="400" fill="#444" text-anchor="start" font-style="italic">Diagrama de despliegue del entorno de producción de Puriy.</text>
+</svg>

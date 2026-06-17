@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>simlab — puriy route reconstruction lab</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <link href="/static/style.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="sidebar">
+    <h1>simlab</h1>
+
+    <div id="mode-toggle">
+      <button id="mode-scenario-btn" class="mode-btn active">Scenario</button>
+      <button id="mode-database-btn" class="mode-btn">Database</button>
+      <button id="mode-inspect-btn" class="mode-btn">Inspect</button>
+    </div>
+
+    <section>
+      <h2>Scenario</h2>
+      <select id="scenario-select"></select>
+      <p id="scenario-description" class="muted"></p>
+      <div class="scenario-only">
+        <button id="run-button">▶ Run scenario</button>
+        <div class="button-row">
+          <button id="edit-scenario">✎ Edit</button>
+          <button id="duplicate-scenario">⧉ Duplicate</button>
+          <button id="new-scenario">+ New</button>
+        </div>
+        <div class="button-row">
+          <button id="experiments-scenario" title="Generate the A/B/C coverage sweep from this scenario">⚗ Generate experiments</button>
+          <button id="manage-scenarios">🗑 Manage…</button>
+        </div>
+        <div id="scenario-manage" hidden>
+          <p class="muted">Select scenarios to delete:</p>
+          <div id="scenario-manage-list"></div>
+          <div class="button-row">
+            <button id="manage-delete">Delete selected</button>
+            <button id="manage-close">Close</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="experiments-section" class="scenario-only" hidden>
+      <h2>Experiments</h2>
+      <label class="exp-label">Group
+        <select id="exp-group-select"></select>
+      </label>
+      <button id="exp-run-all">▶ Run whole factorial</button>
+      <p id="exp-run-status" class="muted"></p>
+    </section>
+
+    <section id="database-section" class="database-only">
+      <h2>Database (real pipeline)</h2>
+      <label class="db-linetype">Bus type
+        <select id="db-line-type">
+          <option value="micro">micro (flat fare)</option>
+          <option value="trufi">trufi (zone fare)</option>
+          <option value="taxi_trufi">taxi trufi</option>
+        </select>
+      </label>
+      <button id="db-promote">⬆ Promote scenario → new line</button>
+      <div class="button-row">
+        <button id="db-new-line">+ New line</button>
+        <button id="db-rebuild-graph" title="Refresh the API server's A→B routing graph after building routes">↻ Rebuild directions graph</button>
+      </div>
+      <div class="button-row">
+        <button id="db-import-zones" title="Populate Cochabamba municipalities (fare zones) from OpenStreetMap — needed for trufi zone-based fares">🏛 Populate municipalities</button>
+      </div>
+      <div class="button-row">
+        <button id="db-wipe" class="danger-btn" title="Delete all lines, traces, routes, votes and fares (keeps fare zones + devices)">🗑 Wipe database…</button>
+      </div>
+      <p id="db-status" class="muted">Push the selected scenario's traces into the
+        DB as raw recordings, then build the route with the production pipeline.</p>
+      <ul id="db-line-list"></ul>
+      <div id="db-steps-box" hidden>
+        <h2>Pipeline steps</h2>
+        <ul id="db-steps"></ul>
+      </div>
+      <div id="db-layers-box" hidden>
+        <h2>Layers</h2>
+        <div id="db-layers"></div>
+      </div>
+      <div id="db-vsegs-box" hidden>
+        <h2>Voteable segments <span class="muted">preview</span></h2>
+        <div class="vseg-controls">
+          <label>Min trips
+            <input id="db-vsegs-mintrips" type="number" min="1" max="20" value="3" />
+          </label>
+          <span class="muted" id="db-vsegs-summary"></span>
+        </div>
+        <p class="muted">What each eligible rider would be asked to vote on in
+          the app — the route edges overlapping their own trips, per ramal.</p>
+        <div id="db-vsegs"></div>
+      </div>
+    </section>
+
+    <section id="inspect-section" class="inspect-only">
+      <h2>Database inspector</h2>
+      <div class="button-row">
+        <button id="inspect-refresh">↻ Refresh</button>
+        <label class="inspect-filter">line
+          <select id="inspect-line"><option value="">all</option></select>
+        </label>
+        <label class="inspect-filter"><input type="checkbox" id="inspect-eligible-only" />
+          eligible only</label>
+        <label class="inspect-filter"><input type="checkbox" id="inspect-zones" />
+          fare zones</label>
+      </div>
+      <p class="muted">Devices by last connection. <b>Click a device</b> to draw its
+        traces; click its <b>id</b> to copy it (set it on the phone → Developer ·
+        device id to impersonate that rider). <b>★</b> = enough clean trips to vote
+        on the selected line.</p>
+      <p id="inspect-summary" class="muted"></p>
+      <div id="inspect-devices"></div>
+    </section>
+
+    <section class="scenario-only">
+      <h2>Runs</h2>
+      <ul id="run-list"></ul>
+      <button id="clear-runs" hidden>🗑 Delete all runs</button>
+    </section>
+
+    <section class="scenario-only">
+      <h2>Stages</h2>
+      <ul id="stage-list"></ul>
+    </section>
+
+    <section>
+      <h2>Layers</h2>
+      <div id="layer-toggles"></div>
+    </section>
+
+    <section>
+      <button id="measure-toggle">📏 Measure distance</button>
+      <button id="export-png">⤓ Export map PNG</button>
+      <a id="export-csv" href="#" download>⤓ Metrics CSV</a>
+    </section>
+  </div>
+
+  <div id="sidebar-resizer" title="Drag to resize the panel"></div>
+
+  <div id="map">
+    <div id="measure-readout" hidden></div>
+  </div>
+
+  <div id="wipe-modal" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <h2>⚠ Wipe database</h2>
+      <p class="muted">This permanently deletes <b>every line</b> and all its
+        traces, trips, routes, edges, votes and fare reports. Fare zones
+        (municipalities) and device registrations are kept. <b>This cannot be
+        undone.</b></p>
+      <div id="wipe-step2" hidden>
+        <p class="muted">Type <b>DELETE</b> to confirm:</p>
+        <input id="wipe-input" type="text" placeholder="DELETE" autocomplete="off"
+          autocapitalize="characters" spellcheck="false" />
+      </div>
+      <p id="wipe-status" class="muted"></p>
+      <div class="button-row">
+        <button id="wipe-cancel">Cancel</button>
+        <button id="wipe-continue">Continue</button>
+        <button id="wipe-final" class="danger-btn" hidden disabled>Wipe everything</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="metrics-panel">
+    <h2>Metrics <span class="muted">vs ground truth</span></h2>
+    <div id="metrics-content" class="muted">run a scenario to see metrics</div>
+  </div>
+
+  <div id="builder-panel" hidden>
+    <div class="builder-header">
+      <h2>Scenario builder</h2>
+      <button id="builder-close" class="small">✕</button>
+    </div>
+    <div id="builder-form"></div>
+    <p id="builder-error" class="error" hidden></p>
+    <div class="button-row">
+      <button id="builder-save">💾 Save scenario</button>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="/static/app.js"></script>
+  <script src="/static/builder.js"></script>
+</body>
+</html>

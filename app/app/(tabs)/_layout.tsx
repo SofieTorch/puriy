@@ -4,12 +4,13 @@ import { View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { HeaderStatusBadge, HeaderIcon } from '@/components/header';
+import { palette } from '@/constants/palette';
 import Feather from '@expo/vector-icons/Feather';
 import { MaterialIcons } from '@expo/vector-icons';
 
 export default function TabLayout() {
-  const inactiveBlue = '#67CCFF';
-  const activeBlue = '#009DFF';
+  const inactiveBlue = palette.hint;
+  const activeBlue = palette.blue.DEFAULT;
 
   const renderTabIcon = (icon: React.ReactNode) => (
     <View style={{ alignItems: 'center', justifyContent: 'center' }}>{icon}</View>
@@ -21,7 +22,7 @@ export default function TabLayout() {
         tabBarActiveTintColor: activeBlue,
         tabBarInactiveTintColor: inactiveBlue,
         headerShown: true,
-        headerStyle: { backgroundColor: '#09A6F3' },
+        headerStyle: { backgroundColor: '#3D6CB4' },
         headerTintColor: '#fff',
         headerTitleStyle: { fontWeight: '500', fontSize: 20 },
         headerLeft: () => <HeaderStatusBadge />,
@@ -49,7 +50,7 @@ export default function TabLayout() {
         },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '700',
+          fontWeight: '600',
           lineHeight: 13,
           marginTop: 6,
           marginBottom: 2,

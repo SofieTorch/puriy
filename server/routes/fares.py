@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from geoalchemy2 import WKBElement
 from shapely import wkb
 from shapely.geometry import mapping
-from sqlalchemy import func, select
+from sqlalchemy import Numeric, cast, func, select
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
@@ -204,7 +204,7 @@ def _aggregate_zone_fares(db: Session, line_id: UUID) -> list[ZoneFareRead]:
         select(
             bz.label("boarding_zone"),
             az.label("alighting_zone"),
-            func.round(func.avg(FareReport.amount_bob), 2).label("avg_amount"),
+            func.round(cast(func.percentile_cont(0.5).within_group(FareReport.amount_bob.asc()), Numeric), 2).label("avg_amount"),
             func.count().label("report_count"),
         )
         .where(
@@ -267,7 +267,7 @@ def get_line_fares(line_id: UUID, db: Session = Depends(get_db)) -> LineFareRead
     if line.line_type == LineType.MICRO:
         avg_row = db.execute(
             select(
-                func.round(func.avg(FareReport.amount_bob), 2).label("avg_amount"),
+                func.round(cast(func.percentile_cont(0.5).within_group(FareReport.amount_bob.asc()), Numeric), 2).label("avg_amount"),
             ).where(FareReport.line_id == line_id)
         ).first()
         flat_rate = float(avg_row.avg_amount) if avg_row and avg_row.avg_amount else None
@@ -309,7 +309,7 @@ def estimate_fare(
     if line.line_type == LineType.MICRO:
         row = db.execute(
             select(
-                func.round(func.avg(FareReport.amount_bob), 2).label("avg_amount"),
+                func.round(cast(func.percentile_cont(0.5).within_group(FareReport.amount_bob.asc()), Numeric), 2).label("avg_amount"),
                 func.count().label("report_count"),
             ).where(FareReport.line_id == line_id)
         ).first()
@@ -346,7 +346,7 @@ def estimate_fare(
     # Query both directions (symmetric fares)
     row = db.execute(
         select(
-            func.round(func.avg(FareReport.amount_bob), 2).label("avg_amount"),
+            func.round(cast(func.percentile_cont(0.5).within_group(FareReport.amount_bob.asc()), Numeric), 2).label("avg_amount"),
             func.count().label("report_count"),
         ).where(
             FareReport.line_id == line_id,
