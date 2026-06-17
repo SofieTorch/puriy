@@ -24,6 +24,16 @@ puriy.sofietorch.dev {
 		reverse_proxy grafana:3000
 	}
 
+	# Android APK download (sideload). Drop the signed APK on the Caddy host
+	# at /srv/downloads/ (e.g. puriy.apk) → https://puriy.sofietorch.dev/download/puriy.apk
+	handle /download/* {
+		root * /srv/downloads
+		uri strip_prefix /download
+		@apk path *.apk
+		header @apk Content-Type application/vnd.android.package-archive
+		file_server
+	}
+
 	# Project landing page (replace with a static site later)
 	handle {
 		respond "Puriy - Crowdsourced transit route reconstruction for Cochabamba" 200
