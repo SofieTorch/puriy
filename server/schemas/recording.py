@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any, Optional
 from uuid import UUID
 
+from database.models.line import LineType
 from database.models.trip import (
     SessionStatus,
     TripSensorReadingBase,
@@ -31,6 +32,8 @@ class EndSessionRequest(SQLModel):
 
     line_id: Optional[UUID] = None
     line_name: Optional[str] = None
+    # Bus type for a newly-created line (line_name set, line_id null).
+    line_type: Optional[LineType] = None
     is_detour: bool = False
     detour_reason: Optional[str] = None  # "construction", "protest", "accident", "other"
     detour_description: Optional[str] = None

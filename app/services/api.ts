@@ -146,11 +146,19 @@ export interface RamalDescriptor {
   voted_by_me: boolean;
 }
 
+export interface DaySchedule {
+  day_bucket: 'weekday' | 'saturday' | 'sunday';
+  service_start_at: string | null; // local time "HH:MM:SS"
+  service_end_at: string | null;
+  headway_min: number | null;
+}
+
 export interface NearbyLineWithRoute {
   line_id: string;
   line_name: string;
   line_description: string | null;
   line_type: 'micro' | 'trufi' | 'taxi_trufi' | null;
+  schedules: DaySchedule[];
   route_geojson: { type: string; coordinates: [number, number][] } | null;
   detour_alert?: DetourAlert | null;
   ramales: RamalSummary[];
@@ -299,6 +307,7 @@ class ApiClient {
     sessionId: number,
     lineId: string | null,
     lineName: string | null,
+    lineType: 'micro' | 'trufi' | 'taxi_trufi' | null = null,
     isDetour: boolean = false,
     detourReason: string | null = null,
     detourDescription: string | null = null,
@@ -308,6 +317,7 @@ class ApiClient {
       body: JSON.stringify({
         line_id: lineId,
         line_name: lineName,
+        line_type: lineType,
         is_detour: isDetour,
         detour_reason: detourReason,
         detour_description: detourDescription,

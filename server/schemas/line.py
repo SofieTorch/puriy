@@ -89,6 +89,9 @@ class NearbyLineWithRouteRead(SQLModel):
     line_type: Optional[LineType] = None
     route_geojson: Optional[dict] = None
     detour_alert: Optional[dict] = None
+    # Inferred service hours + headway per day bucket (weekday/sat/sun),
+    # so the line detail view can show operating hours and frequency.
+    schedules: list[DayScheduleRead] = []
     # Per-ramal identity surfaced for the line card. Multi-ramal lines
     # return one entry per active ramal (each card shows its own
     # endpoints/streets); single-ramal lines collapse to a 1-element

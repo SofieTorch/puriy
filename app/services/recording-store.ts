@@ -91,6 +91,7 @@ export function finalizeRecording(
   isDetour: boolean = false,
   detourReason: string | null = null,
   detourDescription: string | null = null,
+  lineType: string | null = null,
 ): void {
   const now = new Date().toISOString();
   getDb().update(recordingsTable)
@@ -98,6 +99,7 @@ export function finalizeRecording(
       status,
       lineId,
       lineName,
+      lineType,
       isDetour,
       detourReason,
       detourDescription,

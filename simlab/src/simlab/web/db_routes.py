@@ -636,6 +636,57 @@ def rebuild_directions_graph() -> dict:
         return {"ok": False, "url": url, "error": str(e)}
 
 
+# --- inferred service hours + headway ---------------------------------------
+
+@db_router.post("/infer-schedules")
+def infer_schedules_endpoint() -> dict:
+    """Run the production `infer_schedules` step: derive service hours +
+    headway per (line, day_bucket) from completed trip start timestamps."""
+    from pipeline.steps.infer_schedules import execute as infer_execute
+
+    db = _session()
+    try:
+        return infer_execute(db)
+    finally:
+        db.close()
+
+
+@db_router.get("/schedules")
+def list_schedules() -> dict:
+    """All inferred schedules grouped by line (for the Database-tab panel)."""
+    from sqlalchemy import select
+
+    from database.models import Line, LineSchedule
+
+    db = _session()
+    try:
+        rows = db.execute(select(LineSchedule)).scalars().all()
+        names = {ln.id: ln.name for ln in db.execute(select(Line)).scalars().all()}
+        by_line: dict = {}
+        for r in rows:
+            by_line.setdefault(r.line_id, []).append(r)
+
+        lines = []
+        for line_id, scheds in by_line.items():
+            lines.append({
+                "line_id": str(line_id),
+                "line_name": names.get(line_id, "?"),
+                "schedules": [
+                    {
+                        "day_bucket": _status(s.day_bucket),
+                        "service_start_at": s.service_start_at.isoformat() if s.service_start_at else None,
+                        "service_end_at": s.service_end_at.isoformat() if s.service_end_at else None,
+                        "headway_min": s.headway_min,
+                    }
+                    for s in sorted(scheds, key=lambda x: _status(x.day_bucket))
+                ],
+            })
+        lines.sort(key=lambda x: x["line_name"])
+        return {"lines": lines}
+    finally:
+        db.close()
+
+
 # --- fare zones as GeoJSON (for the map overlay) ----------------------------
 
 @db_router.get("/fare-zones")

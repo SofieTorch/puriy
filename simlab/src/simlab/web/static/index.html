@@ -17,7 +17,7 @@
       <button id="mode-inspect-btn" class="mode-btn">Inspect</button>
     </div>
 
-    <section>
+    <section class="scenario-only">
       <h2>Scenario</h2>
       <select id="scenario-select"></select>
       <p id="scenario-description" class="muted"></p>
@@ -29,7 +29,6 @@
           <button id="new-scenario">+ New</button>
         </div>
         <div class="button-row">
-          <button id="experiments-scenario" title="Generate the A/B/C coverage sweep from this scenario">⚗ Generate experiments</button>
           <button id="manage-scenarios">🗑 Manage…</button>
         </div>
         <div id="scenario-manage" hidden>
@@ -54,20 +53,13 @@
 
     <section id="database-section" class="database-only">
       <h2>Database (real pipeline)</h2>
-      <label class="db-linetype">Bus type
-        <select id="db-line-type">
-          <option value="micro">micro (flat fare)</option>
-          <option value="trufi">trufi (zone fare)</option>
-          <option value="taxi_trufi">taxi trufi</option>
-        </select>
-      </label>
-      <button id="db-promote">⬆ Promote scenario → new line</button>
       <div class="button-row">
         <button id="db-new-line">+ New line</button>
         <button id="db-rebuild-graph" title="Refresh the API server's A→B routing graph after building routes">↻ Rebuild directions graph</button>
       </div>
       <div class="button-row">
         <button id="db-import-zones" title="Populate Cochabamba municipalities (fare zones) from OpenStreetMap — needed for trufi zone-based fares">🏛 Populate municipalities</button>
+        <button id="db-infer-schedules" title="Infer service hours + frequency per line from completed trip timestamps">🕐 Infer schedules</button>
       </div>
       <div class="button-row">
         <button id="db-wipe" class="danger-btn" title="Delete all lines, traces, routes, votes and fares (keeps fare zones + devices)">🗑 Wipe database…</button>
@@ -82,6 +74,10 @@
       <div id="db-layers-box" hidden>
         <h2>Layers</h2>
         <div id="db-layers"></div>
+      </div>
+      <div id="db-schedules-box">
+        <h2>Inferred schedules <span class="muted">hours · frequency</span></h2>
+        <div id="db-schedules" class="muted">Run “🕐 Infer schedules” to compute service hours and frequency per line.</div>
       </div>
       <div id="db-vsegs-box" hidden>
         <h2>Voteable segments <span class="muted">preview</span></h2>
@@ -138,9 +134,26 @@
       <button id="export-png">⤓ Export map PNG</button>
       <a id="export-csv" href="#" download>⤓ Metrics CSV</a>
     </section>
+
+    <section class="scenario-only">
+      <details id="advanced-accordion">
+        <summary>⚙ Advanced</summary>
+        <label class="db-linetype">Bus type
+          <select id="db-line-type">
+            <option value="micro">micro (flat fare)</option>
+            <option value="trufi">trufi (zone fare)</option>
+            <option value="taxi_trufi">taxi trufi</option>
+          </select>
+        </label>
+        <button id="db-promote">⬆ Promote scenario → new line</button>
+        <p id="advanced-status" class="muted"></p>
+      </details>
+    </section>
   </div>
 
   <div id="sidebar-resizer" title="Drag to resize the panel"></div>
+
+  <button id="metrics-toggle" title="Show/hide the metrics panel">📊 Metrics</button>
 
   <div id="map">
     <div id="measure-readout" hidden></div>

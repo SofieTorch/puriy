@@ -61,6 +61,7 @@ async function syncOneRecording(recordingId: number): Promise<boolean> {
       serverId,
       rec.lineId,
       rec.lineName,
+      (rec.lineType as 'micro' | 'trufi' | 'taxi_trufi' | null) ?? null,
       rec.isDetour ?? false,
       rec.detourReason ?? null,
       rec.detourDescription ?? null,

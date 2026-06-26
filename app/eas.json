@@ -1,0 +1,26 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "android": {
+        "buildType": "apk"
+      },
+      "credentialsSource": "local",
+      "env": {
+        "API_BASE_URL": "https://puriy.sofietorch.dev/api"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "credentialsSource": "local",
+      "env": {
+        "API_BASE_URL": "https://puriy.sofietorch.dev/api"
+      }
+    }
+  }
+}

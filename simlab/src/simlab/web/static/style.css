@@ -17,10 +17,22 @@ html, body { height: 100%; font-family: -apple-system, "Segoe UI", Roboto, sans-
 
 body {
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr 320px;
+  /* Metrics panel collapsed by default → no third column. */
+  grid-template-columns: var(--sidebar-w) 1fr 0;
   background: var(--bg);
   color: var(--text);
 }
+body.metrics-open { grid-template-columns: var(--sidebar-w) 1fr 320px; }
+body:not(.metrics-open) #metrics-panel { display: none; }
+
+/* Floating toggle for the metrics panel (sits over the map's top-right). */
+#metrics-toggle {
+  position: fixed; top: 10px; right: 10px; z-index: 50;
+  width: auto; margin: 0; padding: 6px 10px;
+  background: var(--panel); border: 1px solid var(--border);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+}
+body.metrics-open #metrics-toggle { right: 330px; }
 
 /* Drag handle on the sidebar's right edge (fixed → out of grid flow). */
 #sidebar-resizer {
@@ -301,6 +313,26 @@ body.mode-database .inspect-only { display: none; }
 .inspect-filter select { width: auto; font-size: 12px; padding: 2px 4px; margin: 0; }
 .db-linetype { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin-bottom: 6px; }
 .db-linetype select { width: auto; flex: 1; }
+
+/* Inferred-schedules panel (Database tab). */
+#db-schedules-box { margin-top: 12px; }
+.sched-line { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.sched-line:last-child { border-bottom: none; }
+.sched-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.sched-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); padding: 1px 0; }
+.sched-day { color: var(--text); opacity: 0.85; }
+.sched-val { font-variant-numeric: tabular-nums; }
+
+/* Advanced accordion (scenario tab) — promote + bus type, collapsed by default. */
+#advanced-accordion { border-top: 1px solid var(--border); padding-top: 10px; }
+#advanced-accordion > summary {
+  cursor: pointer; user-select: none; list-style: none;
+  font-size: 13px; font-weight: 600; color: var(--muted);
+}
+#advanced-accordion > summary::-webkit-details-marker { display: none; }
+#advanced-accordion > summary::before { content: "▸ "; }
+#advanced-accordion[open] > summary { margin-bottom: 8px; }
+#advanced-accordion[open] > summary::before { content: "▾ "; }
 .db-line-type-tag {
   font-size: 10px; background: var(--border); color: var(--text);
   padding: 1px 6px; border-radius: 8px; margin-left: 4px;
