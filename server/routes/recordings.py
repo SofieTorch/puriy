@@ -180,6 +180,7 @@ def end_recording(
         new_line = Line(
             name=line_name_trimmed,
             status=LineStatus.DRAFT,
+            line_type=body.line_type,
         )
         db.add(new_line)
         db.flush()

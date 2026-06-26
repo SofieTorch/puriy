@@ -24,11 +24,19 @@ type SaveRecordModalProps = {
   onConfirm: (selection: {
     lineId: string | null;
     customLineName: string | null;
+    customLineType: string | null;
     isDetour: boolean;
     detourReason: string | null;
     detourDescription: string | null;
   }) => Promise<void>;
 };
+
+const BUS_TYPES = [
+  { value: 'micro', label: 'Micro' },
+  { value: 'trufi', label: 'Trufi' },
+  { value: 'taxi_trufi', label: 'Taxi trufi' },
+] as const;
+type BusType = (typeof BUS_TYPES)[number]['value'];
 
 export default function SaveRecordModal({
   visible,
@@ -43,6 +51,7 @@ export default function SaveRecordModal({
   const [selectedLine, setSelectedLine] = useState<Line | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [customLineName, setCustomLineName] = useState('');
+  const [lineType, setLineType] = useState<BusType>('micro');
   const [isSaving, setIsSaving] = useState(false);
 
   const [fareAmount, setFareAmount] = useState('');
@@ -83,6 +92,7 @@ export default function SaveRecordModal({
     setSelectedLine(null);
     setDropdownOpen(false);
     setCustomLineName('');
+    setLineType('micro');
     setFareAmount('');
     setIsSaving(false);
     setIsDetour(false);
@@ -144,6 +154,7 @@ export default function SaveRecordModal({
       await onConfirm({
         lineId: selectedLine?.id ?? null,
         customLineName: selectedLine ? null : customLineName.trim() || null,
+        customLineType: selectedLine ? null : (customLineName.trim() ? lineType : null),
         isDetour,
         detourReason: isDetour ? detourReason : null,
         detourDescription: isDetour && detourDescription.trim() ? detourDescription.trim() : null,
@@ -422,6 +433,30 @@ export default function SaveRecordModal({
                 </View>
               );
             })()}
+
+            {/* Bus type — only when creating a new line */}
+            {!selectedLine && customLineName.trim().length >= 1 && (
+              <View className="mb-4 mt-3">
+                <Text className="mb-2 text-[13px] font-medium text-gray-500">Tipo de transporte</Text>
+                <View className="flex-row gap-2">
+                  {BUS_TYPES.map((t) => {
+                    const active = lineType === t.value;
+                    return (
+                      <Pressable
+                        key={t.value}
+                        testID={`modal-bus-type-${t.value}`}
+                        className={`flex-1 items-center rounded-xl border py-2.5 ${active ? 'border-[#3D6CB4] bg-sky-100' : 'border-gray-300 bg-white'}`}
+                        onPress={() => setLineType(t.value)}
+                      >
+                        <Text className={`text-sm font-medium ${active ? 'text-[#3D6CB4]' : 'text-gray-600'}`}>
+                          {t.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
 
             {/* Spacer when no suggestions */}
             {(customLineName.trim().length < 1 || selectedLine) && <View className="mb-4" />}

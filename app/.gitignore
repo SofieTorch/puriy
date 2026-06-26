@@ -42,5 +42,15 @@ app-example
 /ios
 /android
 
+# android signing — NEVER commit these
+credentials.json
+/credentials
+*.keystore
+*.jks
+
+# build artifacts
+*.apk
+*.aab
+
 # Test reports
 playwright-report/

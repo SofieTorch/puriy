@@ -21,6 +21,7 @@ export const recordings = sqliteTable('recordings', {
   }).notNull(),
   lineId: text('line_id'), // Server line ID (UUID, if existing line selected)
   lineName: text('line_name'), // New line name (if creating)
+  lineType: text('line_type'), // Bus type for a new line: micro | trufi | taxi_trufi
   isDetour: integer('is_detour', { mode: 'boolean' }).default(false),
   detourReason: text('detour_reason'),
   detourDescription: text('detour_description'),

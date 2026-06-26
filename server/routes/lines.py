@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 from database.connection import get_db
 from schemas.directions import DetourAlert
 from schemas.line import (
+    DayScheduleRead,
     LineCreate,
     LineRead,
     LineUpdate,
@@ -323,6 +324,15 @@ def find_lines_nearby(
                 line_type=line.line_type,
                 route_geojson=route_geojson,
                 detour_alert=detour_alert,
+                schedules=[
+                    DayScheduleRead(
+                        day_bucket=s.day_bucket,
+                        service_start_at=s.service_start_at,
+                        service_end_at=s.service_end_at,
+                        headway_min=s.headway_min,
+                    )
+                    for s in (line.schedules or [])
+                ],
                 ramales=ramales,
             )
         )

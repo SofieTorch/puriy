@@ -37,7 +37,8 @@ async function init() {
   document.getElementById("export-png").onclick = exportPng;
   document.getElementById("clear-runs").onclick = deleteAllRuns;
   document.getElementById("measure-toggle").onclick = toggleMeasure;
-  document.getElementById("experiments-scenario").onclick = generateExperiments;
+  document.getElementById("metrics-toggle").onclick = () =>
+    document.body.classList.toggle("metrics-open");
   document.getElementById("manage-scenarios").onclick = openManageScenarios;
   document.getElementById("manage-close").onclick = () =>
     (document.getElementById("scenario-manage").hidden = true);
@@ -57,6 +58,7 @@ async function init() {
   document.getElementById("db-new-line").onclick = createDbLine;
   document.getElementById("db-rebuild-graph").onclick = rebuildDirectionsGraph;
   document.getElementById("db-import-zones").onclick = importMunicipalities;
+  document.getElementById("db-infer-schedules").onclick = inferSchedules;
   document.getElementById("db-wipe").onclick = openWipeModal;
   document.getElementById("wipe-cancel").onclick = closeWipeModal;
   document.getElementById("wipe-continue").onclick = wipeStep2;
@@ -128,13 +130,18 @@ function setMode(mode) {
     document.getElementById(`mode-${m}-btn`).classList.toggle("active", mode === m);
   }
   localStorage.setItem("simlabMode", mode);
-  if (mode === "database") loadDbLines();
+  if (mode === "database") { loadDbLines(); loadSchedules(); }
   else clearDbLayers();
   if (mode === "inspect") loadInspector();
 }
 
 function _dbStatus(text) {
-  document.getElementById("db-status").textContent = text;
+  // The Database-mode status line and the scenario-tab Advanced accordion's
+  // status line mirror each other; only one is visible at a time (mode-gated).
+  for (const id of ["db-status", "advanced-status"]) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
 }
 
 async function promoteScenario(lineId) {
@@ -222,6 +229,59 @@ async function importMunicipalities() {
   } else {
     _dbStatus("Municipality import failed: " + j.error);
   }
+}
+
+async function inferSchedules() {
+  _dbStatus("Inferring service hours + frequency from trip timestamps…");
+  let j;
+  try {
+    const r = await fetch("/api/infer-schedules", { method: "POST" });
+    j = await r.json();
+  } catch (e) {
+    _dbStatus("Infer schedules failed: " + e);
+    return;
+  }
+  _dbStatus(`Schedules inferred: ${j.lines_inferred ?? 0} line(s) · ` +
+            `${j.schedule_rows_written ?? 0} day-bucket rows.`);
+  await loadSchedules();
+}
+
+const DAY_LABELS = { weekday: "Lun–Vie", saturday: "Sáb", sunday: "Dom" };
+
+function _clock(t) {
+  return t ? String(t).slice(0, 5) : null; // "06:00:00" → "06:00"
+}
+
+async function loadSchedules() {
+  const box = document.getElementById("db-schedules");
+  if (!box) return;
+  let data;
+  try { data = await api("/schedules"); } catch { return; }
+  const lines = data.lines || [];
+  if (lines.length === 0) {
+    box.className = "muted";
+    box.textContent = "No schedules yet. Run “🕐 Infer schedules”.";
+    return;
+  }
+  box.className = "";
+  box.innerHTML = lines.map((ln) => {
+    // Only show day-buckets that actually inferred something.
+    const valid = (ln.schedules || []).filter(
+      (s) => s.service_start_at || s.headway_min != null,
+    );
+    const rows = valid.length
+      ? valid.map((s) => {
+          const start = _clock(s.service_start_at);
+          const end = _clock(s.service_end_at);
+          const parts = [];
+          if (start && end) parts.push(`${start}–${end}`);
+          if (s.headway_min != null) parts.push(`c/ ${s.headway_min} min`);
+          return `<div class="sched-row"><span class="sched-day">${DAY_LABELS[s.day_bucket] || s.day_bucket}</span>` +
+                 `<span class="sched-val">${parts.join(" · ") || "—"}</span></div>`;
+        }).join("")
+      : `<div class="sched-row"><span class="sched-val muted">sin horario inferido</span></div>`;
+    return `<div class="sched-line"><div class="sched-name">${ln.line_name}</div>${rows}</div>`;
+  }).join("");
 }
 
 async function rebuildDirectionsGraph() {

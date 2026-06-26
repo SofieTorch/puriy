@@ -1,0 +1,1 @@
+ALTER TABLE `recordings` ADD `line_type` text;

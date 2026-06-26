@@ -19,7 +19,7 @@ import PreferencesSheet from '@/components/preferences-sheet';
 import PickMap from '@/components/pick-map';
 import RouteMap, { Leg, LineRoute } from '@/components/route-map';
 import { palette } from '@/constants/palette';
-import api, { DirectionsLeg, DirectionsResponse, NearbyLineWithRoute } from '@/services/api';
+import api, { DaySchedule, DirectionsLeg, DirectionsResponse, NearbyLineWithRoute } from '@/services/api';
 import { getCurrentLocation, watchLocation } from '@/services/current-location';
 import { GeocodingResult, reverseGeocode, searchAddress } from '@/services/geocoding';
 import { includePendingLines, includePendingRoutes } from '@/services/preferences';
@@ -71,6 +71,27 @@ function formatFareBob(b: number | null | undefined): string | null {
 function formatFrequency(min: number | null | undefined): string | null {
   if (min == null) return null;
   return `c/ ${min} min`;
+}
+
+// "HH:MM:SS" (local Cochabamba time) → "HH:MM"
+function formatClock(t: string | null | undefined): string | null {
+  return t ? t.slice(0, 5) : null;
+}
+
+function todayBucket(): DaySchedule['day_bucket'] {
+  const d = new Date().getDay(); // 0 = Sunday, 6 = Saturday
+  return d === 0 ? 'sunday' : d === 6 ? 'saturday' : 'weekday';
+}
+
+// Schedule for today's day-bucket, falling back to weekday then whatever exists.
+function pickSchedule(schedules: DaySchedule[] | undefined): DaySchedule | null {
+  if (!schedules || schedules.length === 0) return null;
+  const bucket = todayBucket();
+  return (
+    schedules.find((s) => s.day_bucket === bucket) ??
+    schedules.find((s) => s.day_bucket === 'weekday') ??
+    schedules[0]
+  );
 }
 
 function routeSummary(legs: DirectionsLeg[]) {
@@ -493,6 +514,20 @@ export default function ExploreScreen() {
           {selectedLine.ramales && selectedLine.ramales.length > 1 && (
             <Text className="mt-0.5 text-xs text-brand-muted">{selectedLine.ramales.length} ramales</Text>
           )}
+          {(() => {
+            const sch = pickSchedule(selectedLine.schedules);
+            const start = formatClock(sch?.service_start_at);
+            const end = formatClock(sch?.service_end_at);
+            const hours = start && end ? `${start}–${end}` : null;
+            const freq = sch?.headway_min != null ? `cada ${sch.headway_min} min` : null;
+            if (!hours && !freq) return null;
+            return (
+              <View className="mt-1.5 flex-row items-center gap-1.5">
+                <Feather name="clock" size={13} color={palette.muted} />
+                <Text className="text-xs text-brand-muted">{[hours, freq].filter(Boolean).join(' · ')}</Text>
+              </View>
+            );
+          })()}
         </View>
         {selectedLine.detour_alert && (
           <View className="absolute left-4 right-4 flex-row items-center rounded-2xl bg-orange-50 px-4 py-3 shadow-lg" style={{ top: insets.top + 115 }}>

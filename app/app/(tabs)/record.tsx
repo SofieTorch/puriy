@@ -253,12 +253,14 @@ export default function RecordScreen() {
   const handleConfirmLine = async ({
     lineId,
     customLineName,
+    customLineType,
     isDetour,
     detourReason,
     detourDescription,
   }: {
     lineId: string | null;
     customLineName: string | null;
+    customLineType: string | null;
     isDetour: boolean;
     detourReason: string | null;
     detourDescription: string | null;
@@ -273,6 +275,7 @@ export default function RecordScreen() {
         isDetour,
         detourReason,
         detourDescription,
+        customLineType,
       );
 
       const synced = await syncPendingRecordings();
